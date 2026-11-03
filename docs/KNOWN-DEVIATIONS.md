@@ -19,6 +19,12 @@ change a number and need the operator's signature before a customer sees a quote
 | 7 | **Mezzanine matches exactly four load levels** (1.5 / 3.0 / 5.0 / 7.5 kPa); any other load returns **price 0**. | **Fixed** — the nearest defined level is used and an assumption issue is raised | A silent zero is the worst possible answer for a priced option. | Mezzanine never free. |
 | 8 | **Two BOM sections are labelled the wrong way round** (gutter items in `FlashingItems` and vice versa). Totals are right, labels are not. | **Fixed** — sections labelled correctly | Affects the workshop sheet's headings. | None — totals unchanged. |
 | 9 | **Main-house option material is disabled** (`computeTotalOptionMaterial` commented out at `ExportUtil.cs:783`), so option material may be empty in the desktop's BOM. | **Included** | Doors and windows are material; pricing them as labour-only understates the kit. | Option lines appear where the desktop shows none. |
+| 10 | **The desktop embeds the logo image in every saved quote file**, so a quote always carries its own mark whatever the installation is showing. | **The revision records the logo's sha256 instead**, and the renderer uses the image only when the platform's current file matches that hash. A revision whose logo file is gone prints the company's text logo (`logoText`) rather than a newer image. | Copying ~100 KB of base64 into every row of an append-only table is a cost paid on every revision for a file that rarely changes. The hash keeps the property that matters — *a quote shows what it was sent with* — and degrades to text, which is honest, rather than to a different mark, which is not. | None. Visual only, and only for a quote older than the logo change. |
+
+**Operational consequence of row 10:** changing the platform logo means adding a **new file** and
+pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
+revisions that referenced the old bytes simply print the text logo from then on. See
+`docs/TEST-ACCESS.md`.
 
 ## How to add a row
 
