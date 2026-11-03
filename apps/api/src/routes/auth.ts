@@ -23,6 +23,7 @@ import {
   capabilitiesFor,
   changePasswordRequest,
   platformCapabilitiesFor,
+  passwordFromTokenRequest,
   platformSignInRequest,
   resetRequestRequest,
   signInRequest,
@@ -31,7 +32,12 @@ import {
 } from '@sq/contracts';
 import type { ApiConfig } from '../config.js';
 import { burnVerificationTime, hashPassword, verifyPassword } from '../lib/password.js';
-import { createInvitation, RESET_TTL_MS } from '../lib/invitations.js';
+import {
+  createInvitation,
+  resolveInvitation,
+  spendInvitation,
+  RESET_TTL_MS,
+} from '../lib/invitations.js';
 import { sendResetMail, type TransactionalDeps } from '../lib/mail/transactional.js';
 import {
   createSession,
@@ -59,6 +65,13 @@ const SIGNIN_WINDOW_MS = 15 * 60 * 1000;
  * sign-in one and the address limit is per person rather than per network.
  */
 const RESET_LIMIT = 5;
+
+/**
+ * What a dead link says — the same sentence for an unknown token, a spent one, an expired one and
+ * one presented for the other kind. A caller who could tell them apart could test whether a link
+ * ever existed.
+ */
+const DEAD_LINK = 'That link is no longer valid. Ask for a new one.';
 
 /** Build the view a front-end reads. Capabilities come from `@sq/contracts`, not
  *  from anything the browser sent. */
@@ -382,6 +395,49 @@ export function registerAuth(
     }
 
     return sendOk(reply, answer);
+  });
+
+  /**
+   * Spend a reset link: choose a new password, and arrive signed in.
+   *
+   * Every session the account already had is revoked, including one the person is using right now.
+   * That is the point of a reset: somebody who has the account open is exactly who the reset is
+   * meant to remove, and leaving their session alive would make the new password decorative.
+   *
+   * The person is signed in on success because they have just proved control of the mailbox and
+   * chosen the password — making them type it again immediately is a step that exists only to
+   * satisfy a form.
+   */
+  app.post('/auth/reset/confirm', async (request, reply) => {
+    const body = parseBody(passwordFromTokenRequest, request.body, reply);
+    if (body === null) return;
+
+    const invitation = await resolveInvitation(db, { token: body.token, kind: 'reset' });
+    if (invitation === null) {
+      return sendFail(reply, 'validation_failed', DEAD_LINK);
+    }
+
+    const hash = await hashPassword(body.password);
+    await db.run(
+      'UPDATE users SET password_hash = ?, must_change_password = 0, password_set_at = ?, updated_at = ? WHERE id = ?',
+      [hash, now(), now(), invitation.userId],
+    );
+
+    // No exception id on purpose: every earlier session dies, this request had none.
+    await revokeAllForUser(db, invitation.userId);
+    await spendInvitation(db, invitation.id);
+
+    if (invitation.tenantId === null) {
+      return sendFail(reply, 'validation_failed', DEAD_LINK);
+    }
+
+    return completeSignIn({
+      request,
+      reply,
+      userId: invitation.userId,
+      tenantId: invitation.tenantId,
+      perAccount: `signin:acct:${hashToken(`reset:${invitation.userId}`)}`,
+    });
   });
 
   /**

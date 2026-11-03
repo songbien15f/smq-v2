@@ -108,6 +108,28 @@ export interface ResetRequestResponse {
   sent: true;
 }
 
+/**
+ * Spending a link: choose the password it unlocks.
+ *
+ * One schema for both a reset and an invitation, because the two differ only in which token they
+ * carry and which table row they activate. The password rule is the same one the change-password
+ * form uses, so somebody who chose a password there is not told it is now too short.
+ */
+export const passwordFromTokenRequest = z
+  .object({
+    token: z.string().min(20, 'That link is no longer valid').max(200),
+    password: z
+      .string()
+      .min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters`)
+      .max(200, 'That password is too long'),
+    confirmPassword: z.string(),
+  })
+  .refine((body) => body.password === body.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The two passwords do not match',
+  });
+export type PasswordFromTokenRequest = z.infer<typeof passwordFromTokenRequest>;
+
 /** Set or change a password. Used for the first sign-in and for a voluntary change. */
 export const changePasswordRequest = z
   .object({
