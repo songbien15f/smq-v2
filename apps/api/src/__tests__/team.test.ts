@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
 import type { OutboundMail } from '../lib/mail/transport';
 import type { TransactionalDeps } from '../lib/mail/transactional';
+import { createInvitation, INVITE_TTL_MS } from '../lib/invitations';
 
 async function appWithMail(): Promise<{ ctx: TestApp; sent: OutboundMail[] }> {
   const sent: OutboundMail[] = [];
@@ -131,6 +132,51 @@ describe('inviting and re-admitting staff', () => {
       payload: { email: 'x@y.test', role: 'viewer', displayName: 'X', username: 'xperson' },
     });
     expect(invited.statusCode).toBe(503);
+    await ctx.close();
+  });
+});
+
+describe('accepting an invitation', () => {
+  it('turns pending into active, sets the password, and signs the person in', async () => {
+    const { ctx } = await appWithMail();
+    const company = await seedCompany(ctx.db, {
+      name: 'Join Sheds', slug: 'join-sheds', code: 'JOINS', username: 'owner',
+      email: 'owner@join.test', password: 'a-long-enough-password',
+    });
+    const cookie = await signIn(ctx.app, 'JOINS', 'owner', 'a-long-enough-password');
+
+    await ctx.app.inject({
+      method: 'POST', url: '/api/v1/team/invite', headers: { cookie },
+      payload: { email: 'joiner@join.test', role: 'estimator', displayName: 'Joiner', username: 'joiner' },
+    });
+
+    const created = await createInvitation(ctx.db, {
+      tenantId: company.tenantId, email: 'joiner@join.test', role: 'estimator',
+      kind: 'member', invitedBy: null, ttlMs: INVITE_TTL_MS,
+    });
+
+    const joined = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/join/confirm',
+      payload: { token: created.token, password: 'a-brand-new-password', confirmPassword: 'a-brand-new-password' },
+    });
+
+    expect(joined.statusCode).toBe(200);
+    expect(joined.json().data.currentTenantCode).toBe('JOINS');
+    expect(joined.json().data.memberships[0].role).toBe('estimator');
+    expect(joined.json().data.mustChangePassword).toBe(false);
+
+    const membership = await ctx.db.get<{ status: string }>(
+      'SELECT status FROM memberships WHERE tenant_id = ? AND user_id = (SELECT id FROM users WHERE email = ?)',
+      [company.tenantId, 'joiner@join.test'],
+    );
+    expect(membership?.status).toBe('active');
+
+    // And a reset token cannot be spent at the join door, nor the reverse.
+    const crossKind = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/join/confirm',
+      payload: { token: created.token, password: 'another-password-here', confirmPassword: 'another-password-here' },
+    });
+    expect(crossKind.statusCode).toBe(422);
     await ctx.close();
   });
 });

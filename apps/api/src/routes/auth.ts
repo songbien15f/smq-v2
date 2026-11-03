@@ -441,6 +441,46 @@ export function registerAuth(
   });
 
   /**
+   * Accept an invitation: choose a password for the first time, and arrive signed in.
+   *
+   * The membership moves `pending → active` here and nowhere else. `resolveSignIn` only accepts
+   * `active`, so a person who was invited but has not accepted cannot sign in and — because a seat
+   * is a live session — does not hold one.
+   *
+   * A `reset` token presented at this door is refused by `resolveInvitation`, which checks the kind.
+   * The two grants are not interchangeable: one reopens an existing account, the other activates a
+   * membership that was never on.
+   */
+  app.post('/auth/join/confirm', async (request, reply) => {
+    const body = parseBody(passwordFromTokenRequest, request.body, reply);
+    if (body === null) return;
+
+    const invitation = await resolveInvitation(db, { token: body.token, kind: 'member' });
+    if (invitation === null || invitation.tenantId === null) {
+      return sendFail(reply, 'validation_failed', DEAD_LINK);
+    }
+
+    const hash = await hashPassword(body.password);
+    await db.run(
+      'UPDATE users SET password_hash = ?, must_change_password = 0, password_set_at = ?, updated_at = ? WHERE id = ?',
+      [hash, now(), now(), invitation.userId],
+    );
+    await db.run(
+      "UPDATE memberships SET status = 'active', updated_at = ? WHERE tenant_id = ? AND user_id = ?",
+      [now(), invitation.tenantId, invitation.userId],
+    );
+    await spendInvitation(db, invitation.id);
+
+    return completeSignIn({
+      request,
+      reply,
+      userId: invitation.userId,
+      tenantId: invitation.tenantId,
+      perAccount: `signin:acct:${hashToken(`join:${invitation.userId}`)}`,
+    });
+  });
+
+  /**
    * Issue the session and answer with the view.
    *
    * Shared by both doors so a seat refusal, a cookie's attributes and the session view are written
