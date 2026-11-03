@@ -45,7 +45,7 @@ import {
   storeEvaluation,
 } from '../lib/evaluations.js';
 import { loadSettings } from '../lib/settings.js';
-import { loadLogo } from '@sq/core/branding';
+import { loadPlatformLogo } from '../lib/documents.js';
 
 /**
  * `ENGINE_VERSION` is the string `'1'` — deliberately, so that two builds of the same engine
@@ -405,7 +405,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
     const settings = await loadSettings(db, tenantId);
     // Read once at save so the revision records the logo it was sent under; the render routes read
     // the file again and compare hashes.
-    const logo = await loadLogo(process.env.LOGO_FILE);
+    const logo = await loadPlatformLogo();
     const price = JSON.parse(evaluation.priceJson) as PriceView;
 
     /*

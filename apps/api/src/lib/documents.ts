@@ -14,10 +14,24 @@
  */
 
 import type { Db } from '@sq/db';
+import { resolveFromRoot } from '@sq/db';
 import type { FrozenIssue, FrozenPrice, FrozenRevision } from '@sq/core/documents';
 import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
 import { normaliseShedConfig } from '@sq/core/domain';
 import { loadLogo } from '@sq/core/branding';
+
+/**
+ * The platform logo, or `null` when none is configured.
+ *
+ * `LOGO_FILE` goes through `resolveFromRoot` for the reason every other configured path does: a
+ * relative path means "from the workspace root", not "from whichever package happened to start the
+ * process". Resolving it here rather than at each call site is what stops the document route and
+ * the save route disagreeing about which file they mean.
+ */
+export function loadPlatformLogo(): ReturnType<typeof loadLogo> {
+  const configured = process.env.LOGO_FILE;
+  return loadLogo(configured === undefined || configured.trim() === '' ? undefined : resolveFromRoot(configured));
+}
 
 /**
  * The revision as the customer's page.
@@ -48,7 +62,7 @@ export async function renderFrozenHtml(frozen: FrozenRevision): Promise<string> 
 export async function renderFrozenDocument(
   frozen: FrozenRevision,
 ): Promise<{ html: string; logoKey: string }> {
-  const logo = await loadLogo(process.env.LOGO_FILE);
+  const logo = await loadPlatformLogo();
   const used = logo !== null && frozen.company.logoHash === logo.sha256 ? logo.sha256 : 'text';
   return {
     html: renderQuoteHtml(toCustomerDocument(frozen), { logo }),

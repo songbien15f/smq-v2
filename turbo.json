@@ -61,7 +61,11 @@
     "SEED_PLATFORM_PASSWORD",
     "SEED_COMPANY_SLUG",
     "SEED_COMPANY_EMAIL",
-    "SEED_COMPANY_PASSWORD"
+    "SEED_COMPANY_PASSWORD",
+    "COMPANY_CODE",
+    "COMPANY_ADMIN_USERNAME",
+    "LOGO_FILE",
+    "NEXT_PUBLIC_LOGO_SRC"
   ],
 
   "globalDependencies": ["tsconfig.base.json"],

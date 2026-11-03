@@ -34,8 +34,15 @@ function workspaceRoot(from: string = process.cwd()): string {
   }
 }
 
-/** Resolve a configured path: absolute stays as it is, relative starts at the root. */
-function resolveFromRoot(value: string): string {
+/**
+ * Resolve a configured path: absolute stays as it is, relative starts at the workspace root.
+ *
+ * Exported because every configured path needs it. Under `pnpm --filter` the working directory is
+ * the package's, so `./assets/logo.png` read from there is a different file — or none at all. The
+ * platform logo hit exactly that: the setting was present, the API ran, and documents printed the
+ * text logo because a relative path had resolved against the wrong directory.
+ */
+export function resolveFromRoot(value: string): string {
   if (isAbsolute(value)) return value;
   if (value === ':memory:') return value;
   return resolve(workspaceRoot(), value);
