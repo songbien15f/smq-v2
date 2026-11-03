@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSqliteDb } from '@/sqlite';
@@ -187,5 +188,115 @@ describe('placeholder rewriting', () => {
     expect(toPostgresPlaceholders("SELECT 'it''s ?' AS q WHERE id = ?")).toBe(
       "SELECT 'it''s ?' AS q WHERE id = $1",
     );
+  });
+});
+
+/**
+ * Migration 009: a business code per company, and a sign-in name per company.
+ *
+ * Asserted against a database that **holds data before 009 runs**, because that is the only state
+ * in which a backfill can fail. A migration tested on empty tables proves the SQL parses, not that
+ * it does the job — and 009's whole job is to give existing rows a value.
+ *
+ * The migrations are copied to a scratch directory without 009, applied, seeded with a deliberate
+ * username collision, and then 009 is executed. That is the production sequence.
+ */
+describe('migration 009 — company code and per-company username', () => {
+  let db: Db;
+  let scratch: string;
+
+  beforeAll(async () => {
+    db = createSqliteDb({ file: ':memory:' });
+    scratch = mkdtempSync(join(tmpdir(), 'sq-m009-'));
+
+    // Everything before 009, so the backfill has real rows to work on.
+    for (const name of readdirSync(MIGRATIONS)) {
+      const number = Number(name.slice(0, 3));
+      if (name.endsWith('.sql') && Number.isFinite(number) && number < 9) {
+        copyFileSync(join(MIGRATIONS, name), join(scratch, name));
+      }
+    }
+
+    await migrate(db, scratch, join(MIGRATIONS, 'sqlite'));
+
+    await db.run(
+      `INSERT INTO tenants (id, name, slug, status, seats, created_at, updated_at)
+       VALUES ('t-a', 'Alpha Sheds', 'demo-sheds', 'active', 5, '2026-01-01', '2026-01-01'),
+              ('t-b', 'Beta Sheds', 'beta-sheds', 'active', 5, '2026-01-01', '2026-01-01')`,
+    );
+    await db.run(
+      `INSERT INTO users (id, email, display_name, created_at, updated_at)
+       VALUES ('u1', 'owner@demo-sheds.test', 'Owner', '2026-01-01', '2026-01-01'),
+              ('u2', 'owner@beta-sheds.test', 'Owner Two', '2026-01-01', '2026-01-01'),
+              ('u3', 'owner@third.test', 'Third', '2026-01-01', '2026-01-01')`,
+    );
+    // u1 and u3 share the local part `owner`, both inside company t-a: the collision the
+    // backfill has to resolve before its unique index can be created.
+    await db.run(
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
+       VALUES ('t-a', 'u1', 'company_admin', 'active', '2026-01-01', '2026-01-01'),
+              ('t-a', 'u3', 'viewer',        'active', '2026-01-02', '2026-01-02'),
+              ('t-b', 'u2', 'company_admin', 'active', '2026-01-01', '2026-01-01')`,
+    );
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it('has neither column before 009 runs', async () => {
+    const tenantCols = (await db.all("SELECT name FROM pragma_table_info('tenants')")) as { name: string }[];
+    const memberCols = (await db.all("SELECT name FROM pragma_table_info('memberships')")) as { name: string }[];
+    expect(tenantCols.map((c) => c.name)).not.toContain('code');
+    expect(memberCols.map((c) => c.name)).not.toContain('username');
+  });
+
+  it('gives every existing company a code from its slug, and every membership a username', async () => {
+    // The production sequence: the portable file, then the dialect extras for the same prefix.
+    await db.exec(readFileSync(join(MIGRATIONS, '009_company_code_and_username.sql'), 'utf8'));
+    await db.exec(readFileSync(join(MIGRATIONS, 'sqlite', '009_company_code_and_username.sql'), 'utf8'));
+
+    const codes = (await db.all('SELECT code FROM tenants ORDER BY code')) as { code: string }[];
+    // `demo-sheds` → `DEMOSHEDS`: upper, hyphens dropped, first ten characters.
+    expect(codes.map((row) => row.code)).toEqual(['BETASHEDS', 'DEMOSHEDS']);
+
+    const names = (await db.all('SELECT username FROM memberships ORDER BY username')) as { username: string }[];
+    for (const row of names) expect(row.username).toBeTruthy();
+  });
+
+  it('gives the two people called owner in one company distinct usernames', async () => {
+    const rows = (await db.all(
+      "SELECT username FROM memberships WHERE tenant_id = 't-a' ORDER BY rowid",
+    )) as { username: string }[];
+
+    // The earliest keeps the plain name; the later one is suffixed, so the unique index can exist.
+    expect(rows[0]?.username).toBe('owner');
+    expect(rows[1]?.username).toMatch(/^owner\d+$/);
+  });
+
+  it('lets the same username exist in two companies', async () => {
+    const rows = (await db.all(
+      "SELECT tenant_id, username FROM memberships WHERE username = 'owner' ORDER BY tenant_id",
+    )) as { tenant_id: string }[];
+    expect(rows.map((row) => row.tenant_id)).toEqual(['t-a', 't-b']);
+  });
+
+  it('refuses a duplicate username inside one company', async () => {
+    await expect(
+      db.run(
+        `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+         VALUES ('t-a', 'u2', 'viewer', 'active', '2026-01-03', '2026-01-03', 'owner')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('refuses a duplicate company code', async () => {
+    await expect(
+      db.run(
+        `INSERT INTO tenants (id, name, slug, status, seats, created_at, updated_at, code)
+         VALUES ('t-c', 'Gamma', 'gamma', 'active', 5, '2026-01-01', '2026-01-01', 'DEMOSHEDS')`,
+      ),
+    ).rejects.toThrow();
   });
 });
