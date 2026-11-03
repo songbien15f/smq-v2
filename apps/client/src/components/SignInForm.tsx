@@ -141,6 +141,10 @@ export function SignInForm({ next }: { next?: string }) {
         Sign in
       </Button>
 
+      <a href="/forgot" className="self-start text-sq-micro text-sq-ink-muted underline">
+        Forgot your password?
+      </a>
+
       <p className="text-sq-micro text-sq-ink-muted">
         <StatusPill tone="neutral" label="Seats are limited" /> Signing out releases your seat for a
         colleague.
