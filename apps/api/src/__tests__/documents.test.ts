@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { publishPriceBook } from '@sq/core/pricing';
@@ -341,5 +342,77 @@ describe.skipIf(!hasDump)('the quote document and the share link', () => {
       payload: { token },
     });
     expect(after.statusCode).toBe(404);
+  });
+
+  it('records the platform logo hash on the revision it saves', async () => {
+    /*
+     * The freeze half of the logo feature. `logoDocument.test.ts` proves a document renders the logo
+     * its revision recorded; this proves the revision records one in the first place, which can only
+     * be checked where a real save happens.
+     */
+    const logoDir = mkdtempSync(join(tmpdir(), 'sq-doc-logo-'));
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6360000002000154a24f5f0000000049454e44ae426082',
+      'hex',
+    );
+    const file = join(logoDir, 'logo.png');
+    writeFileSync(file, png);
+    const original = process.env.LOGO_FILE;
+    process.env.LOGO_FILE = file;
+
+    try {
+      const evaluated = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/v1/evaluate',
+        headers: { cookie },
+        payload: { config: config(), pricing },
+      });
+
+      const saved = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/v1/quotes',
+        headers: { cookie },
+        payload: {
+          quoteId,
+          evaluationId: evaluated.json().data.evaluationId,
+          idempotencyKey: 'document-test-logo',
+          expectedRev: 1,
+          customer: {
+            firstName: 'Jane',
+            lastName: 'Citizen',
+            email: 'jane@example.com',
+            address: '12 Test Road',
+            suburb: 'Brisbane',
+            state: 'QLD',
+            postcode: '4000',
+          },
+          site: { address: '12 Test Road, Brisbane QLD 4000', deliveryAcknowledged: true },
+          config: config(),
+          pricing,
+        },
+      });
+      // 201: appending a revision to an existing quote is still a created resource.
+      expect(saved.statusCode).toBe(201);
+      expect(saved.json().ok).toBe(true);
+
+      const row = await ctx.db.get<{ company_json: string }>(
+        'SELECT company_json FROM quote_revisions WHERE quote_id = ? AND revision = 2',
+        [quoteId],
+      );
+      const company = JSON.parse(row?.company_json ?? '{}') as { logoHash?: string | null };
+      expect(company.logoHash).toBe(createHash('sha256').update(png).digest('hex'));
+
+      // And the document served for that revision carries the image.
+      const html = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/v1/quotes/${quoteId}/revisions/2/html`,
+        headers: { cookie },
+      });
+      expect(html.body).toContain('data:image/png;base64,');
+    } finally {
+      if (original === undefined) delete process.env.LOGO_FILE;
+      else process.env.LOGO_FILE = original;
+      rmSync(logoDir, { recursive: true, force: true });
+    }
   });
 });

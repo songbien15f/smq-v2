@@ -15,7 +15,25 @@
 
 import type { Db } from '@sq/db';
 import type { FrozenIssue, FrozenPrice, FrozenRevision } from '@sq/core/documents';
+import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
 import { normaliseShedConfig } from '@sq/core/domain';
+import { loadLogo } from '@sq/core/branding';
+
+/**
+ * The revision as the customer's page.
+ *
+ * The logo is loaded here, once, and handed to the renderer as an option rather than read inside it:
+ * `packages/core` does not touch the filesystem at render time, and a route that read the file
+ * itself would be a second place that decides what a document looks like.
+ *
+ * `LOGO_FILE` is read on each call. The file is at most a megabyte and a document is rendered once
+ * per download, so the read is not worth caching — and not caching is what lets an operator replace
+ * the logo without restarting the API.
+ */
+export async function renderFrozenHtml(frozen: FrozenRevision): Promise<string> {
+  const logo = await loadLogo(process.env.LOGO_FILE);
+  return renderQuoteHtml(toCustomerDocument(frozen), { logo });
+}
 
 /** Raised when the revision does not exist, or belongs to another company. */
 export class RevisionNotFound extends Error {
@@ -110,6 +128,9 @@ export async function loadFrozenRevision(
        * there are no terms.
        */
       logoText: typeof company.logoText === 'string' && company.logoText !== '' ? company.logoText : String(company.name ?? ''),
+      // Which logo this revision may use. A revision saved before the field existed has none, which
+      // is why the fallback is `null` and the document prints the text logo rather than guessing.
+      logoHash: typeof company.logoHash === 'string' && company.logoHash !== '' ? company.logoHash : null,
       terms: Array.isArray(company.terms) ? (company.terms as string[]) : [],
       assumptions: Array.isArray(company.assumptions)
         ? (company.assumptions as { title: string; body: string }[])

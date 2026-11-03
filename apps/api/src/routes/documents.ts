@@ -23,7 +23,7 @@ import { renderQuoteHtml, renderPdf, readCachedPdf, writeCachedPdf, PdfUnavailab
 import { toCustomerDocument } from '@sq/core/documents';
 import { clientIp, sendFail } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
-import { loadFrozenRevision, RevisionNotFound, revisionDocumentKey } from '../lib/documents.js';
+import { loadFrozenRevision, renderFrozenHtml, RevisionNotFound, revisionDocumentKey } from '../lib/documents.js';
 
 /** Where rendered PDFs live. Content-addressed by revision, so a re-download is cheap. */
 function pdfCacheRoot(): string {
@@ -143,7 +143,7 @@ async function buildHtml(
     });
 
     return {
-      html: renderQuoteHtml(toCustomerDocument(frozen)),
+      html: await renderFrozenHtml(frozen),
       quoteNumber: frozen.quoteNumber,
       revision: frozen.revision,
       cacheKey: revisionDocumentKey(frozen),
