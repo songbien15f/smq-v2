@@ -282,6 +282,34 @@ describe('capability enforcement', () => {
     expect(companies.statusCode).toBe(200);
     expect(Array.isArray(companies.json().data.items)).toBe(true);
   });
+
+  it('refuses a company member at the vendor door, even if they hold a platform role', async () => {
+    /*
+     * A person can be both: a dealership administrator who also does vendor work. Sending them
+     * through the email door would open a session with no company, where every company route
+     * refuses them and no seat is counted — a half-signed-in state whose symptom is "the app is
+     * broken". The door that works for them is the client app, so this one refuses.
+     */
+    const company = await seedCompany(ctx.db, {
+      name: 'Dual Role Sheds',
+      slug: 'dual-role',
+      email: 'dual@dual.test',
+      password: 'a-long-enough-password',
+    });
+    await ctx.db.run("UPDATE users SET platform_role = 'platform_admin' WHERE id = ?", [company.userId]);
+
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-in-platform',
+      payload: { email: 'dual@dual.test', password: 'a-long-enough-password' },
+    });
+    expect(response.statusCode).toBe(401);
+
+    // And they can still reach their own company through the door meant for them.
+    const cookie = await signIn(ctx.app, 'DUALROLE', 'dual', 'a-long-enough-password');
+    const session = await ctx.app.inject({ method: 'GET', url: '/api/v1/auth/session', headers: { cookie } });
+    expect(session.json().data.currentTenantName).toBe('Dual Role Sheds');
+  });
 });
 
 /**

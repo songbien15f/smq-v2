@@ -139,9 +139,11 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
   /**
    * A company user signs in with the code of their company, their username and their password.
    *
-   * Everything that can go wrong answers the same way. A caller who learns "that company exists
-   * but that username does not" has been handed a way to enumerate customers and staff, so the
-   * four failure modes below are deliberately indistinguishable in text, status and timing.
+   * An **unknown code**, an **unknown username**, a **removed membership** and a **wrong password**
+   * all answer identically — same text, same 401, same timing — because a caller who could tell
+   * them apart would have a way to enumerate customers and staff. A **suspended** company is the
+   * one case that answers differently (403, "on hold"), and only after the password has verified:
+   * at that point the caller has proved they work there, so nothing is leaked.
    */
   app.post('/auth/sign-in', async (request, reply) => {
     const body = parseBody(signInRequest, request.body, reply);
@@ -209,8 +211,14 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
    *
    * A separate route, not a flag on the one above: they belong to no company, so there is no code
    * to resolve and no username to look up. Keeping the two doors apart is what makes it impossible
-   * for a company user to arrive through this one — the check below refuses an account that holds
-   * a membership, because a company person belongs on the client app where seats and prices live.
+   * for a company user to arrive through this one — an account with **no** platform role and an
+   * account that **holds a company membership** are both refused, because a company person belongs
+   * on the client app where seats and prices live.
+   *
+   * The membership check is not redundant with the role check: a person who consults for the
+   * vendor while also working at a dealership would otherwise reach this door and land in a session
+   * with no company, where every company route refused them and no seat was counted — a confusing
+   * half-signed-in state. Signing in at the client app is what they actually want.
    */
   app.post('/auth/sign-in-platform', async (request, reply) => {
     const body = parseBody(platformSignInRequest, request.body, reply);
@@ -233,9 +241,20 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
       password_hash: string | null;
       platform_role: string | null;
       disabled_at: string | null;
-    }>('SELECT id, password_hash, platform_role, disabled_at FROM users WHERE email = ?', [body.email]);
+      membership_count: number;
+    }>(
+      `SELECT u.id, u.password_hash, u.platform_role, u.disabled_at,
+              (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.id AND m.status = 'active') AS membership_count
+         FROM users u WHERE u.email = ?`,
+      [body.email],
+    );
 
-    if (user === null || user.disabled_at !== null || user.platform_role === null) {
+    if (
+      user === null ||
+      user.disabled_at !== null ||
+      user.platform_role === null ||
+      Number(user.membership_count) > 0
+    ) {
       await burnVerificationTime(body.password);
       return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
     }
