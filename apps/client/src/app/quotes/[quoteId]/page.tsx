@@ -71,7 +71,7 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteId:
 
   return (
     <ShellFrame
-      companyName={session.memberships[0]?.tenantName}
+      companyName={session.currentTenantName}
       account={<SignOutButton />}
       capabilities={session.capabilities}
       subtitle={`Signed in as ${session.email}`}
@@ -196,7 +196,7 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteId:
             status={quote.data.status}
             customerEmail={customer?.email ?? ''}
             customerName={customerName}
-            companyName={session.memberships[0]?.tenantName ?? ''}
+            companyName={session.currentTenantName ?? ''}
             revision={{
               id: items[0].id,
               number: items[0].revision,
