@@ -63,6 +63,7 @@ function revision(patch: Partial<FrozenRevision> = {}): FrozenRevision {
       phone: '(07) 3000 0000',
       email: 'quotes@demo-sheds.test',
       logoText: 'DEMO SHEDS',
+      logoHash: null,
       terms: ['A deposit is required on signing.', 'Delivery is to the nearest accessible point.'],
       assumptions: null,
     },

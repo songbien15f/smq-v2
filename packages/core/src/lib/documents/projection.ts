@@ -38,6 +38,8 @@ export interface CustomerDocument {
     phone: string;
     email: string;
     logoText: string;
+    /** Which logo this document may use, or `null`. See `FrozenCompany.logoHash`. */
+    logoHash: string | null;
   };
   customer: {
     name: string;
@@ -248,6 +250,7 @@ export function toCustomerDocument(revision: FrozenRevision): CustomerDocument {
       phone: company.phone ?? '',
       email: company.email ?? '',
       logoText: company.logoText,
+      logoHash: company.logoHash ?? null,
     },
     customer: {
       name: fullName(customer.firstName, customer.lastName),
