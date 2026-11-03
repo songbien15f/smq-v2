@@ -146,10 +146,30 @@ export const changePasswordRequest = z
   });
 export type ChangePasswordRequest = z.infer<typeof changePasswordRequest>;
 
-/** Invite someone into a company. */
+/**
+ * Invite someone into a company.
+ *
+ * `username` is required because it is what the person will type at sign-in, and it is **their
+ * choice, not derived from the address**: an address is globally unique, but two companies can each
+ * have a `jo`, and a company administrator naming their own staff is the point. The invitation
+ * email states it, because a new person cannot guess a name they did not choose.
+ */
 export const inviteRequest = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
   role: z.enum(COMPANY_ROLES),
   displayName: z.string().trim().min(1, 'Enter a name').max(120),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Enter the username they will sign in with')
+    .max(80)
+    .regex(/^[a-z0-9._-]+$/, 'Letters, digits, dots, dashes and underscores only'),
 });
 export type InviteRequest = z.infer<typeof inviteRequest>;
+
+/** What an invitation answers: never the token, which travels only in the mail. */
+export interface InviteResponse {
+  invited: true;
+  email: string;
+}

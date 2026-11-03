@@ -112,7 +112,7 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       registerShedSafe(scope, db);
       registerPlatform(scope, db);
       registerUsage(scope, db);
-      registerSettings(scope, db);
+      registerSettings(scope, db, mail);
       registerShares(scope, db, process.env.SITE_ORIGIN ?? 'http://localhost:3063');
       registerAdmin(scope, db, config);
     },

@@ -16,6 +16,13 @@ import type { Db } from '@sq/db';
 import { z } from 'zod';
 import { newId, now } from '@sq/db';
 import { loadSettings, saveSettings, type CompanySettings } from '../lib/settings.js';
+import { inviteRequest } from '@sq/contracts';
+import { createInvitation, INVITE_TTL_MS, RESET_TTL_MS } from '../lib/invitations.js';
+import {
+  sendInviteMail,
+  sendResetMail,
+  type TransactionalDeps,
+} from '../lib/mail/transactional.js';
 import { parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 
@@ -62,7 +69,11 @@ export interface MemberView {
  * "seats are a number" model does not have: a sign-in that exceeds the count is refused, so the
  * number on this screen is a promise the system keeps.
  */
-export function registerSettings(app: FastifyInstance, db: Db): void {
+export function registerSettings(
+  app: FastifyInstance,
+  db: Db,
+  mail: TransactionalDeps | null = null,
+): void {
   /* --------------------------------------------------------------- settings */
 
   app.get('/settings', async (request, reply) => {
@@ -245,5 +256,160 @@ export function registerSettings(app: FastifyInstance, db: Db): void {
     });
 
     return sendOk(reply, { removed: request.params.email });
+  });
+
+  /**
+   * Invite a person into this company.
+   *
+   * The membership starts `pending`, not `active`: `resolveSignIn` only accepts `active`, so until
+   * the invitation is accepted the person cannot sign in and does not hold a seat. That matters
+   * because a seat is a live session — an unaccepted invitation must not consume one.
+   *
+   * The `users` row is reused when the address already exists, because `users.email` is unique
+   * across the whole installation. A second insert would fail with a constraint error, and an
+   * error naming that constraint would tell an administrator "that address belongs to another
+   * company", which is somebody else's information.
+   */
+  app.post('/team/invite', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'members:manage');
+    if (session === null) return;
+
+    if (mail === null) {
+      return sendFail(
+        reply,
+        'not_configured',
+        'Mail is not configured on this server, so an invitation cannot be sent.',
+      );
+    }
+
+    const body = parseBody(inviteRequest, request.body, reply);
+    if (body === null) return;
+
+    const tenantId = session.tenantId as string;
+
+    const existing = await db.get<{ user_id: string; status: string }>(
+      `SELECT m.user_id, m.status
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+        WHERE m.tenant_id = ? AND lower(u.email) = ?`,
+      [tenantId, body.email],
+    );
+
+    if (existing !== null && existing.status === 'active') {
+      return sendFail(
+        reply,
+        'conflict',
+        'That person is already in this company. Use Reset password if they cannot sign in.',
+      );
+    }
+
+    const tenant = await db.get<{ name: string; code: string | null }>(
+      'SELECT name, code FROM tenants WHERE id = ?',
+      [tenantId],
+    );
+    if (tenant === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    let userId = existing?.user_id ?? null;
+    if (userId === null) {
+      const found = await db.get<{ id: string }>('SELECT id FROM users WHERE lower(email) = ?', [body.email]);
+      userId = found?.id ?? null;
+    }
+
+    if (userId === null) {
+      userId = newId();
+      await db.run(
+        `INSERT INTO users (id, email, display_name, password_hash, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, 1, ?, ?)`,
+        [userId, body.email, body.displayName, now(), now()],
+      );
+    }
+
+    /*
+     * A removed member is reactivated in place rather than colliding on the composite primary key
+     * `(tenant_id, user_id)`. `DO UPDATE` keeps one row per person per company, so an invite after
+     * a removal restores access instead of failing on a constraint the administrator cannot read.
+     */
+    await db.run(
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?)
+       ON CONFLICT (tenant_id, user_id)
+       DO UPDATE SET role = excluded.role, status = 'pending', username = excluded.username, updated_at = excluded.updated_at`,
+      [tenantId, userId, body.role, now(), now(), body.username],
+    );
+
+    const invitation = await createInvitation(db, {
+      tenantId,
+      email: body.email,
+      role: body.role,
+      kind: 'member',
+      invitedBy: session.userId,
+      ttlMs: INVITE_TTL_MS,
+    });
+
+    await sendInviteMail(mail, {
+      to: body.email,
+      companyName: tenant.name,
+      companyCode: tenant.code ?? '',
+      username: body.username,
+      role: body.role,
+      token: invitation.token,
+    });
+
+    return sendOk(reply, { invited: true, email: body.email }, 201);
+  });
+
+  /**
+   * Send a member of this company a link to choose a new password.
+   *
+   * Scoped to `session.tenantId`, so an administrator of one company cannot reset a member of
+   * another — and a miss answers **404, not 403**, because a 403 would confirm that the address
+   * belongs to somebody.
+   */
+  app.post<{ Params: { email: string } }>('/team/:email/reset', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'members:manage');
+    if (session === null) return;
+
+    if (mail === null) {
+      return sendFail(
+        reply,
+        'not_configured',
+        'Mail is not configured on this server, so a reset link cannot be sent.',
+      );
+    }
+
+    const tenantId = session.tenantId as string;
+
+    const target = await db.get<{ user_id: string; username: string; email: string }>(
+      `SELECT m.user_id, m.username, u.email
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+        WHERE m.tenant_id = ? AND lower(u.email) = ? AND m.status = 'active'`,
+      [tenantId, request.params.email.trim().toLowerCase()],
+    );
+    if (target === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    const tenant = await db.get<{ name: string; code: string | null }>(
+      'SELECT name, code FROM tenants WHERE id = ?',
+      [tenantId],
+    );
+
+    const invitation = await createInvitation(db, {
+      tenantId,
+      email: target.email,
+      role: 'company_admin',
+      kind: 'reset',
+      invitedBy: session.userId,
+      ttlMs: RESET_TTL_MS,
+    });
+
+    await sendResetMail(mail, {
+      to: target.email,
+      companyName: tenant?.name ?? '',
+      companyCode: tenant?.code ?? '',
+      username: target.username,
+      token: invitation.token,
+    });
+
+    return sendOk(reply, { sent: true });
   });
 }
