@@ -22,6 +22,9 @@ export default defineConfig({
     // The legacy `.sqd` reader and writer. Its own entry because it touches `node:crypto`, so a
     // browser bundle must not pull it in through the root barrel.
     'quoteFile/index': 'src/lib/quoteFile/index.ts',
+    // The platform logo. Separate because it touches `node:fs`, which a browser bundle must not
+    // reach through the root barrel.
+    'branding/index': 'src/lib/branding/index.ts',
   },
   format: ['esm'],
   target: 'esnext',
