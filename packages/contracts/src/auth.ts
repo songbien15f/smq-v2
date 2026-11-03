@@ -89,6 +89,25 @@ export interface SessionView {
   expiresAt: string;
 }
 
+/**
+ * Asking for a reset link.
+ *
+ * The company code comes first for the same reason it does at sign-in — a username and an address
+ * are only meaningful inside one company — and the **address** is what the person is asked for
+ * rather than the username, because somebody who has forgotten their password has often forgotten
+ * the name they sign in with, while they still know which mailbox is theirs.
+ */
+export const resetRequestRequest = z.object({
+  companyCode: z.string().trim().min(1, 'Enter your company code').max(16),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+});
+export type ResetRequestRequest = z.infer<typeof resetRequestRequest>;
+
+/** The one answer a reset request ever gives. */
+export interface ResetRequestResponse {
+  sent: true;
+}
+
 /** Set or change a password. Used for the first sign-in and for a voluntary change. */
 export const changePasswordRequest = z
   .object({

@@ -24,12 +24,15 @@ import {
   changePasswordRequest,
   platformCapabilitiesFor,
   platformSignInRequest,
+  resetRequestRequest,
   signInRequest,
   type MembershipView,
   type SessionView,
 } from '@sq/contracts';
 import type { ApiConfig } from '../config.js';
 import { burnVerificationTime, hashPassword, verifyPassword } from '../lib/password.js';
+import { createInvitation, RESET_TTL_MS } from '../lib/invitations.js';
+import { sendResetMail, type TransactionalDeps } from '../lib/mail/transactional.js';
 import {
   createSession,
   resolveSession,
@@ -47,6 +50,15 @@ export const SESSION_COOKIE = 'sq_session';
 
 const SIGNIN_LIMIT = 10;
 const SIGNIN_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Reset requests, tighter than sign-ins.
+ *
+ * A sign-in limit is generous because a person mistypes a password and a fleet behind one office
+ * address shares the IP counter. A reset request sends mail, so the per-account limit is half the
+ * sign-in one and the address limit is per person rather than per network.
+ */
+const RESET_LIMIT = 5;
 
 /** Build the view a front-end reads. Capabilities come from `@sq/contracts`, not
  *  from anything the browser sent. */
@@ -135,7 +147,12 @@ export async function resolveSignIn(
   return { userId: row.user_id, tenantId: row.tenant_id, tenantStatus: row.tenant_status };
 }
 
-export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): void {
+export function registerAuth(
+  app: FastifyInstance,
+  db: Db,
+  config: ApiConfig,
+  mail: TransactionalDeps | null = null,
+): void {
   /**
    * A company user signs in with the code of their company, their username and their password.
    *
@@ -265,6 +282,106 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
     }
 
     return completeSignIn({ request, reply, userId: user.id, tenantId: null, perAccount });
+  });
+
+  /**
+   * Ask for a link to choose a new password.
+   *
+   * ## One answer, whatever happened
+   *
+   * An unknown company code, an unknown address, a removed member, a disabled account and a
+   * suspended company all answer the same status and the same sentence. A caller who could tell
+   * them apart would have a way to enumerate a customer's staff — and with a company code in the
+   * request, a way to learn which codes are real.
+   *
+   * ## Mail broken is a fact about the server, not about the caller
+   *
+   * So the `503` comes **before** the lookup: telling somebody "mail is not configured" reveals
+   * nothing about whether their address exists, and answering `200` while sending nothing would be
+   * a lie the person discovers an hour later.
+   *
+   * ## The rate limit runs before the lookup
+   *
+   * `reset:acct` stops one address being mailed repeatedly; `reset:ip` stops one address spraying
+   * many. Both are consumed first, so a probe costs a row rather than a database read it can time.
+   */
+  app.post('/auth/reset/request', async (request, reply) => {
+    const body = parseBody(resetRequestRequest, request.body, reply);
+    if (body === null) return;
+
+    if (mail === null) {
+      return sendFail(
+        reply,
+        'not_configured',
+        'Mail is not configured on this server, so a reset link cannot be sent. Ask your company administrator to set your password.',
+      );
+    }
+
+    const ipHash = hashIp(clientIp(request.headers, request.ip));
+    const perAccount = `reset:acct:${hashToken(`${body.companyCode.toUpperCase()}:${body.email}`)}`;
+
+    const accountLimit = await rateLimit.consume(db, perAccount, RESET_LIMIT, SIGNIN_WINDOW_MS);
+    if (!accountLimit.allowed) {
+      return sendFail(reply, 'rate_limited', 'Too many attempts. Try again in a few minutes.');
+    }
+    const ipLimit = await rateLimit.consume(db, `reset:ip:${ipHash}`, RESET_LIMIT * 3, SIGNIN_WINDOW_MS);
+    if (!ipLimit.allowed) {
+      return sendFail(reply, 'rate_limited', 'Too many attempts from this network. Try again later.');
+    }
+
+    const target = await db.get<{ user_id: string; tenant_id: string; tenant_name: string; username: string }>(
+      `SELECT m.user_id, m.tenant_id, t.name AS tenant_name, m.username
+         FROM memberships m
+         JOIN tenants t ON t.id = m.tenant_id
+         JOIN users   u ON u.id = m.user_id
+        WHERE t.code = ? AND t.status = 'active'
+          AND m.status = 'active'
+          AND lower(u.email) = ?
+          AND u.disabled_at IS NULL`,
+      [body.companyCode.trim().toUpperCase(), body.email],
+    );
+
+    // The one answer. Deliberately identical in every branch, including this one.
+    const answer = { sent: true as const };
+
+    if (target === null) {
+      // Same cost as a real send that builds a token, so timing does not answer the question either.
+      await burnVerificationTime(body.email);
+      return sendOk(reply, answer);
+    }
+
+    const invitation = await createInvitation(db, {
+      tenantId: target.tenant_id,
+      email: body.email,
+      role: 'company_admin',
+      kind: 'reset',
+      invitedBy: null,
+      ttlMs: RESET_TTL_MS,
+    });
+
+    try {
+      await sendResetMail(mail, {
+        to: body.email,
+        companyName: target.tenant_name,
+        companyCode: body.companyCode.trim().toUpperCase(),
+        username: target.username,
+        token: invitation.token,
+      });
+    } catch (error) {
+      /*
+       * The relay refused. The answer is the same sentence — the person on the other end cannot tell
+       * a refused send from a delivered one either way, and an attacker must not learn that a
+       * candidate address is real because the server reported a mail failure for it.
+       *
+       * What must NOT happen is a link that can never arrive being left live, so the invitation is
+       * revoked here. An operator diagnosing "the reset mail never came" reads the API log.
+       */
+      await db.run('UPDATE invitations SET revoked_at = ? WHERE id = ?', [now(), invitation.id]);
+      request.log.error({ err: error }, 'reset mail could not be sent');
+      return sendOk(reply, answer);
+    }
+
+    return sendOk(reply, answer);
   });
 
   /**

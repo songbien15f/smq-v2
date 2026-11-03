@@ -65,6 +65,12 @@ const ALLOWED_PREFIXES = [
   'quotes',
   'auth/session',
   'auth/password',
+  /*
+   * Choosing a new password from a link: a forgotten one, or an invitation accepted for the first
+   * time. Public routes — the person using them is by definition not signed in.
+   */
+  'auth/reset',
+  'auth/join',
 ] as const;
 
 /** True when `path` is one the client is meant to use. */

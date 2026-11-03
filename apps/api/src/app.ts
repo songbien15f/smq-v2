@@ -14,6 +14,7 @@ import cors from '@fastify/cors';
 import type { Db } from '@sq/db';
 import type { ApiConfig } from './config.js';
 import { resolveSession } from './lib/sessions.js';
+import type { TransactionalDeps } from './lib/mail/transactional.js';
 import { registerHealth } from './routes/health.js';
 import { registerAuth, SESSION_COOKIE } from './routes/auth.js';
 import { registerQuotes } from './routes/quotes.js';
@@ -39,10 +40,17 @@ export interface AppDeps {
   config: ApiConfig;
   /** Silences the request log in tests. */
   logger?: boolean;
+  /**
+   * How to send mail that is not a quote — a reset link, an invitation.
+   *
+   * `null` means this server has no SMTP. The routes that need it answer 503 with a sentence
+   * rather than accepting a request and quietly sending nothing.
+   */
+  mail?: TransactionalDeps | null;
 }
 
 /** Build the API. The caller owns the database and closes it. */
-export async function buildApp({ db, config, logger = false }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ db, config, logger = false, mail = null }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger,
     trustProxy: true,
@@ -87,7 +95,7 @@ export async function buildApp({ db, config, logger = false }: AppDeps): Promise
   await app.register(
     async (scope) => {
       registerHealth(scope, db);
-      registerAuth(scope, db, config);
+      registerAuth(scope, db, config, mail);
       registerQuotes(scope, db);
       registerEvaluations(scope, db);
       registerPriceBooks(scope, db);
