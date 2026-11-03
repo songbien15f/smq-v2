@@ -1,26 +1,29 @@
 /**
- * Install the company. Run once, on a fresh database.
+ * Install a company. Run once, on a fresh database; `--if-empty` makes it safe to re-run.
  *
  * ```bash
  * COMPANY_NAME="ABC Sheds Pty Ltd" \
  * COMPANY_CODE=ABC \
  * COMPANY_ADMIN_EMAIL=owner@abcsheds.com.au \
+ * COMPANY_ADMIN_PASSWORD="…" \
  * pnpm install:company
  * ```
  *
+ * `COMPANY_CODE` is the short business code a person types at the sign-in screen, and
+ * `COMPANY_ADMIN_USERNAME` defaults to the part of the email before the `@`. The report at the end
+ * prints both, because those two plus the password are the credentials.
+ *
  * ## Why this is a script and not a screen
  *
- * A screen is a route, a route is reachable, and a route that creates the company is the
- * one thing this installation must not expose twice. The API's create route exists for
- * provisioning, but it is behind a platform capability that has to be granted before it can
- * be called — this script is how the *first* administrator comes to exist, so that there is
- * somebody to grant anything to.
+ * Booting a brand-new installation has a chicken and an egg: creating a company over HTTP needs a
+ * platform capability, and granting a capability needs an administrator. This script is how that
+ * first administrator comes to exist.
  *
  * ## It refuses to guess
  *
- * No default name, no default email, no generated password printed to a log. An
- * installation that quietly became "Demo Company" with a password in a terminal scrollback
- * is an installation nobody can account for later.
+ * No default name, no default email, no generated password printed to a log. An installation that
+ * quietly became "Demo Company" with a password in a terminal scrollback is an installation
+ * nobody can account for later.
  */
 
 import { dbConfigFromEnv, newId, now, openDb } from '@sq/db';
@@ -101,8 +104,7 @@ async function main(): Promise<void> {
     .replace(/[^A-Z0-9-]/g, '')
     .slice(0, 16);
   if (code === '') {
-    process.stderr.write('COMPANY_CODE produced an empty value. Use letters, digits or dashes.
-');
+    process.stderr.write('COMPANY_CODE produced an empty value. Use letters, digits or dashes.\n');
     process.exitCode = 1;
     return;
   }
@@ -119,10 +121,10 @@ async function main(): Promise<void> {
     /*
      * `--if-empty` is how the launcher runs this.
      *
-     * Without it the installer *refuses* a second company, which is the right behaviour for a
-     * person and the wrong one for a start script: a second run would stop with an error and the
-     * operator would see a failed install for a machine that is already installed. The flag asks
-     * this script to skip instead of refuse — the refusal itself is unchanged.
+     * Without it the installer refuses to run on a database that already has a company, which is
+     * the right behaviour for a person and the wrong one for a start script: a second run would
+     * stop with an error and the operator would see a failed install for a machine that is already
+     * installed. The flag asks this script to skip instead of refuse.
      */
     const ifEmpty = process.argv.includes('--if-empty');
 
@@ -133,7 +135,7 @@ async function main(): Promise<void> {
     }
     if (existing > 0) {
       process.stderr.write(
-        `This database already holds ${existing} company. The installer creates one and refuses a second.\n` +
+        `This database already holds ${existing} company. The installer creates one and refuses to run here.\n` +
           'Nothing was changed. To reinstall, start from an empty database.\n',
       );
       process.exitCode = 1;

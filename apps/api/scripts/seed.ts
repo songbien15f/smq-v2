@@ -18,6 +18,9 @@ import { hashPassword } from '../src/lib/password.js';
 const PLATFORM_EMAIL = process.env.SEED_PLATFORM_EMAIL ?? 'ops@smartquote.local';
 const PLATFORM_PASSWORD = process.env.SEED_PLATFORM_PASSWORD ?? 'platform-password-change-me';
 const COMPANY_SLUG = process.env.SEED_COMPANY_SLUG ?? 'demo-sheds';
+/** The code typed at the sign-in screen, and the username beside it. */
+const COMPANY_CODE = (process.env.SEED_COMPANY_CODE ?? 'DEMOSHEDS').toUpperCase();
+const COMPANY_USERNAME = process.env.SEED_COMPANY_USERNAME ?? 'owner';
 const COMPANY_EMAIL = process.env.SEED_COMPANY_EMAIL ?? 'owner@demo-sheds.local';
 const COMPANY_PASSWORD = process.env.SEED_COMPANY_PASSWORD ?? 'company-password-change-me';
 
@@ -76,12 +79,17 @@ async function main(): Promise<void> {
     });
     process.stdout.write(`platform admin ${PLATFORM_EMAIL}: ${platform.created ? 'created' : 'exists'}\n`);
 
-    const existingTenant = await db.get<{ id: string }>('SELECT id FROM tenants WHERE slug = ?', [
-      COMPANY_SLUG,
-    ]);
+    const existingTenant = await db.get<{ id: string; code: string | null }>(
+      'SELECT id, code FROM tenants WHERE slug = ?',
+      [COMPANY_SLUG],
+    );
 
     if (existingTenant !== null) {
-      process.stdout.write(`company ${COMPANY_SLUG}: exists (${existingTenant.id})\n`);
+      // Report the code that is actually stored, not the one this run would have used: a company
+      // created before 009 was backfilled has whatever the migration derived for it.
+      process.stdout.write(
+        `company ${COMPANY_SLUG}: exists (${existingTenant.id}, code ${existingTenant.code ?? '(none)'})\n`,
+      );
     } else {
       const tenantId = newId();
       const at = now();
@@ -94,14 +102,14 @@ async function main(): Promise<void> {
 
       await db.transaction(async (tx) => {
         await tx.run(
-          `INSERT INTO tenants (id, name, slug, status, seats, created_at, updated_at)
-           VALUES (?, ?, ?, 'active', ?, ?, ?)`,
-          [tenantId, 'Demo Sheds Pty Ltd', COMPANY_SLUG, 3, at, at],
+          `INSERT INTO tenants (id, name, slug, code, status, seats, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+          [tenantId, 'Demo Sheds Pty Ltd', COMPANY_SLUG, COMPANY_CODE, 3, at, at],
         );
         await tx.run(
-          `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
-           VALUES (?, ?, 'company_admin', 'active', ?, ?)`,
-          [tenantId, owner.id, at, at],
+          `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+           VALUES (?, ?, 'company_admin', 'active', ?, ?, ?)`,
+          [tenantId, owner.id, at, at, COMPANY_USERNAME],
         );
         await tx.run(
           `INSERT INTO company_settings (id, tenant_id, version, settings_json, created_at, created_by)
@@ -127,8 +135,11 @@ async function main(): Promise<void> {
 
     process.stdout.write(
       '\nSign in to the client app at http://localhost:3061\n' +
-        `  company admin: ${COMPANY_EMAIL} / ${COMPANY_PASSWORD}\n\n` +
-        'Platform administration at http://localhost:3062\n' +
+        '  company code: ' +
+        `${COMPANY_CODE}\n` +
+        `  username:     ${COMPANY_USERNAME}\n` +
+        `  password:     ${COMPANY_PASSWORD}\n\n` +
+        'Platform administration at http://localhost:3062 (signs in by email)\n' +
         `  ${PLATFORM_EMAIL} / ${PLATFORM_PASSWORD}\n\n` +
         'Change these in .env (SEED_*) before any shared deployment.\n',
     );
