@@ -7,8 +7,8 @@
  */
 
 export { BrandMark, BrandLogo } from './brand.js';
-export { Button, Spinner } from './button.js';
-export type { ButtonProps, ButtonVariant } from './button.js';
+export { Button, ActionLink, Spinner } from './button.js';
+export type { ButtonProps, ButtonVariant, ActionLinkProps } from './button.js';
 export { Field } from './field.js';
 export type { FieldProps } from './field.js';
 export { Panel, StatusPill, Stat, EmptyState } from './surface.js';

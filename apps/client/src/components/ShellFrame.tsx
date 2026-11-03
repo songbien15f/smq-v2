@@ -51,7 +51,7 @@ export function ShellFrame({
     <div className="min-h-dvh bg-sq-ground">
       <header className="sq-on-brand bg-sq-brand">
         <div className="mx-auto flex min-h-12 max-w-[1400px] flex-wrap items-center justify-between gap-sq-2 px-sq-3">
-          <a href="/quotes" className="flex items-center gap-2 no-underline">
+          <a href="/quotes" className="flex min-h-11 items-center gap-2 no-underline">
             <BrandMark size={22} tone="brand" title="" />
             <span className="text-sq-body font-semibold text-white">SmartQuote</span>
             {companyName !== undefined && companyName !== null && (

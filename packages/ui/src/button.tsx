@@ -12,7 +12,7 @@
  * - `destructive` uses the danger colour and is never the default action.
  */
 
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
 
@@ -66,6 +66,31 @@ export function Button({
       {loading ? <Spinner /> : icon}
       {children}
     </button>
+  );
+}
+
+export interface ActionLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'className'> {
+  variant?: ButtonVariant;
+  /** Rendered before the label. Must be an SVG, never an emoji. */
+  icon?: ReactNode;
+  className?: string;
+}
+
+/**
+ * The same shape as `Button`, for the cases that must be a link: navigation, a download, an external
+ * destination. A `<button>` that calls `router.push` loses middle-click, "open in a new tab" and the
+ * status-bar preview, which are exactly the affordances an operator uses.
+ *
+ * It carries `min-h-11`, so a link and a button standing beside each other are the same height and
+ * both clear the 24 CSS px target-size floor with room to spare — the shortfall the bare
+ * quote-number links had.
+ */
+export function ActionLink({ variant = 'secondary', icon, children, className = '', ...rest }: ActionLinkProps) {
+  return (
+    <a className={`${BASE} ${VARIANT[variant]} min-h-11 no-underline ${className}`.trim()} {...rest}>
+      {icon}
+      {children}
+    </a>
   );
 }
 
