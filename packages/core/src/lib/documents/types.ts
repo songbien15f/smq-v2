@@ -46,6 +46,17 @@ export interface FrozenCompany {
   email: string | null;
   /** What to print where a logo would go, when no image is configured. */
   logoText: string;
+  /**
+   * The sha256 of the logo the platform was showing when this revision was saved, or `null`.
+   *
+   * A hash rather than the bytes: a revision records *which* logo it used, and the renderer compares
+   * that against the file it has now. This keeps a saved quote's appearance fixed without copying a
+   * hundred kilobytes into every row — and when the referenced image is gone, the document prints
+   * `logoText` rather than a newer mark that was never on this quote.
+   *
+   * `null` for a revision saved before this field existed, which is legitimate history.
+   */
+  logoHash: string | null;
   terms: string[];
   /**
    * The company's scope notes.

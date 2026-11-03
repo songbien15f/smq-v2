@@ -34,6 +34,10 @@
     "./quoteFile": {
       "types": "./dist/quoteFile/index.d.ts",
       "default": "./dist/quoteFile/index.js"
+    },
+    "./branding": {
+      "types": "./dist/branding/index.d.ts",
+      "default": "./dist/branding/index.js"
     }
   },
   "files": [

@@ -89,6 +89,47 @@ export interface SessionView {
   expiresAt: string;
 }
 
+/**
+ * Asking for a reset link.
+ *
+ * The company code comes first for the same reason it does at sign-in — a username and an address
+ * are only meaningful inside one company — and the **address** is what the person is asked for
+ * rather than the username, because somebody who has forgotten their password has often forgotten
+ * the name they sign in with, while they still know which mailbox is theirs.
+ */
+export const resetRequestRequest = z.object({
+  companyCode: z.string().trim().min(1, 'Enter your company code').max(16),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+});
+export type ResetRequestRequest = z.infer<typeof resetRequestRequest>;
+
+/** The one answer a reset request ever gives. */
+export interface ResetRequestResponse {
+  sent: true;
+}
+
+/**
+ * Spending a link: choose the password it unlocks.
+ *
+ * One schema for both a reset and an invitation, because the two differ only in which token they
+ * carry and which table row they activate. The password rule is the same one the change-password
+ * form uses, so somebody who chose a password there is not told it is now too short.
+ */
+export const passwordFromTokenRequest = z
+  .object({
+    token: z.string().min(20, 'That link is no longer valid').max(200),
+    password: z
+      .string()
+      .min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters`)
+      .max(200, 'That password is too long'),
+    confirmPassword: z.string(),
+  })
+  .refine((body) => body.password === body.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The two passwords do not match',
+  });
+export type PasswordFromTokenRequest = z.infer<typeof passwordFromTokenRequest>;
+
 /** Set or change a password. Used for the first sign-in and for a voluntary change. */
 export const changePasswordRequest = z
   .object({
@@ -105,10 +146,30 @@ export const changePasswordRequest = z
   });
 export type ChangePasswordRequest = z.infer<typeof changePasswordRequest>;
 
-/** Invite someone into a company. */
+/**
+ * Invite someone into a company.
+ *
+ * `username` is required because it is what the person will type at sign-in, and it is **their
+ * choice, not derived from the address**: an address is globally unique, but two companies can each
+ * have a `jo`, and a company administrator naming their own staff is the point. The invitation
+ * email states it, because a new person cannot guess a name they did not choose.
+ */
 export const inviteRequest = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
   role: z.enum(COMPANY_ROLES),
   displayName: z.string().trim().min(1, 'Enter a name').max(120),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Enter the username they will sign in with')
+    .max(80)
+    .regex(/^[a-z0-9._-]+$/, 'Letters, digits, dots, dashes and underscores only'),
 });
 export type InviteRequest = z.infer<typeof inviteRequest>;
+
+/** What an invitation answers: never the token, which travels only in the mail. */
+export interface InviteResponse {
+  invited: true;
+  email: string;
+}

@@ -74,28 +74,53 @@ but it is **not** what you type to sign in.
 
 ### A second person with a smaller role
 
-**There is no invite screen yet.** The Team page can change a role and remove a member, and the API
-refuses a change that would leave the company with no administrator — but nothing creates a member.
-`inviteRequest` exists in `@sq/contracts` with no route and no form consuming it.
+Sign in as `owner`, open **Team**, and press **Invite**. Give an email, a name, the **username** they
+will sign in with, and a role. They receive a link that expires in seven days; until they open it
+they cannot sign in and hold no seat, so the roster stays honest about who can reach the company.
 
-Until that slice lands, add a person with the SQL below (or sign in as the existing administrator and
-work with one account). Their role decides what the server allows for every operation, so a hidden
-button is never the only thing stopping them.
+Their role decides what the server allows for every operation, so a hidden button is never the only
+thing stopping them.
 
-```sql
--- Replace the values. `username` is what they type at sign-in, unique per company.
-INSERT INTO users (id, email, display_name, password_hash, must_change_password, password_set_at, created_at, updated_at)
-VALUES (gen_random_uuid()::text, 'sales@demo-sheds.local', 'Demo Sales',
-        '<scrypt hash>', 1, now()::text, now()::text, now()::text);
+### Forgot a password
 
-INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
-SELECT t.id, u.id, 'estimator', 'active', now()::text, now()::text, 'sales'
-  FROM tenants t, users u
- WHERE t.code = 'DEMOSHEDS' AND u.email = 'sales@demo-sheds.local';
-```
+- **A person**: "Forgot your password?" on the sign-in screen. They enter the company code and their
+  email; if both match, a link arrives that expires in an hour. Opening it asks for a new password and
+  then signs them in, ending every session the account already had.
+- **An administrator**: **Team → Reset password** on a row. Same link, and the message names the
+  company code and username — which is the answer to the usual "I have forgotten which name I use".
+- The request form **never says whether an address exists**. If it says "check your email", that is
+  the answer for a wrong address too. An operator diagnosing a missing message reads the API log.
+- Mail must be configured: `SMTP_USER`, `SMTP_PASS` **and** `MAIL_FROM`. Missing any of the three
+  counts as unconfigured, and the request answers **503** rather than pretending to have sent
+  something.
+- **A reset link is a bearer token.** Whoever opens it can set the password, and is then signed in as
+  that person. That is true of every product that mails a link, and it is why the link lives an hour.
+  The person who *requested* it does not get an exclusive right to it — forwarding it hands over the
+  account. Requesting a second link revokes the first, so an old message stops working.
+- **A password belongs to the person, not the company.** If one addresses already exists at another
+  company, the invitation reuses that account (it cannot do otherwise — the address is unique across
+  the installation), and the password chosen through the link applies everywhere that person signs
+  in. Inviting somebody who already works at another dealership gives them the same credential at
+  both; that is intended, and worth knowing before you invite.
+- An invitation is **`pending`** until accepted: it cannot sign in and holds no seat. Inviting the
+  same address again replaces the earlier link.
 
-Generating the hash by hand is awkward, so the practical route is `pnpm db:seed` on a scratch database
-or a small script — the point is that **no screen does it yet**.
+### The platform logo
+
+One logo for the whole product, from `assets/logo.png`:
+
+| Purpose | Variable | Value |
+| ------- | -------- | ----- |
+| Embedded in documents | `LOGO_FILE` | `./assets/logo.png` |
+| Header of the three apps | `NEXT_PUBLIC_LOGO_SRC` | `/logo.png` |
+
+Leave both unset and documents print each company's text logo and the header shows the built-in
+shield. Supported formats are **PNG, JPEG and WebP** (chosen by the bytes, not the file name); **SVG
+is refused**, because it can carry script into a document a customer opens.
+
+> **To change the logo, add a new file and point the variables at it. Do not overwrite the old one.**
+> A saved quote remembers the hash of the logo it was sent with, so overwriting makes every quote
+> saved under the old mark print its text logo from then on. See `KNOWN-DEVIATIONS.md` row 10.
 
 ### Adding your own company
 

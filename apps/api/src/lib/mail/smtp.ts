@@ -74,8 +74,16 @@ export function smtpConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SmtpCon
   };
 }
 
-/** True when mail can be sent at all, so the UI can disable a button honestly. */
+/**
+ * True when mail can be sent at all, so the UI can disable a button honestly.
+ *
+ * Credentials are not enough. A server with `SMTP_USER`/`SMTP_PASS` and no `MAIL_FROM` can open a
+ * connection and has no address to send **from**, so every message is refused — and a reset form
+ * that believed otherwise told the person "we have sent them a link" while nothing was sent.
+ */
 export function mailIsConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const from = env.MAIL_FROM;
+  if (from === undefined || from.trim() === '') return false;
   try {
     smtpConfigFromEnv(env);
     return true;

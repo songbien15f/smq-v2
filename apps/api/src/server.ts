@@ -22,6 +22,8 @@ import { dbConfigFromEnv, openDb } from '@sq/db';
 import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
 import { closeAllBooks } from './lib/priceBook.js';
+import { createSmtpTransport, mailIsConfigured, smtpConfigFromEnv } from './lib/mail/smtp.js';
+import type { TransactionalDeps } from './lib/mail/transactional.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -52,7 +54,22 @@ async function main(): Promise<void> {
     );
   }
 
-  const app = await buildApp({ db, config, logger: true });
+  /*
+   * Mail for a reset link or an invitation, or `null` when this server has no SMTP.
+   *
+   * Built once here rather than per request: `createSmtpTransport` reads configuration that cannot
+   * change without a restart, and the routes treat `null` as "answer 503", which is a fact worth
+   * deciding at boot.
+   */
+  const mail: TransactionalDeps | null = mailIsConfigured()
+    ? {
+        transport: createSmtpTransport(smtpConfigFromEnv()),
+        from: (process.env.MAIL_FROM ?? '').trim(),
+        publicOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:3061',
+      }
+    : null;
+
+  const app = await buildApp({ db, config, logger: true, mail });
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');

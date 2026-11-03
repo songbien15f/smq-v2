@@ -26,6 +26,33 @@ export function BrandMark({ size = 28, tone = 'ink', title = 'SmartQuote' }: Bra
   const goldId = `sq-gold-${uid}`;
   const field = tone === 'brand' ? '#ffffff' : 'var(--color-sq-brand)';
 
+  /*
+   * The vendor's mark, when one is configured.
+   *
+   * A URL rather than a file path because this runs in three browsers and one server, and the
+   * document side already reads the same image from disk through `LOGO_FILE`. Unset means the
+   * environment has no logo, and the shield below is the fallback a person still recognises.
+   *
+   * `NEXT_PUBLIC_` so Next inlines it into the client bundle at build time; a value that changed
+   * per request could not reach a client component.
+   */
+  const logoSrc = process.env.NEXT_PUBLIC_LOGO_SRC;
+
+  if (logoSrc !== undefined && logoSrc.trim() !== '') {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- the size is a prop, not a layout, and
+      // this component must render outside Next too.
+      <img
+        src={logoSrc}
+        width={size}
+        height={size}
+        alt={title}
+        aria-hidden={title === '' || undefined}
+        className="object-contain"
+      />
+    );
+  }
+
   return (
     <svg
       width={size}

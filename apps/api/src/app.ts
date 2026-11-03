@@ -14,6 +14,7 @@ import cors from '@fastify/cors';
 import type { Db } from '@sq/db';
 import type { ApiConfig } from './config.js';
 import { resolveSession } from './lib/sessions.js';
+import type { TransactionalDeps } from './lib/mail/transactional.js';
 import { registerHealth } from './routes/health.js';
 import { registerAuth, SESSION_COOKIE } from './routes/auth.js';
 import { registerQuotes } from './routes/quotes.js';
@@ -39,16 +40,46 @@ export interface AppDeps {
   config: ApiConfig;
   /** Silences the request log in tests. */
   logger?: boolean;
+  /**
+   * How to send mail that is not a quote — a reset link, an invitation.
+   *
+   * `null` means this server has no SMTP. The routes that need it answer 503 with a sentence
+   * rather than accepting a request and quietly sending nothing.
+   */
+  mail?: TransactionalDeps | null;
 }
 
 /** Build the API. The caller owns the database and closes it. */
-export async function buildApp({ db, config, logger = false }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ db, config, logger = false, mail = null }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger,
     trustProxy: true,
     // A body limit, because an unbounded one is a memory exhaustion route. A shed
     // config with 40 options is a few kilobytes; 1 MB is generous.
     bodyLimit: 1024 * 1024,
+  });
+
+  /**
+   * One error handler, so an unhandled throw never returns a stack trace.
+   *
+   * The message is logged; the client gets a code and a sentence. A stack trace in a
+   * response is an inventory of the system handed to whoever asked.
+   *
+   * ## Why this is registered **before** the route plugin
+   *
+   * Fastify resolves handlers per encapsulation context. A handler set on the root instance
+   * *after* `register` has already created the child context is not inherited by it, so the routes
+   * answered with Fastify's default shape — including the original error `message`, which is how a
+   * raw `UNIQUE constraint failed: memberships.username` reached a browser. Registering first means
+   * the child is created with the handler already inherited.
+   */
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error }, 'unhandled');
+    reply.status(500).send({
+      ok: false,
+      code: 'internal',
+      message: 'Something went wrong. The details were logged.',
+    });
   });
 
   await app.register(cookie);
@@ -87,7 +118,7 @@ export async function buildApp({ db, config, logger = false }: AppDeps): Promise
   await app.register(
     async (scope) => {
       registerHealth(scope, db);
-      registerAuth(scope, db, config);
+      registerAuth(scope, db, config, mail);
       registerQuotes(scope, db);
       registerEvaluations(scope, db);
       registerPriceBooks(scope, db);
@@ -104,27 +135,12 @@ export async function buildApp({ db, config, logger = false }: AppDeps): Promise
       registerShedSafe(scope, db);
       registerPlatform(scope, db);
       registerUsage(scope, db);
-      registerSettings(scope, db);
+      registerSettings(scope, db, mail);
       registerShares(scope, db, process.env.SITE_ORIGIN ?? 'http://localhost:3063');
       registerAdmin(scope, db, config);
     },
     { prefix: '/api/v1' },
   );
-
-  /**
-   * One error handler, so an unhandled throw never returns a stack trace.
-   *
-   * The message is logged; the client gets a code and a sentence. A stack trace in a
-   * response is an inventory of the system handed to whoever asked.
-   */
-  app.setErrorHandler((error, request, reply) => {
-    request.log.error({ err: error }, 'unhandled');
-    reply.status(500).send({
-      ok: false,
-      code: 'internal',
-      message: 'Something went wrong. The details were logged.',
-    });
-  });
 
   app.setNotFoundHandler((_request, reply) => {
     // The envelope shape is kept even for a 404, so a client parses one shape.

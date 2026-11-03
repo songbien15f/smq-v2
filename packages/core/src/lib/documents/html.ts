@@ -21,6 +21,20 @@
  */
 
 import type { CustomerDocument } from './projection';
+import { logoDataUri, type LogoImage } from '@/lib/branding/logo';
+
+/**
+ * What the renderer may take beyond the document itself.
+ *
+ * One member, because the only thing a document needs that is not frozen in it is the **image** the
+ * frozen hash points at. The value is looked up and passed in rather than read here, so this module
+ * stays a pure function of its inputs and `packages/core` keeps its no-filesystem rule at the render
+ * boundary.
+ */
+export interface QuoteHtmlOptions {
+  /** The platform logo, or `null`/absent when there is none. */
+  logo?: LogoImage | null;
+}
 
 /**
  * Escape text for an HTML text node or an attribute value.
@@ -57,6 +71,27 @@ function row(label: string, value: string | null): string {
   return value === null || value === '' ? '' : `<div class="row"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
 }
 
+/**
+ * The image, or the company's name as text.
+ *
+ * The image is used **only when the logo on hand is the one the revision recorded** — `logoHash`
+ * against the supplied file's `sha256`. A revision that froze nothing, or froze a file the platform
+ * no longer has, prints the text. That is the whole reason the hash travels in the revision: a
+ * quote re-opened next year must not silently acquire a mark it was never sent with.
+ *
+ * The `alt` is the company's name, so the header still reads correctly where images are off — which
+ * matters in a mail client more than in a browser.
+ */
+function logoMarkup(
+  logoText: string,
+  companyName: string,
+  logoHash: string | null,
+  logo: LogoImage | null,
+): string {
+  if (logo === null || logoHash === null || logoHash !== logo.sha256) return escapeHtml(logoText);
+  return `<img src="${logoDataUri(logo)}" alt="${escapeHtml(companyName)}" class="logo-img">`;
+}
+
 /** An ISO date as a person reads it. Formatting is fixed so a server's locale cannot change it. */
 function readableDate(iso: string): string {
   const parsed = Date.parse(iso);
@@ -72,7 +107,7 @@ function readableDate(iso: string): string {
  * The SVG plan is generated from the revision's own dimensions, so it is the building that was
  * quoted rather than a picture of whatever is on a screen now.
  */
-export function renderQuoteHtml(document: CustomerDocument): string {
+export function renderQuoteHtml(document: CustomerDocument, options: QuoteHtmlOptions = {}): string {
   const { company, customer, building, price, plan } = document;
   const indicative = document.status !== 'priced';
 
@@ -88,6 +123,7 @@ export function renderQuoteHtml(document: CustomerDocument): string {
   body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #111; font-size: 11pt; line-height: 1.45; margin: 0; }
   header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8mm; border-bottom: 2px solid #111; padding-bottom: 8mm; }
   .logo { font-size: 20pt; font-weight: 700; letter-spacing: 1px; }
+  .logo-img { max-height: 16mm; max-width: 55mm; object-fit: contain; }
   .company { font-size: 9pt; color: #333; }
   h1 { font-size: 15pt; margin: 6mm 0 2mm; }
   h2 { font-size: 11pt; text-transform: uppercase; letter-spacing: .5px; margin: 6mm 0 2mm; border-bottom: 1px solid #ccc; padding-bottom: 1mm; }
@@ -116,7 +152,7 @@ ${indicative ? `<div class="watermark">INDICATIVE — ALLOWANCES APPLY</div>` : 
 
 <header>
   <div>
-    <div class="logo">${escapeHtml(company.logoText)}</div>
+    <div class="logo">${logoMarkup(company.logoText, company.name, company.logoHash, options.logo ?? null)}</div>
     <div class="company">
       ${escapeHtml(company.name)}${company.address === '' ? '' : `<br>${escapeHtml(company.address)}`}${company.phone === '' && company.email === '' ? '' : `<br>${escapeHtml([company.phone, company.email].filter((part) => part !== '').join(' · '))}`}${company.abn === '' ? '' : `<br>ABN ${escapeHtml(company.abn)}`}
     </div>

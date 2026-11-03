@@ -20,6 +20,7 @@ import type { Db } from '@sq/db';
 import type { ApiConfig } from '../config.js';
 import { buildApp } from '../app.js';
 import { hashPassword } from '../lib/password.js';
+import type { TransactionalDeps } from '../lib/mail/transactional.js';
 
 const MIGRATIONS = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -97,7 +98,17 @@ async function resetPostgres(db: Db): Promise<void> {
 }
 
 /** Build an app over a fresh database. */
-export async function makeTestApp(config: ApiConfig = testConfig()): Promise<TestApp> {
+/**
+ * Build an app over a fresh database.
+ *
+ * `mail` is what the reset and invite routes need. `null` means "this server has no SMTP", and the
+ * routes answer 503 rather than pretending to send — a real state production can be in, so it is
+ * reachable from a test rather than a flag only the shipping code knows about.
+ */
+export async function makeTestApp(
+  config: ApiConfig = testConfig(),
+  mail: TransactionalDeps | null = null,
+): Promise<TestApp> {
   const url = postgresUrl();
   const db = url === null ? createSqliteDb({ file: ':memory:' }) : createPostgresDb({ url });
 
@@ -105,7 +116,7 @@ export async function makeTestApp(config: ApiConfig = testConfig()): Promise<Tes
 
   await migrate(db, MIGRATIONS, join(MIGRATIONS, dialectFolderFor(db.driver)));
 
-  const app = await buildApp({ db, config });
+  const app = await buildApp({ db, config, mail });
   DB_BY_APP.set(app, db);
   return {
     app,

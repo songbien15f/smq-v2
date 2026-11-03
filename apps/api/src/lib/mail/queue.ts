@@ -22,7 +22,8 @@
 
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
-import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
+import { toCustomerDocument } from '@sq/core/documents';
+import { renderFrozenHtml } from '../documents.js';
 import type { MailTransport, OutboundMail } from './transport.js';
 
 /** Where a job is in its life. */
@@ -361,8 +362,9 @@ export async function dispatchNextJob(
       revision: Number(revisionNumber.revision),
     });
 
+    // The same helper the download route uses, so a mailed PDF and a downloaded one are one page.
     const document = toCustomerDocument(frozen);
-    const html = renderQuoteHtml(document);
+    const html = await renderFrozenHtml(frozen);
     const pdf = await deps.renderPdf(html);
 
     const message: OutboundMail = {
