@@ -93,10 +93,12 @@ if errorlevel 1 (
 )
 
 REM ---------------------------------------------------------------- company
-REM `--if-empty` so a second run is a no-op rather than an error. The installer
-REM refuses a second company on purpose; this flag is how the launcher asks it
-REM to skip instead of fail.
+REM `--if-empty` so a second run is a no-op rather than an error.
+REM COMPANY_CODE is what a person types at the sign-in screen alongside their
+REM username; without it nobody can reach the workspace.
 if "%COMPANY_NAME%"=="" set COMPANY_NAME=Demo Sheds Pty Ltd
+if "%COMPANY_CODE%"=="" set COMPANY_CODE=DEMOSHEDS
+if "%COMPANY_ADMIN_USERNAME%"=="" set COMPANY_ADMIN_USERNAME=owner
 if "%COMPANY_ADMIN_EMAIL%"=="" set COMPANY_ADMIN_EMAIL=owner@demo-sheds.local
 if "%COMPANY_ADMIN_PASSWORD%"=="" set COMPANY_ADMIN_PASSWORD=a-long-enough-password
 if "%COMPANY_SLUG%"=="" set COMPANY_SLUG=demo-sheds
@@ -110,6 +112,8 @@ if "%PLATFORM_ADMIN_PASSWORD%"=="" set PLATFORM_ADMIN_PASSWORD=platform-password
 echo.
 echo  Preparing the company...
 set COMPANY_NAME=%COMPANY_NAME%
+set COMPANY_CODE=%COMPANY_CODE%
+set COMPANY_ADMIN_USERNAME=%COMPANY_ADMIN_USERNAME%
 set COMPANY_ADMIN_EMAIL=%COMPANY_ADMIN_EMAIL%
 set COMPANY_ADMIN_PASSWORD=%COMPANY_ADMIN_PASSWORD%
 set COMPANY_SLUG=%COMPANY_SLUG%
@@ -149,10 +153,11 @@ echo    Admin    http://localhost:3062
 echo    Site     http://localhost:3063
 echo    API      http://localhost:3060/api/v1
 echo.
-echo    Client sign in:   %COMPANY_ADMIN_EMAIL%
-echo                      %COMPANY_ADMIN_PASSWORD%
-echo    Admin sign in:    %PLATFORM_ADMIN_EMAIL%
-echo                      %PLATFORM_ADMIN_PASSWORD%
+echo    Client sign in:   code     %COMPANY_CODE%
+echo                      username %COMPANY_ADMIN_USERNAME%
+echo                      password %COMPANY_ADMIN_PASSWORD%
+echo    Admin sign in:    email    %PLATFORM_ADMIN_EMAIL%
+echo                      password %PLATFORM_ADMIN_PASSWORD%
 echo.
 echo    Ctrl+C here stops everything.
 echo.

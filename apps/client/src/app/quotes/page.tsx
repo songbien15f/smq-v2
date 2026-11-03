@@ -21,7 +21,13 @@ export default async function QuotesPage() {
   const session = await currentSession<SessionView>();
   if (session === null) redirect('/');
 
-  const membership = session.memberships[0];
+  /*
+   * The company comes from the session, not from `memberships[0]`.
+   *
+   * The old form answered "which company sorts first", which is a different question from "which
+   * company this session is open in" — and the wrong answer the moment a person holds two
+   * memberships. `currentTenantName` is the company the API has already resolved.
+   */
   const result = await serverFetch<Page<QuoteListItem>>('/quotes?limit=50');
 
   /*
@@ -39,7 +45,7 @@ export default async function QuotesPage() {
   return (
     <ShellFrame
       capabilities={session.capabilities}
-      companyName={membership?.tenantName}
+      companyName={session.currentTenantName ?? undefined}
       account={<SignOutButton />}
       subtitle={`Signed in as ${session.email}`}
     >

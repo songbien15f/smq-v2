@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { publishPriceBook } from '@sq/core/pricing';
 import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
-import { makeTestApp, seedCompany, seedPlatformAdmin, signIn, testConfig, type TestApp } from './helpers';
+import {
+  makeTestApp,
+  seedCompany,
+  seedPlatformAdmin,
+  signIn,
+  signInPlatform,
+  testConfig,
+  type TestApp,
+} from './helpers';
 
 /**
  * Usage tracking, releases and the template catalogue.
@@ -78,7 +86,7 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
     await seedPlatformAdmin(ctx.db, { email: 'ops@usage-vendor.test', password: 'a-long-enough-password' });
 
     companyCookie = await signIn(ctx.app, 'owner@usage.test', 'a-long-enough-password');
-    platformCookie = await signIn(ctx.app, 'ops@usage-vendor.test', 'a-long-enough-password');
+    platformCookie = await signInPlatform(ctx.app, 'ops@usage-vendor.test', 'a-long-enough-password');
 
     const { publishAndActivate } = await import('../lib/priceBook');
     await publishAndActivate(ctx.db, { dumpDir: DUMP, publishedByUserId: 't', publishedByEmail: 't@v' });

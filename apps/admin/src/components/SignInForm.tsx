@@ -74,7 +74,7 @@ export function SignInForm({ next }: { next?: string }) {
       <div>
         <h1 className="text-sq-title font-semibold">Sign in</h1>
         <p className="mt-1 text-sq-body text-sq-ink-muted">
-          Use the email address your company administrator set up.
+          Sign in with your vendor email address.
         </p>
       </div>
 

@@ -19,7 +19,7 @@ export default async function QuoteFileRoute() {
 
   return (
     <ShellFrame
-      companyName={session.memberships[0]?.tenantName}
+      companyName={session.currentTenantName}
       account={<SignOutButton />}
       capabilities={session.capabilities}
       subtitle={`Signed in as ${session.email}`}

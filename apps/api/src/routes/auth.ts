@@ -16,14 +16,15 @@
  * cannot lock out every account behind its NAT.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Db } from '@sq/db';
 import { now } from '@sq/db';
 import {
   capabilitiesFor,
   changePasswordRequest,
-  signInRequest,
   platformCapabilitiesFor,
+  platformSignInRequest,
+  signInRequest,
   type MembershipView,
   type SessionView,
 } from '@sq/contracts';
@@ -57,11 +58,23 @@ function toSessionView(session: SessionRecord, memberships: MembershipView[]): S
         ? [...platformCapabilitiesFor(session.platformRole)]
         : [];
 
+  /*
+   * The current company, resolved once here so no screen has to guess.
+   *
+   * A screen that needs "which company am I in" reads these three. The client used to read
+   * `memberships[0]`, which answers a different question — "which company sorts first" — and
+   * answers it wrongly the moment a person holds two memberships.
+   */
+  const current = memberships.find((membership) => membership.tenantId === session.tenantId) ?? null;
+
   return {
     userId: session.userId,
     email: session.email,
     displayName: session.displayName,
     memberships,
+    currentTenantId: session.tenantId,
+    currentTenantCode: session.tenantCode,
+    currentTenantName: current?.tenantName ?? null,
     platformRole: session.platformRole,
     capabilities,
     mustChangePassword: session.mustChangePassword,
@@ -71,8 +84,8 @@ function toSessionView(session: SessionRecord, memberships: MembershipView[]): S
 
 /** The companies a person may enter. */
 async function loadMemberships(db: Db, userId: string): Promise<MembershipView[]> {
-  const rows = await db.all<{ tenant_id: string; tenant_name: string; role: string }>(
-    `SELECT m.tenant_id, t.name AS tenant_name, m.role
+  const rows = await db.all<{ tenant_id: string; tenant_name: string; role: string; username: string }>(
+    `SELECT m.tenant_id, t.name AS tenant_name, m.role, m.username
        FROM memberships m
        JOIN tenants t ON t.id = m.tenant_id
       WHERE m.user_id = ? AND m.status = 'active' AND t.status = 'active'
@@ -83,21 +96,138 @@ async function loadMemberships(db: Db, userId: string): Promise<MembershipView[]
     tenantId: row.tenant_id,
     tenantName: row.tenant_name,
     role: row.role as MembershipView['role'],
+    username: row.username,
   }));
 }
 
+/**
+ * Which person, in which company.
+ *
+ * The company is resolved **first** because the username is only unique inside one: `jo` in AAA
+ * and `jo` in BBB are different people.
+ *
+ * A **suspended** company is resolved, not hidden. The caller checks the password before acting
+ * on `tenantStatus`, so "this company is on hold" is only ever told to somebody who proved they
+ * work there — a refusal that needed no password would confirm which codes are real. Everything
+ * that is genuinely indistinguishable returns `null`: unknown code, unknown username, removed
+ * membership, disabled account.
+ */
+export async function resolveSignIn(
+  db: Db,
+  input: { companyCode: string; username: string },
+): Promise<{ userId: string; tenantId: string; tenantStatus: string } | null> {
+  const row = await db.get<{
+    user_id: string;
+    tenant_id: string;
+    tenant_status: string;
+    disabled_at: string | null;
+  }>(
+    `SELECT m.user_id, m.tenant_id, t.status AS tenant_status, u.disabled_at
+       FROM memberships m
+       JOIN tenants t ON t.id = m.tenant_id
+       JOIN users   u ON u.id = m.user_id
+      WHERE t.code = ?
+        AND m.username = ? AND m.status = 'active'`,
+    [input.companyCode.trim().toUpperCase(), input.username.trim().toLowerCase()],
+  );
+
+  if (row === null || row.disabled_at !== null) return null;
+  return { userId: row.user_id, tenantId: row.tenant_id, tenantStatus: row.tenant_status };
+}
+
 export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): void {
+  /**
+   * A company user signs in with the code of their company, their username and their password.
+   *
+   * An **unknown code**, an **unknown username**, a **removed membership** and a **wrong password**
+   * all answer identically — same text, same 401, same timing — because a caller who could tell
+   * them apart would have a way to enumerate customers and staff. A **suspended** company is the
+   * one case that answers differently (403, "on hold"), and only after the password has verified:
+   * at that point the caller has proved they work there, so nothing is leaked.
+   */
   app.post('/auth/sign-in', async (request, reply) => {
     const body = parseBody(signInRequest, request.body, reply);
     if (body === null) return;
 
+    if (body.companyCode === undefined || body.companyCode.trim() === '') {
+      return sendFail(reply, 'validation_failed', 'Enter your company code.', [
+        { path: 'companyCode', message: 'Enter your company code.' },
+      ]);
+    }
+
     const ip = clientIp(request.headers, request.ip);
     const ipHash = hashIp(ip);
 
-    // Two limits: one per account (stops one target being hammered) and one per
-    // address (stops one attacker spraying many accounts).
-    const perAccount = `${SIGNIN_LIMIT}:${body.email}`;
-    const accountLimit = await rateLimit.consume(db, `signin:acct:${hashToken(perAccount)}`, SIGNIN_LIMIT, SIGNIN_WINDOW_MS);
+    // Two limits: one per account (stops one target being hammered) and one per address (stops
+    // one attacker spraying many accounts). The account key includes the company, because `jo`
+    // in AAA and `jo` in BBB are different people.
+    const perAccount = `signin:acct:${hashToken(`${body.companyCode.toUpperCase()}:${body.username}`)}`;
+    const accountLimit = await rateLimit.consume(db, perAccount, SIGNIN_LIMIT, SIGNIN_WINDOW_MS);
+    if (!accountLimit.allowed) {
+      return sendFail(reply, 'rate_limited', 'Too many attempts. Try again in a few minutes.');
+    }
+    const ipLimit = await rateLimit.consume(db, `signin:ip:${ipHash}`, SIGNIN_LIMIT * 3, SIGNIN_WINDOW_MS);
+    if (!ipLimit.allowed) {
+      return sendFail(reply, 'rate_limited', 'Too many attempts from this network. Try again later.');
+    }
+
+    const resolved = await resolveSignIn(db, {
+      companyCode: body.companyCode,
+      username: body.username,
+    });
+
+    if (resolved === null) {
+      // Same cost as a real check: a fast "no such person" answers a different question from a
+      // slow one, and the difference is how an attacker learns a code is real.
+      await burnVerificationTime(body.password);
+      return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
+    }
+
+    const user = await db.get<{ password_hash: string | null }>('SELECT password_hash FROM users WHERE id = ?', [
+      resolved.userId,
+    ]);
+
+    if (user === null) {
+      await burnVerificationTime(body.password);
+      return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
+    }
+
+    const valid = await verifyPassword(body.password, user.password_hash);
+    if (!valid) {
+      return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
+    }
+
+    // A suspended company is only reported at this point: the password above has proved this is
+    // their member, so the message leaks nothing a stranger could have used to enumerate codes.
+    if (resolved.tenantStatus !== 'active') {
+      return sendFail(reply, 'forbidden', 'This company is on hold. Contact your account manager.');
+    }
+
+    return completeSignIn({ request, reply, userId: resolved.userId, tenantId: resolved.tenantId, perAccount });
+  });
+
+  /**
+   * Licence-vendor staff sign in by email.
+   *
+   * A separate route, not a flag on the one above: they belong to no company, so there is no code
+   * to resolve and no username to look up. Keeping the two doors apart is what makes it impossible
+   * for a company user to arrive through this one — an account with **no** platform role and an
+   * account that **holds a company membership** are both refused, because a company person belongs
+   * on the client app where seats and prices live.
+   *
+   * The membership check is not redundant with the role check: a person who consults for the
+   * vendor while also working at a dealership would otherwise reach this door and land in a session
+   * with no company, where every company route refused them and no seat was counted — a confusing
+   * half-signed-in state. Signing in at the client app is what they actually want.
+   */
+  app.post('/auth/sign-in-platform', async (request, reply) => {
+    const body = parseBody(platformSignInRequest, request.body, reply);
+    if (body === null) return;
+
+    const ipHash = hashIp(clientIp(request.headers, request.ip));
+    const perAccount = `signin:acct:${hashToken(body.email)}`;
+
+    const accountLimit = await rateLimit.consume(db, perAccount, SIGNIN_LIMIT, SIGNIN_WINDOW_MS);
     if (!accountLimit.allowed) {
       return sendFail(reply, 'rate_limited', 'Too many attempts. Try again in a few minutes.');
     }
@@ -108,20 +238,23 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
 
     const user = await db.get<{
       id: string;
-      email: string;
-      display_name: string;
       password_hash: string | null;
       platform_role: string | null;
       disabled_at: string | null;
-      must_change_password: number;
+      membership_count: number;
     }>(
-      'SELECT id, email, display_name, password_hash, platform_role, disabled_at, must_change_password FROM users WHERE email = ?',
+      `SELECT u.id, u.password_hash, u.platform_role, u.disabled_at,
+              (SELECT COUNT(*) FROM memberships m WHERE m.user_id = u.id AND m.status = 'active') AS membership_count
+         FROM users u WHERE u.email = ?`,
       [body.email],
     );
 
-    if (user === null || user.disabled_at !== null) {
-      // Same cost as a real check, and the same message: an attacker learns nothing
-      // from the timing or the text.
+    if (
+      user === null ||
+      user.disabled_at !== null ||
+      user.platform_role === null ||
+      Number(user.membership_count) > 0
+    ) {
       await burnVerificationTime(body.password);
       return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
     }
@@ -131,38 +264,47 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
       return sendFail(reply, 'unauthorized', 'Those details do not match an account.');
     }
 
-    // Pick the company to open. The first active membership, alphabetically, is
-    // deterministic; a person in two companies switches explicitly afterwards.
-    const memberships = await loadMemberships(db, user.id);
-    const tenantId = memberships[0]?.tenantId ?? null;
+    return completeSignIn({ request, reply, userId: user.id, tenantId: null, perAccount });
+  });
 
-    if (tenantId === null && user.platform_role === null) {
-      return sendFail(reply, 'forbidden', 'This account belongs to no active company.');
-    }
+  /**
+   * Issue the session and answer with the view.
+   *
+   * Shared by both doors so a seat refusal, a cookie's attributes and the session view are written
+   * once. A second copy would be a second place for the cookie to lose `httpOnly`.
+   */
+  async function completeSignIn(input: {
+    request: FastifyRequest;
+    reply: FastifyReply;
+    userId: string;
+    tenantId: string | null;
+    perAccount: string;
+  }): Promise<FastifyReply> {
+    const { request, reply } = input;
 
     const issued = await createSession(db, config, {
-      userId: user.id,
-      tenantId,
-      ip: ipHash,
+      userId: input.userId,
+      tenantId: input.tenantId,
+      ip: hashIp(clientIp(request.headers, request.ip)),
       userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
     });
 
     if (!issued.ok) {
-      // A distinct code, because "the company is out of seats" is a call to the
-      // account manager, not a wrong password.
+      // A distinct code, because "the company is out of seats" is a call to the account manager,
+      // not a wrong password.
       return sendFail(reply, 'forbidden', 'Every seat in this company is in use. Close a session or ask for another seat.');
     }
 
     // A correct password clears the counter an attacker was filling.
-    await rateLimit.reset(db, `signin:acct:${hashToken(perAccount)}`);
+    await rateLimit.reset(db, input.perAccount);
 
     reply.setCookie(SESSION_COOKIE, issued.session.token, {
       httpOnly: true,
       sameSite: 'lax',
       secure: config.production,
       path: '/',
-      // The cookie carries its own expiry rather than being a session cookie: a
-      // browser restart must not sign out a salesperson mid-visit.
+      // The cookie carries its own expiry rather than being a session cookie: a browser restart
+      // must not sign out a salesperson mid-visit.
       maxAge: Math.floor((Date.parse(issued.session.expiresAt) - Date.now()) / 1000),
     });
 
@@ -171,8 +313,9 @@ export function registerAuth(app: FastifyInstance, db: Db, config: ApiConfig): v
       return sendFail(reply, 'internal', 'The session could not be created.');
     }
 
+    const memberships = await loadMemberships(db, input.userId);
     return sendOk(reply, toSessionView(session, memberships));
-  });
+  }
 
   app.post('/auth/sign-out', async (request, reply) => {
     const token = request.cookies[SESSION_COOKIE];

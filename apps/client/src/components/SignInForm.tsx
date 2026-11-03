@@ -3,17 +3,22 @@
 /**
  * Sign in.
  *
- * Three behaviours worth naming:
+ * Three fields, in the order the server resolves them: the **company code** first, because a
+ * username is only unique inside one company — `jo` at one dealer and `jo` at another are two
+ * different people — then the username, then the password. This is how the desktop tool worked,
+ * and it is how a person is told their credentials over the phone.
  *
- * - The form posts to this app's own `/api/session` route, not directly to the API,
- *   so the session cookie is set on this origin and the browser never needs to send
- *   credentials cross-origin.
- * - Errors appear above the fields **and** under them, and focus moves to the first
- *   invalid field — a message at the top of a form with no focus move is a message a
- *   keyboard user has to hunt for.
- * - The submit button is disabled while a request is in flight, so a double-click is
- *   not two sign-ins. On a seat-limited account that second sign-in would take the
- *   last seat from a colleague.
+ * Behaviours worth naming:
+ *
+ * - The form posts to this app's own `/api/session` route, not directly to the API, so the session
+ *   cookie is set on this origin and the browser never sends credentials cross-origin.
+ * - The company code is **displayed** upper-cased but **stored** as typed, so a paste of `vgg` shows
+ *   `VGG` and an operator who typed spaces is not quietly corrected.
+ * - Errors appear above the fields **and** under them, and focus moves to the first invalid field —
+ *   a message at the top of a form with no focus move is a message a keyboard user has to hunt for.
+ * - The submit button is disabled while a request is in flight, so a double-click is not two
+ *   sign-ins. On a seat-limited account that second sign-in would take the last seat from a
+ *   colleague.
  */
 
 import { useState } from 'react';
@@ -23,7 +28,8 @@ import type { ApiResult, SessionView } from '@sq/contracts';
 
 export function SignInForm({ next }: { next?: string }) {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [companyCode, setCompanyCode] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +45,13 @@ export function SignInForm({ next }: { next?: string }) {
       const response = await fetch('/api/session', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        // Trimmed and lower-cased here because the field is a sign-in key, not a display value: a
+        // trailing space from a phone keyboard is a failed sign-in the operator cannot see.
+        body: JSON.stringify({
+          companyCode: companyCode.trim().toUpperCase(),
+          username: username.trim().toLowerCase(),
+          password,
+        }),
       });
       const result = (await response.json()) as ApiResult<SessionView>;
 
@@ -70,11 +82,11 @@ export function SignInForm({ next }: { next?: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-sq-3" noValidate>
+    <form onSubmit={submit} className="flex w-full flex-col gap-sq-3" noValidate>
       <div>
         <h1 className="text-sq-title font-semibold">Sign in</h1>
         <p className="mt-1 text-sq-body text-sq-ink-muted">
-          Use the email address your company administrator set up.
+          Enter your company code, then the username and password your administrator gave you.
         </p>
       </div>
 
@@ -88,14 +100,30 @@ export function SignInForm({ next }: { next?: string }) {
       )}
 
       <Field
-        id="email"
-        label="Email"
-        type="email"
-        autoComplete="username"
+        id="companyCode"
+        label="Company code"
+        type="text"
+        autoComplete="organization"
+        autoCapitalize="characters"
+        spellCheck={false}
         required
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        error={fieldErrors.email}
+        value={companyCode.toUpperCase()}
+        onChange={(event) => setCompanyCode(event.target.value)}
+        hint="The short code on your quote, e.g. VGG."
+        error={fieldErrors.companyCode}
+      />
+
+      <Field
+        id="username"
+        label="Username"
+        type="text"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        required
+        value={username}
+        onChange={(event) => setUsername(event.target.value)}
+        error={fieldErrors.username}
       />
 
       <Field

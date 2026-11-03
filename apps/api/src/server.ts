@@ -21,7 +21,6 @@
 import { dbConfigFromEnv, openDb } from '@sq/db';
 import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
-import { assertCompanyIsSingular } from './lib/company.js';
 import { closeAllBooks } from './lib/priceBook.js';
 
 async function main(): Promise<void> {
@@ -42,23 +41,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  // One company, on purpose. A second row is a state the application cannot reason about —
-  // which company would a quote belong to — so it stops the boot rather than half-working.
-  if (dbConfig.singleCompany) {
-    try {
-      const count = await assertCompanyIsSingular(db);
-      if (count === 0) {
-        process.stderr.write(
-          'No company yet. Provision one before serving:\n' +
-            '  COMPANY_NAME="…" COMPANY_ADMIN_EMAIL="…" COMPANY_ADMIN_PASSWORD="…" pnpm install:company\n',
-        );
-      }
-    } catch (error) {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      await db.close();
-      process.exitCode = 1;
-      return;
-    }
+  // An empty database is a normal state now: the product serves one company or a dozen, and which
+  // companies exist is an administrative fact, not a boot precondition. The one thing worth saying
+  // out loud is that nobody can sign in yet, because the message names the command that fixes it.
+  const companyCount = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tenants');
+  if (Number(companyCount?.n ?? 0) === 0) {
+    process.stderr.write(
+      'No company yet. Provision one before serving:\n' +
+        '  COMPANY_NAME="…" COMPANY_CODE="…" COMPANY_ADMIN_EMAIL="…" COMPANY_ADMIN_PASSWORD="…" pnpm install:company\n',
+    );
   }
 
   const app = await buildApp({ db, config, logger: true });

@@ -10,8 +10,13 @@ import { BrandMark } from '@sq/ui';
 
 export interface ShellFrameProps {
   children: React.ReactNode;
-  /** The company name, shown so a person always knows which workspace they are in. */
-  companyName?: string;
+  /**
+   * The company name, shown so a person always knows which workspace they are in.
+   *
+   * `null` is a real state — platform staff belong to no company — so it is accepted rather than
+   * forcing every caller to convert it, which is how a `?? ''` ends up rendering an empty slash.
+   */
+  companyName?: string | null;
   /** Rendered at the right of the bar: sign-out, or a sign-in link. */
   account?: React.ReactNode;
   /**
@@ -49,7 +54,7 @@ export function ShellFrame({
           <a href="/quotes" className="flex items-center gap-2 no-underline">
             <BrandMark size={22} tone="brand" title="" />
             <span className="text-sq-body font-semibold text-white">SmartQuote</span>
-            {companyName !== undefined && (
+            {companyName !== undefined && companyName !== null && (
               <>
                 <span className="text-sq-ink-muted" aria-hidden="true">
                   /

@@ -1,14 +1,14 @@
 /**
- * The vendor's control plane — for **one** company.
+ * The licence vendor's control plane.
  *
  * Everything here is behind a platform capability and every write is recorded in the audit
  * log. The old server applied per-action auth inconsistently and had write endpoints that
  * answered GET with no token at all; here the guard is a property of the route rather than a
  * filter somebody remembered to add.
  *
- * Note what is deliberately absent: there is no "create a company" feature. This
- * installation runs for one company on one database, and `createCompany` refuses a second at
- * the function, not merely in a hidden button.
+ * A vendor holds many companies, so creating one is an ordinary operation reached through
+ * `POST /admin/companies`. It is not a switch that turns the product into something else —
+ * a quoting install simply has one company in its list.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -19,7 +19,7 @@ import { pageQuery, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requirePlatformCapability } from '../lib/guard.js';
 import { hashPassword } from '../lib/password.js';
 import { newToken } from '../lib/tokens.js';
-import { createCompany, SingleCompanyError } from '../lib/company.js';
+import { createCompany } from '../lib/company.js';
 import type { ApiConfig } from '../config.js';
 
 /** Write one audit row. Called inside the same transaction as the change it records. */
@@ -57,6 +57,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
       id: string;
       name: string;
       slug: string;
+      code: string | null;
       status: string;
       seats: number;
       subscription_ends_at: string | null;
@@ -65,7 +66,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
       member_count: number;
       quote_count: number;
     }>(
-      `SELECT t.id, t.name, t.slug, t.status, t.seats, t.subscription_ends_at, t.created_at,
+      `SELECT t.id, t.name, t.slug, t.code, t.status, t.seats, t.subscription_ends_at, t.created_at,
               (SELECT COUNT(*) FROM tenant_seats s WHERE s.tenant_id = t.id) AS seats_in_use,
               (SELECT COUNT(*) FROM memberships m WHERE m.tenant_id = t.id AND m.status = 'active') AS member_count,
               (SELECT COUNT(*) FROM quotes q WHERE q.tenant_id = t.id) AS quote_count
@@ -79,6 +80,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
       id: row.id,
       name: row.name,
       slug: row.slug,
+      code: row.code ?? null,
       status: row.status === 'suspended' ? 'suspended' : 'active',
       seats: row.seats,
       seatsInUse: Number(row.seats_in_use),
@@ -92,12 +94,11 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
   });
 
   /**
-   * Create the company.
+   * Create a company and its first administrator.
    *
-   * Kept as a route rather than removed, because the installation has to be set up somehow
-   * and doing it over HTTP is how a fresh deployment is provisioned. On a single-company
-   * installation — which is every installation of this product — the **second** call is
-   * refused by `createCompany`, so the route is a setup step rather than a feature.
+   * One call does the whole job, because a formally created company is provisioned in one pass
+   * rather than assembled from three endpoints — a ordering that the old server left to whoever
+   * wrote the script. The code the operator supplies is what the administrator types at sign-in.
    */
   app.post('/admin/companies', async (request, reply) => {
     const session = requirePlatformCapability(request, reply, 'platform:companies');
@@ -117,6 +118,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
         db,
         {
           name: body.name,
+          code: body.code,
           slug: body.slug,
           abn: body.abn ?? null,
           seats: body.seats,
@@ -126,7 +128,6 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
           adminPasswordHash: passwordHash,
           mustChangePassword: true,
         },
-        config.singleCompany,
       );
 
       return sendOk(
@@ -140,12 +141,13 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
         201,
       );
     } catch (error) {
-      if (error instanceof SingleCompanyError) {
-        return sendFail(reply, 'conflict', error.message);
-      }
       const message = error instanceof Error ? error.message : String(error);
       if (/UNIQUE|duplicate key/i.test(message)) {
-        return sendFail(reply, 'conflict', 'That company slug or administrator email is already in use.');
+        return sendFail(
+          reply,
+          'conflict',
+          'That company code, company slug or administrator email is already in use.',
+        );
       }
       throw error;
     }

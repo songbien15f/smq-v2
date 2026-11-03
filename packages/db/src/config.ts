@@ -48,19 +48,6 @@ export interface DbConfig {
   file?: string;
   /** Connection URL for Postgres. */
   url?: string;
-  /**
-   * Exactly one company runs on this installation.
-   *
-   * True by default and true in every deployment of this product: the old application pair
-   * was converted for **one** company on **one** database, so a second company row is a
-   * configuration error rather than a feature.
-   *
-   * The flag is explicit rather than implied because the schema still carries `tenant_id`.
-   * That column stays — it is what makes it impossible for a query to return another
-   * company's rows, and what lets a reported bug be reproduced locally in a minute — and a
-   * schema that carries a tenancy column is a schema somebody will eventually use.
-   */
-  singleCompany: boolean;
 }
 
 /** Read the configuration from the environment. */
@@ -68,7 +55,6 @@ export function dbConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DbConfig 
   // Postgres is the target. SQLite is the offline fallback, for a developer box with no
   // server and for a single-machine install.
   const driver = (env.DB_DRIVER ?? 'postgres').toLowerCase();
-  const singleCompany = (env.SINGLE_COMPANY ?? '1').trim() !== '0';
 
   if (driver === 'postgres') {
     const url = env.DATABASE_URL;
@@ -78,7 +64,7 @@ export function dbConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DbConfig 
           'For a run without Postgres, set DB_DRIVER=sqlite and DB_FILE.',
       );
     }
-    return { driver: 'postgres', url, singleCompany };
+    return { driver: 'postgres', url };
   }
 
   if (driver !== 'sqlite') {
@@ -90,7 +76,6 @@ export function dbConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DbConfig 
   return {
     driver: 'sqlite',
     file: resolveFromRoot(env.DB_FILE ?? './data/app.db'),
-    singleCompany,
   };
 }
 

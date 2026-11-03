@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { makeTestApp, seedCompany, seedPlatformAdmin, signIn, testConfig, type TestApp } from './helpers';
+import {
+  makeTestApp,
+  seedCompany,
+  seedPlatformAdmin,
+  signIn,
+  signInPlatform,
+  testConfig,
+  type TestApp,
+} from './helpers';
 
 let ctx: TestApp;
 
@@ -39,15 +47,16 @@ describe('sign-in', () => {
     const unknown = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'nobody@example.com', password: 'whatever-it-is' },
+      payload: { companyCode: 'NOPE', username: 'nobody', password: 'whatever-it-is' },
     });
     const wrong = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'owner@acme.test', password: 'not-the-password' },
+      payload: { companyCode: 'NOPE', username: 'owner', password: 'not-the-password' },
     });
 
-    // The same status and the same message. Anything else is an account oracle.
+    // The same status and the same message. Anything else is an account oracle — and with a
+    // company code in the request, it would also tell a caller which codes are real.
     expect(unknown.statusCode).toBe(401);
     expect(wrong.statusCode).toBe(401);
     expect(unknown.json().message).toBe(wrong.json().message);
@@ -57,12 +66,25 @@ describe('sign-in', () => {
     const response = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'not-an-email', password: '' },
+      payload: { companyCode: 'ACME', username: '', password: '' },
     });
     expect(response.statusCode).toBe(422);
     const body = response.json();
     expect(body.code).toBe('validation_failed');
-    expect(body.details.map((detail: { path: string }) => detail.path)).toContain('email');
+    expect(body.details.map((detail: { path: string }) => detail.path)).toContain('username');
+  });
+
+  it('refuses a company user who typed no company code', async () => {
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-in',
+      payload: { username: 'owner', password: 'correct horse battery staple' },
+    });
+    // The same 422 shape as any other field problem, so the form renders the message under the
+    // company-code input rather than on a separate error path.
+    expect(response.statusCode).toBe(422);
+    expect(response.json().code).toBe('validation_failed');
+    expect(response.json().details.map((detail: { path: string }) => detail.path)).toContain('companyCode');
   });
 
   it('signs in and returns the role capabilities', async () => {
@@ -77,13 +99,18 @@ describe('sign-in', () => {
     const response = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'owner@acme.test', password: 'correct horse battery staple' },
+      // Lower-case on purpose: a person types their code the way they say it, and the
+      // comparison is case-insensitive. `signInRequest` does not upper-case for us.
+      payload: { companyCode: 'acme', username: 'owner', password: 'correct horse battery staple' },
     });
 
     expect(response.statusCode).toBe(200);
     const session = response.json().data;
     expect(session.email).toBe('owner@acme.test');
     expect(session.memberships).toHaveLength(1);
+    expect(session.memberships[0].username).toBe('owner');
+    expect(session.currentTenantCode).toBe('ACME');
+    expect(session.currentTenantName).toBe('Acme Sheds');
     expect(session.capabilities).toContain('quote:write');
     expect(session.mustChangePassword).toBe(false);
     expect(response.headers['set-cookie']).toBeDefined();
@@ -147,7 +174,7 @@ describe('seats', () => {
     const refused = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'boss@two.test', password: 'a-long-enough-password' },
+      payload: { companyCode: 'TWOSEATS', username: 'boss', password: 'a-long-enough-password' },
     });
     expect(refused.statusCode).toBe(403);
     expect(refused.json().message).toMatch(/seat/i);
@@ -158,7 +185,7 @@ describe('seats', () => {
     const afterRelease = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'boss@two.test', password: 'a-long-enough-password' },
+      payload: { companyCode: 'TWOSEATS', username: 'boss', password: 'a-long-enough-password' },
     });
     expect(afterRelease.statusCode).toBe(200);
   });
@@ -179,8 +206,8 @@ describe('capability enforcement', () => {
       [new Date().toISOString(), new Date().toISOString()],
     );
     await ctx.db.run(
-      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
-       VALUES (?, 'viewer-1', 'viewer', 'active', ?, ?)`,
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+       VALUES (?, 'viewer-1', 'viewer', 'active', ?, ?, 'viewer')`,
       [tenantId, new Date().toISOString(), new Date().toISOString()],
     );
 
@@ -227,10 +254,10 @@ describe('capability enforcement', () => {
       email: 'ops@vendor.test',
       password: 'a-long-enough-password',
     });
-    const cookie = await signIn(ctx.app, 'ops@vendor.test', 'a-long-enough-password');
-
-    // Being licence-vendor staff says nothing about which customer's quotes a person
-    // may read, so a company route answers 403 rather than serving data.
+    // Licence-vendor staff belong to no company, so they arrive through their own door. The
+    // company route below is the one that must refuse them: being licence-vendor staff says
+    // nothing about which customer's quotes a person may read.
+    const cookie = await signInPlatform(ctx.app, 'ops@vendor.test', 'a-long-enough-password');
     const response = await ctx.app.inject({
       method: 'GET',
       url: '/api/v1/quotes',
@@ -245,7 +272,7 @@ describe('capability enforcement', () => {
       password: 'a-long-enough-password',
       role: 'platform_support',
     });
-    const cookie = await signIn(ctx.app, 'support@vendor.test', 'a-long-enough-password');
+    const cookie = await signInPlatform(ctx.app, 'support@vendor.test', 'a-long-enough-password');
 
     const companies = await ctx.app.inject({
       method: 'GET',
@@ -255,21 +282,48 @@ describe('capability enforcement', () => {
     expect(companies.statusCode).toBe(200);
     expect(Array.isArray(companies.json().data.items)).toBe(true);
   });
+
+  it('refuses a company member at the vendor door, even if they hold a platform role', async () => {
+    /*
+     * A person can be both: a dealership administrator who also does vendor work. Sending them
+     * through the email door would open a session with no company, where every company route
+     * refuses them and no seat is counted — a half-signed-in state whose symptom is "the app is
+     * broken". The door that works for them is the client app, so this one refuses.
+     */
+    const company = await seedCompany(ctx.db, {
+      name: 'Dual Role Sheds',
+      slug: 'dual-role',
+      email: 'dual@dual.test',
+      password: 'a-long-enough-password',
+    });
+    await ctx.db.run("UPDATE users SET platform_role = 'platform_admin' WHERE id = ?", [company.userId]);
+
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-in-platform',
+      payload: { email: 'dual@dual.test', password: 'a-long-enough-password' },
+    });
+    expect(response.statusCode).toBe(401);
+
+    // And they can still reach their own company through the door meant for them.
+    const cookie = await signIn(ctx.app, 'DUALROLE', 'dual', 'a-long-enough-password');
+    const session = await ctx.app.inject({ method: 'GET', url: '/api/v1/auth/session', headers: { cookie } });
+    expect(session.json().data.currentTenantName).toBe('Dual Role Sheds');
+  });
 });
 
 /**
- * Company creation, in the one mode that permits it.
+ * Company creation.
  *
- * This app runs with `singleCompany: false` on purpose, because on a real installation —
- * where the flag is on — the create route *is* the setup step and the second call must be
- * refused. Both behaviours are pinned, so the refusal below cannot be removed by relaxing
- * the default, and this one cannot be removed by tightening it.
+ * Creating a company is an ordinary operation now: the product is multi-company, so there is no
+ * mode to switch on and no second-call refusal to pin. What still matters is that a created
+ * company comes with an administrator who can sign in.
  */
-describe('creating the company (multi-company mode, for provisioning tests)', () => {
+describe('creating a company', () => {
   let provisioning: TestApp;
 
   beforeAll(async () => {
-    provisioning = await makeTestApp(testConfig({ singleCompany: false }));
+    provisioning = await makeTestApp(testConfig());
     await seedPlatformAdmin(provisioning.db, {
       email: 'owner@vendor.test',
       password: 'a-long-enough-password',
@@ -281,7 +335,7 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
   });
 
   it('creates a company with an administrator and returns a one-time password', async () => {
-    const cookie = await signIn(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
+    const cookie = await signInPlatform(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
 
     const created = await provisioning.app.inject({
       method: 'POST',
@@ -289,6 +343,7 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
       headers: { cookie },
       payload: {
         name: 'New Customer Sheds',
+        code: 'newcust',
         slug: 'new-customer',
         seats: 4,
         subscriptionEndsAt: null,
@@ -303,14 +358,16 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
     expect(body.temporaryPassword.length).toBeGreaterThan(20);
 
     // The new administrator can sign in with the temporary password, and is told to
-    // change it.
+    // change it. The username defaults to the local part of their email — the same rule the
+    // 009 migration applies — and the code is stored upper-cased.
     const signInAsNew = await provisioning.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'boss@newcustomer.test', password: body.temporaryPassword },
+      payload: { companyCode: 'NEWCUST', username: 'boss', password: body.temporaryPassword },
     });
     expect(signInAsNew.statusCode).toBe(200);
     expect(signInAsNew.json().data.mustChangePassword).toBe(true);
+    expect(signInAsNew.json().data.currentTenantCode).toBe('NEWCUST');
 
     // ...and the forced change actually blocks the company routes.
     const raw = signInAsNew.headers['set-cookie'];
@@ -327,13 +384,14 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
   });
 
   it('refuses a duplicate slug with a conflict, not a 500', async () => {
-    const cookie = await signIn(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
+    const cookie = await signInPlatform(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
     const duplicate = await provisioning.app.inject({
       method: 'POST',
       url: '/api/v1/admin/companies',
       headers: { cookie },
       payload: {
         name: 'Another Name',
+        code: 'ANOTHER',
         slug: 'new-customer',
         seats: 1,
         subscriptionEndsAt: null,
@@ -345,8 +403,28 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
     expect(duplicate.json().code).toBe('conflict');
   });
 
+  it('refuses a duplicate company code with a conflict, not a 500', async () => {
+    const cookie = await signInPlatform(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
+    const duplicate = await provisioning.app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/companies',
+      headers: { cookie },
+      payload: {
+        name: 'A Code Clone',
+        code: 'newcust', // same as the first company, different slug
+        slug: 'code-clone',
+        seats: 1,
+        subscriptionEndsAt: null,
+        adminEmail: 'clone@newcustomer.test',
+        adminDisplayName: 'Clone Boss',
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().code).toBe('conflict');
+  });
+
   it('records the creation in the audit log', async () => {
-    const cookie = await signIn(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
+    const cookie = await signInPlatform(provisioning.app, 'owner@vendor.test', 'a-long-enough-password');
     const audit = await provisioning.app.inject({
       method: 'GET',
       url: '/api/v1/admin/audit',
@@ -359,66 +437,61 @@ describe('creating the company (multi-company mode, for provisioning tests)', ()
 });
 
 /**
- * The refusal that is actually in force.
+ * More than one company.
  *
- * This installation runs for one company on one database. A second company is not a feature
- * that was switched off; it is a state the application cannot reason about — which company
- * would a quote belong to — so the create is refused at the function, and the message says
- * what to do instead.
+ * The single-company invariant is gone: a quoting product that installs once per customer has
+ * one company, but the licence-vendor control plane — this admin side — must hold many, so the
+ * only honest model is multi-company everywhere. The list below confirms two companies coexist
+ * and that neither is hidden.
  */
-describe('the single-company refusal', () => {
-  let solo: TestApp;
+describe('more than one company', () => {
+  let multi: TestApp;
 
   beforeAll(async () => {
-    solo = await makeTestApp();
-    await seedCompany(solo.db, {
-      name: 'The Only Sheds',
-      slug: 'the-only',
-      email: 'boss@theonly.test',
+    multi = await makeTestApp();
+    await seedCompany(multi.db, {
+      name: 'Alpha Sheds',
+      slug: 'alpha',
+      code: 'AAA',
+      email: 'boss@alpha.test',
       password: 'a-long-enough-password',
     });
-    await seedPlatformAdmin(solo.db, { email: 'ops@vendor.test', password: 'a-long-enough-password' });
+    await seedCompany(multi.db, {
+      name: 'Beta Sheds',
+      slug: 'beta',
+      code: 'BBB',
+      email: 'boss@beta.test',
+      password: 'a-long-enough-password',
+    });
+    await seedPlatformAdmin(multi.db, { email: 'ops@vendor.test', password: 'a-long-enough-password' });
   });
 
   afterAll(async () => {
-    await solo.close();
+    await multi.close();
   });
 
-  it('refuses a second company with an explanation, not an empty list', async () => {
-    const cookie = await signIn(solo.app, 'ops@vendor.test', 'a-long-enough-password');
-
-    const second = await solo.app.inject({
-      method: 'POST',
-      url: '/api/v1/admin/companies',
-      headers: { cookie },
-      payload: {
-        name: 'A Second Sheds',
-        slug: 'a-second',
-        seats: 1,
-        subscriptionEndsAt: null,
-        adminEmail: 'boss@asecond.test',
-        adminDisplayName: 'Another Boss',
-      },
-    });
-
-    expect(second.statusCode).toBe(409);
-    expect(second.json().message).toMatch(/one company/i);
-
-    // And the database still holds exactly the one.
-    const count = await solo.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tenants');
-    expect(Number(count?.n)).toBe(1);
-  });
-
-  it('still lists the one company', async () => {
-    const cookie = await signIn(solo.app, 'ops@vendor.test', 'a-long-enough-password');
-    const list = await solo.app.inject({
+  it('lists every company, not just the first', async () => {
+    const cookie = await signInPlatform(multi.app, 'ops@vendor.test', 'a-long-enough-password');
+    const list = await multi.app.inject({
       method: 'GET',
       url: '/api/v1/admin/companies',
       headers: { cookie },
     });
     expect(list.statusCode).toBe(200);
-    expect(list.json().data.items).toHaveLength(1);
-    expect(list.json().data.items[0].name).toBe('The Only Sheds');
+    const names = list.json().data.items.map((row: { name: string }) => row.name).sort();
+    expect(names).toEqual(['Alpha Sheds', 'Beta Sheds']);
+  });
+
+  it('gives each set of staff their own sign-in, keyed on the code', async () => {
+    const alpha = await signIn(multi.app, 'AAA', 'boss', 'a-long-enough-password');
+    const beta = await signIn(multi.app, 'bbb', 'boss', 'a-long-enough-password');
+
+    const a = await multi.app.inject({ method: 'GET', url: '/api/v1/auth/session', headers: { cookie: alpha } });
+    const b = await multi.app.inject({ method: 'GET', url: '/api/v1/auth/session', headers: { cookie: beta } });
+
+    expect(a.json().data.currentTenantName).toBe('Alpha Sheds');
+    expect(b.json().data.currentTenantName).toBe('Beta Sheds');
+    expect(a.json().data.currentTenantId).not.toBe(b.json().data.currentTenantId);
   });
 });
 
@@ -443,7 +516,7 @@ describe('suspending a company', () => {
       email: 'admin@suspender.test',
       password: 'a-long-enough-password',
     });
-    const adminCookie = await signIn(ctx.app, 'admin@suspender.test', 'a-long-enough-password');
+    const adminCookie = await signInPlatform(ctx.app, 'admin@suspender.test', 'a-long-enough-password');
 
     const suspended = await ctx.app.inject({
       method: 'PATCH',
@@ -460,11 +533,13 @@ describe('suspending a company', () => {
     });
     expect(after.statusCode).toBe(401);
 
-    // And they cannot sign back in either.
+    // And they cannot sign back in either. The refusal arrives after their password checks out,
+    // so a suspended company's code is never confirmed to a caller who cannot prove they work
+    // there.
     const refused = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/auth/sign-in',
-      payload: { email: 'staff@suspended.test', password: 'a-long-enough-password' },
+      payload: { companyCode: 'SUSPENDED', username: 'staff', password: 'a-long-enough-password' },
     });
     expect(refused.statusCode).toBe(403);
   });

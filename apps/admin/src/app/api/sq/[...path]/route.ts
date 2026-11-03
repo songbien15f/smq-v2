@@ -31,6 +31,11 @@ const ALLOWED_PREFIXES = [
   'admin/usage',
   'auth/session',
   'auth/password',
+  /*
+   * Vendor staff sign in by email on their own route: they belong to no company, so the
+   * company-code + username route cannot serve them.
+   */
+  'auth/sign-in-platform',
 ] as const;
 
 function allowed(path: string): boolean {

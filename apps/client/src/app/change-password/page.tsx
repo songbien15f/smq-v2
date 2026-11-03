@@ -19,7 +19,7 @@ export default async function ChangePasswordPage() {
   return (
     <ShellFrame
       capabilities={session.capabilities}
-      companyName={session.memberships[0]?.tenantName}
+      companyName={session.currentTenantName}
     >
       <div className="mx-auto flex max-w-md flex-col gap-sq-3">
         <h1 className="text-sq-title font-semibold">Choose a password</h1>
