@@ -49,7 +49,7 @@ export function Field({ label, hint, error, suffix, required, id, ...rest }: Fie
           aria-describedby={describedBy}
           aria-required={required === true || undefined}
           className={[
-            'min-h-[38px] w-full rounded-md border bg-sq-surface px-sq-2 py-sq-1',
+            'min-h-11 w-full rounded-md border bg-sq-surface px-sq-2 py-sq-1',
             'text-sq-body text-sq-ink placeholder:text-sq-ink-muted/60',
             'transition-colors duration-sq-fast',
             error !== undefined ? 'border-sq-danger' : 'border-sq-line',

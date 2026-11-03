@@ -1,21 +1,25 @@
 import { redirect } from 'next/navigation';
 import type { SessionView } from '@sq/contracts';
 import { currentSession } from '@/lib/api';
-import { ShellFrame } from '@/components/ShellFrame';
+import { SignInShell } from '@/components/SignInShell';
 import { SignInForm } from '@/components/SignInForm';
-import { SignOutButton } from '@/components/SignOutButton';
 
 /** The landing route: the workspace when signed in, sign-in when not. */
 export default async function HomePage() {
   const session = await currentSession<SessionView>();
 
   if (session === null) {
+    /*
+     * The sign-in screen owns its own frame.
+     *
+     * It is deliberately **not** wrapped in `ShellFrame`: that bar shows a company name and a nav
+     * for a workspace, and a person who has not signed in has neither. The two-column shell is the
+     * one screen in this app that is not inside the workspace chrome.
+     */
     return (
-      <ShellFrame>
-        <div className="flex min-h-[60dvh] items-center justify-center">
-          <SignInForm />
-        </div>
-      </ShellFrame>
+      <SignInShell>
+        <SignInForm />
+      </SignInShell>
     );
   }
 
