@@ -11,12 +11,15 @@
  * 2. **Your own role cannot leave the company unadministrable.** A change that would remove the last
  *    administrator is refused by the API, and this screen shows why rather than failing silently.
  *
- * Nobody is invited from here yet: an invitation needs a mail the product can send, and it can now,
- * so the button is where the next slice plugs in rather than a dead control today.
+ * ## Inviting is a mail
+ *
+ * Adding a person creates a `pending` membership and sends a link that activates it. The person
+ * cannot sign in and holds no seat until they accept, so the roster stays honest about who can
+ * actually reach the company.
  */
 
 import { useEffect, useState } from 'react';
-import { Button, Panel, StatusPill } from '@sq/ui';
+import { Button, Field, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/sq';
 
 interface Member {
@@ -43,6 +46,17 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
+
+  /** The invite form, folded away until asked for — it is not the reason anyone opens this page. */
+  const [inviting, setInviting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [invite, setInvite] = useState({
+    email: '',
+    displayName: '',
+    username: '',
+    role: 'estimator',
+  });
+  const [inviteErrors, setInviteErrors] = useState<Record<string, string>>({});
 
   const load = async (): Promise<void> => {
     const result = await api<{ items: Member[] }>('team');
@@ -80,6 +94,46 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
     await load();
   };
 
+  const inviteMember = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    setBusy(true);
+    setInviteErrors({});
+
+    const result = await api<{ invited: boolean }>('team/invite', {
+      method: 'POST',
+      body: invite,
+    });
+    setBusy(false);
+
+    if (!result.ok) {
+      setMessage({ tone: 'danger', text: result.message });
+      const details: Record<string, string> = {};
+      for (const detail of result.details ?? []) details[detail.path] = detail.message;
+      setInviteErrors(details);
+      return;
+    }
+
+    setMessage({
+      tone: 'ok',
+      text: `Invited ${invite.email}. They have a link that expires in seven days.`,
+    });
+    setInvite({ email: '', displayName: '', username: '', role: 'estimator' });
+    setInviting(false);
+    await load();
+  };
+
+  const resetMember = async (email: string): Promise<void> => {
+    setMessage(null);
+    const result = await api<{ sent: true }>(`team/${encodeURIComponent(email)}/reset`, {
+      method: 'POST',
+    });
+    if (!result.ok) {
+      setMessage({ tone: 'danger', text: result.message });
+      return;
+    }
+    setMessage({ tone: 'ok', text: `A reset link was sent to ${email}.` });
+  };
+
   if (loading) return <p className="text-sq-body text-sq-ink-muted">Loading the team…</p>;
 
   return (
@@ -96,6 +150,89 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
         >
           {message.text}
         </p>
+      )}
+
+      {canManage && (
+        <Panel
+          title="Add a person"
+          description="They get a link to choose a password. Until they accept, they cannot sign in and hold no seat."
+          actions={
+            !inviting ? (
+              <Button variant="primary" onClick={() => setInviting(true)}>
+                Invite
+              </Button>
+            ) : undefined
+          }
+        >
+          {!inviting ? (
+            <p className="text-sq-body text-sq-ink-muted">
+              Use Invite to add somebody to this company. They will be able to sign in with the
+              company code, the username you choose, and the password they set.
+            </p>
+          ) : (
+            <form onSubmit={(event) => void inviteMember(event)} className="flex flex-col gap-sq-3" noValidate>
+              <Field
+                id="inviteEmail"
+                label="Email"
+                type="email"
+                required
+                value={invite.email}
+                onChange={(event) => setInvite({ ...invite, email: event.target.value })}
+                error={inviteErrors.email}
+              />
+              <Field
+                id="inviteDisplayName"
+                label="Name"
+                required
+                value={invite.displayName}
+                onChange={(event) => setInvite({ ...invite, displayName: event.target.value })}
+                error={inviteErrors.displayName}
+              />
+              <Field
+                id="inviteUsername"
+                label="Username"
+                required
+                hint="What they type at sign-in. Unique inside this company."
+                autoCapitalize="none"
+                spellCheck={false}
+                value={invite.username}
+                onChange={(event) => setInvite({ ...invite, username: event.target.value })}
+                error={inviteErrors.username}
+              />
+              <label className="flex flex-col gap-sq-1">
+                <span className="text-sq-micro font-medium text-sq-ink">Role</span>
+                <select
+                  value={invite.role}
+                  onChange={(event) => setInvite({ ...invite, role: event.target.value })}
+                  className="min-h-11 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+                >
+                  {Object.entries(ROLE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-sq-micro text-sq-ink-muted">{ROLE_HINT[invite.role]}</span>
+              </label>
+
+              <div className="flex gap-sq-2">
+                <Button type="submit" variant="primary" loading={busy}>
+                  Send the invitation
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setInviting(false);
+                    setInvite({ email: '', displayName: '', username: '', role: 'estimator' });
+                    setInviteErrors({});
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+        </Panel>
       )}
 
       <Panel
@@ -149,14 +286,23 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
                 </td>
                 {canManage && (
                   <td className="px-sq-2 py-sq-2">
-                    <Button
-                      variant="ghost"
-                      onClick={() => void remove(member.email)}
-                      aria-label={`Remove ${member.displayName}`}
-                      className="text-sq-danger hover:bg-sq-danger/10"
-                    >
-                      Remove
-                    </Button>
+                    <div className="flex flex-wrap gap-sq-1">
+                      <Button
+                        variant="ghost"
+                        onClick={() => void resetMember(member.email)}
+                        aria-label={`Send ${member.displayName} a reset link`}
+                      >
+                        Reset password
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => void remove(member.email)}
+                        aria-label={`Remove ${member.displayName}`}
+                        className="text-sq-danger hover:bg-sq-danger/10"
+                      >
+                        Remove
+                      </Button>
+                    </div>
                   </td>
                 )}
               </tr>
@@ -166,8 +312,8 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
       </Panel>
 
       <p className="text-sq-micro text-sq-ink-muted">
-        Inviting somebody from this screen needs an invitation email, which is the next piece of work.
-        Until then a person is added by the installer or by the administrator running the deployment.
+        An invitation is a link that expires in seven days. A reset link expires in an hour and ends
+        every session that account already had.
       </p>
     </div>
   );
