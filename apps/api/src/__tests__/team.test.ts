@@ -180,3 +180,125 @@ describe('accepting an invitation', () => {
     await ctx.close();
   });
 });
+
+describe('invariants the invite route must not break', () => {
+  it('refuses a username already used in the company, with a field error rather than a 500', async () => {
+    const { ctx } = await appWithMail();
+    await seedCompany(ctx.db, {
+      name: 'Unique Co', slug: 'unique-co', code: 'UNIQCO', username: 'owner',
+      email: 'owner@unique.test', password: 'a-long-enough-password',
+    });
+    const cookie = await signIn(ctx.app, 'UNIQCO', 'owner', 'a-long-enough-password');
+
+    const clash = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/team/invite', headers: { cookie },
+      payload: { email: 'second@unique.test', role: 'viewer', displayName: 'Second', username: 'owner' },
+    });
+
+    // Not a 500 with the raw SQL text: the form says which field is wrong.
+    expect(clash.statusCode).toBe(409);
+    expect(clash.json().code).toBe('conflict');
+    expect(clash.json().message).toMatch(/username/i);
+
+    // And no half-created user is left behind.
+    const users = await ctx.db.get<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM users WHERE email = 'second@unique.test'",
+    );
+    expect(Number(users?.n)).toBe(0);
+    await ctx.close();
+  });
+
+  it('a later reset request kills the earlier link', async () => {
+    const { ctx } = await appWithMail();
+    const company = await seedCompany(ctx.db, {
+      name: 'Supersede Co', slug: 'supersede-co', code: 'SUPERCO', username: 'jo',
+      email: 'jo@super.test', password: 'a-long-enough-password',
+    });
+
+    await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/reset/request',
+      payload: { companyCode: 'SUPERCO', email: 'jo@super.test' },
+    });
+    const first = await ctx.db.get<{ id: string }>(
+      "SELECT id FROM invitations WHERE tenant_id = ? AND kind = 'reset' AND accepted_at IS NULL",
+      [company.tenantId],
+    );
+
+    // A second request, as a person does when the first mail seems lost.
+    await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/reset/request',
+      payload: { companyCode: 'SUPERCO', email: 'jo@super.test' },
+    });
+
+    if (first === null) throw new Error('the first request wrote no invitation');
+    const firstAfter = await ctx.db.get<{ revoked_at: string | null }>(
+      'SELECT revoked_at FROM invitations WHERE id = ?',
+      [first.id],
+    );
+    // The older link is revoked, so a message somebody forwarded earlier cannot still change the
+    // password after the person asked for a fresh one.
+    expect(firstAfter?.revoked_at).not.toBeNull();
+    await ctx.close();
+  });
+
+  it('does not count a pending administrator as one who can administer', async () => {
+    const { ctx } = await appWithMail();
+    await seedCompany(ctx.db, {
+      name: 'Admin Co', slug: 'admin-co', code: 'ADMINCO', username: 'owner',
+      email: 'owner@adminco.test', password: 'a-long-enough-password',
+    });
+    const cookie = await signIn(ctx.app, 'ADMINCO', 'owner', 'a-long-enough-password');
+
+    // Invited, not accepted — this must not protect the only active administrator.
+    await ctx.app.inject({
+      method: 'POST', url: '/api/v1/team/invite', headers: { cookie },
+      payload: { email: 'future@adminco.test', role: 'company_admin', displayName: 'Future', username: 'future' },
+    });
+
+    const demoted = await ctx.app.inject({
+      method: 'PATCH', url: '/api/v1/team/owner@adminco.test/role', headers: { cookie },
+      payload: { role: 'viewer' },
+    });
+
+    // Refused, because a company with no active administrator cannot be administered.
+    expect(demoted.statusCode).toBe(409);
+    expect(demoted.json().message).toMatch(/administrator/i);
+    await ctx.close();
+  });
+});
+
+describe('an internal failure never reaches a browser as text', () => {
+  it('answers a sanitised 500, not the database message', async () => {
+    /*
+     * The regression this pins: with the error handler registered *after* the prefix plugin,
+     * Fastify's default shape came back — `{"message":"UNIQUE constraint failed: memberships.…"}`.
+     * That is an inventory of the schema handed to whoever asked.
+     *
+     * Forced here by dropping the table the invite route writes to, so the route throws a real
+     * database error rather than a contrived one.
+     */
+    const { ctx } = await appWithMail();
+    await seedCompany(ctx.db, {
+      name: 'Boom Co', slug: 'boom-co', code: 'BOOMCO', username: 'owner',
+      email: 'owner@boom.test', password: 'a-long-enough-password',
+    });
+    const cookie = await signIn(ctx.app, 'BOOMCO', 'owner', 'a-long-enough-password');
+
+    await ctx.db.run('DROP TABLE invitations');
+
+    const response = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/team/invite', headers: { cookie },
+      payload: { email: 'x@boom.test', role: 'viewer', displayName: 'X', username: 'xuser' },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      ok: false,
+      code: 'internal',
+      message: 'Something went wrong. The details were logged.',
+    });
+    // The whole point: no SQL, no table name, no stack.
+    expect(response.body).not.toMatch(/invitations|SQLITE|constraint|at Object/i);
+    await ctx.close();
+  });
+});

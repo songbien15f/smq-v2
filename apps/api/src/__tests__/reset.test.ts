@@ -187,3 +187,98 @@ describe('confirming a reset', () => {
     await ctx.close();
   });
 });
+
+describe('a grant is only good while the membership behind it is', () => {
+  it('refuses a reset link after the member has been removed', async () => {
+    const { ctx } = await appWithMail();
+    const company = await seedCompany(ctx.db, {
+      name: 'Gone Sheds', slug: 'gone-sheds', code: 'GONE', username: 'jo',
+      email: 'jo@gone.test', password: 'a-long-enough-password',
+    });
+    const created = await createInvitation(ctx.db, {
+      tenantId: company.tenantId, email: 'jo@gone.test', role: 'company_admin',
+      kind: 'reset', invitedBy: null, ttlMs: RESET_TTL_MS,
+    });
+
+    // The administrator removes them while the link is still live.
+    await ctx.db.run("UPDATE memberships SET status = 'removed' WHERE tenant_id = ? AND user_id = ?", [
+      company.tenantId,
+      company.userId,
+    ]);
+
+    const confirmed = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/reset/confirm',
+      payload: { token: created.token, password: 'a-brand-new-password', confirmPassword: 'a-brand-new-password' },
+    });
+
+    // Same sentence as a dead link, and no session — an offboarded person must not be able to
+    // change a global password and must not consume a seat of a company they have left.
+    expect(confirmed.statusCode).toBe(422);
+    expect(confirmed.json().message).toBe('That link is no longer valid. Ask for a new one.');
+
+    const sessions = await ctx.db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND revoked_at IS NULL',
+      [company.userId],
+    );
+    expect(Number(sessions?.n)).toBe(0);
+
+    await ctx.close();
+  });
+
+  it('refuses a member invitation whose membership row is no longer pending', async () => {
+    const { ctx } = await appWithMail();
+    const company = await seedCompany(ctx.db, {
+      name: 'Stale Sheds', slug: 'stale-sheds', code: 'STALE', username: 'owner',
+      email: 'owner@stale.test', password: 'a-long-enough-password',
+    });
+    const created = await createInvitation(ctx.db, {
+      tenantId: company.tenantId, email: 'gone@stale.test', role: 'estimator',
+      kind: 'member', invitedBy: null, ttlMs: RESET_TTL_MS,
+    });
+
+    // The invitation exists but its membership was removed, so there is nothing to activate.
+    await ctx.db.run(
+      `INSERT INTO users (id, email, display_name, password_hash, must_change_password, created_at, updated_at)
+       VALUES ('ghost-1', 'gone@stale.test', 'Ghost', NULL, 1, ?, ?)`,
+      [new Date().toISOString(), new Date().toISOString()],
+    );
+    await ctx.db.run(
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+       VALUES (?, 'ghost-1', 'estimator', 'removed', ?, ?, 'ghost')`,
+      [company.tenantId, new Date().toISOString(), new Date().toISOString()],
+    );
+
+    const joined = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/auth/join/confirm',
+      payload: { token: created.token, password: 'a-brand-new-password', confirmPassword: 'a-brand-new-password' },
+    });
+    expect(joined.statusCode).toBe(422);
+
+    const rows = await ctx.db.get<{ status: string }>(
+      "SELECT status FROM memberships WHERE tenant_id = ? AND user_id = 'ghost-1'",
+      [company.tenantId],
+    );
+    expect(rows?.status).toBe('removed');
+    await ctx.close();
+  });
+});
+
+describe('mail is configured only when it has a From address', () => {
+  it('treats SMTP credentials without MAIL_FROM as unconfigured', async () => {
+    const { mailIsConfigured } = await import('../lib/mail/smtp');
+
+    const credentials = {
+      SMTP_USER: 'user',
+      SMTP_PASS: 'pass',
+      SMTP_HOST: 'mail.example.test',
+      SMTP_PORT: '587',
+      NODE_ENV: 'development',
+    } as NodeJS.ProcessEnv;
+
+    // No MAIL_FROM: there is an address to connect as and none to send from, so every message is
+    // refused. Reporting "configured" made a reset form promise a link that could never arrive.
+    expect(mailIsConfigured({ ...credentials })).toBe(false);
+    expect(mailIsConfigured({ ...credentials, MAIL_FROM: '   ' })).toBe(false);
+    expect(mailIsConfigured({ ...credentials, MAIL_FROM: 'no_reply@example.test' })).toBe(true);
+  });
+});

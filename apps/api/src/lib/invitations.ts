@@ -55,6 +55,16 @@ export interface ResolvedInvitation {
   kind: InvitationKind;
   /** The person this grant is for. Always present: a token for an address with no account is unusable. */
   userId: string;
+  /**
+   * That person's membership status **in the invitation's company**, or `null` when there is no row.
+   *
+   * The caller must check this. A grant is issued against a membership, and a membership can be
+   * removed while the link is still live — an offboarded employee's reset link, or an invitation to
+   * somebody since removed. Spending either would change a password that is **global** to the
+   * person, and would try to open a session in a company they no longer belong to: a session that
+   * cannot resolve, so the seat it claimed is never released.
+   */
+  membershipStatus: string | null;
 }
 
 /** Create a grant, returning the plaintext token once. */
@@ -105,11 +115,13 @@ export async function resolveInvitation(
     revoked_at: string | null;
     expires_at: string;
     user_id: string | null;
+    membership_status: string | null;
   }>(
     `SELECT i.id, i.tenant_id, i.email, i.role, i.kind, i.accepted_at, i.revoked_at, i.expires_at,
-            u.id AS user_id
+            u.id AS user_id, m.status AS membership_status
        FROM invitations i
        LEFT JOIN users u ON lower(u.email) = lower(i.email)
+       LEFT JOIN memberships m ON m.tenant_id = i.tenant_id AND m.user_id = u.id
       WHERE i.token_hash = ?`,
     [hashToken(input.token)],
   );
@@ -128,6 +140,7 @@ export async function resolveInvitation(
     role: row.role,
     kind: row.kind as InvitationKind,
     userId: row.user_id,
+    membershipStatus: row.membership_status,
   };
 }
 
@@ -142,4 +155,25 @@ export async function spendInvitation(db: Db, invitationId: string): Promise<voi
     now(),
     invitationId,
   ]);
+}
+
+/**
+ * Revoke every live grant of one kind for one person.
+ *
+ * Called when a new grant is issued, so a link that was forwarded or left in a mailbox stops working
+ * the moment the person asks for another. Without it, two live reset links both work, and the older
+ * one — the one most likely to have leaked — overwrites whatever the newer one set.
+ *
+ * Returns how many rows it revoked, which is useful to a caller that wants to say so.
+ */
+export async function revokeLiveInvitations(
+  db: Db,
+  input: { tenantId: string; email: string; kind: InvitationKind },
+): Promise<number> {
+  const result = await db.run(
+    `UPDATE invitations SET revoked_at = ?
+      WHERE tenant_id = ? AND kind = ? AND lower(email) = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
+    [now(), input.tenantId, input.kind, input.email.trim().toLowerCase()],
+  );
+  return result.changes;
 }

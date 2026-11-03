@@ -90,8 +90,20 @@ thing stopping them.
   company code and username — which is the answer to the usual "I have forgotten which name I use".
 - The request form **never says whether an address exists**. If it says "check your email", that is
   the answer for a wrong address too. An operator diagnosing a missing message reads the API log.
-- Mail must be configured (`SMTP_USER` / `SMTP_PASS`). Without it the request answers **503** and
-  says so rather than pretending to have sent something.
+- Mail must be configured: `SMTP_USER`, `SMTP_PASS` **and** `MAIL_FROM`. Missing any of the three
+  counts as unconfigured, and the request answers **503** rather than pretending to have sent
+  something.
+- **A reset link is a bearer token.** Whoever opens it can set the password, and is then signed in as
+  that person. That is true of every product that mails a link, and it is why the link lives an hour.
+  The person who *requested* it does not get an exclusive right to it — forwarding it hands over the
+  account. Requesting a second link revokes the first, so an old message stops working.
+- **A password belongs to the person, not the company.** If one addresses already exists at another
+  company, the invitation reuses that account (it cannot do otherwise — the address is unique across
+  the installation), and the password chosen through the link applies everywhere that person signs
+  in. Inviting somebody who already works at another dealership gives them the same credential at
+  both; that is intended, and worth knowing before you invite.
+- An invitation is **`pending`** until accepted: it cannot sign in and holds no seat. Inviting the
+  same address again replaces the earlier link.
 
 ### The platform logo
 

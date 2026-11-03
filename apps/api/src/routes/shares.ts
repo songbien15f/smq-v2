@@ -24,11 +24,10 @@ import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 import { z } from 'zod';
-import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
 import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import { hashIp, hashToken, newToken, tokenMatches } from '../lib/tokens.js';
-import { loadFrozenRevision, RevisionNotFound } from '../lib/documents.js';
+import { loadFrozenRevision, renderFrozenHtml, RevisionNotFound } from '../lib/documents.js';
 
 /** The cookie a redeemed share sets. Named for the purpose, so it cannot be confused with a session. */
 const SHARE_COOKIE = 'sq_share';
@@ -238,7 +237,8 @@ export function registerShares(app: FastifyInstance, db: Db, publicOrigin: strin
         // A shared quote is a private document: no caching by a proxy, and no indexing.
         .header('cache-control', 'no-store, private')
         .header('x-robots-tag', 'noindex, nofollow')
-        .send(renderQuoteHtml(toCustomerDocument(frozen)));
+        // The same helper the download route uses: one page, whichever door a customer came in.
+        .send(await renderFrozenHtml(frozen));
     } catch (error) {
       if (error instanceof RevisionNotFound) {
         return sendFail(reply, 'not_found', 'This link is no longer available. Ask for a new one.');

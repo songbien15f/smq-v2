@@ -31,8 +31,29 @@ import { loadLogo } from '@sq/core/branding';
  * the logo without restarting the API.
  */
 export async function renderFrozenHtml(frozen: FrozenRevision): Promise<string> {
+  return (await renderFrozenDocument(frozen)).html;
+}
+
+/**
+ * The same render, with the identity of the logo it actually used.
+ *
+ * `logoKey` exists for one reason: the PDF cache is keyed on a hash of the revision, and the page
+ * now also depends on `LOGO_FILE`. Two renders of one revision under two different logos produce
+ * different pages, so they must not share a cache entry — and the only way to guarantee the key
+ * matches the bytes is to take it from the render itself rather than recompute it at the call site.
+ *
+ * The value is the logo's sha256 when the image was used, and the literal `'text'` when the text
+ * fallback was — so replacing a logo, removing it, or restoring the same one each move the key.
+ */
+export async function renderFrozenDocument(
+  frozen: FrozenRevision,
+): Promise<{ html: string; logoKey: string }> {
   const logo = await loadLogo(process.env.LOGO_FILE);
-  return renderQuoteHtml(toCustomerDocument(frozen), { logo });
+  const used = logo !== null && frozen.company.logoHash === logo.sha256 ? logo.sha256 : 'text';
+  return {
+    html: renderQuoteHtml(toCustomerDocument(frozen), { logo }),
+    logoKey: used,
+  };
 }
 
 /** Raised when the revision does not exist, or belongs to another company. */
@@ -154,8 +175,19 @@ export async function loadFrozenRevision(
   };
 }
 
-/** The content hash a PDF cache is keyed on: the revision plus the document layout version. */
-export function revisionDocumentKey(revision: FrozenRevision): string {
+/**
+ * The content hash a PDF cache is keyed on: the revision, the document layout version, and the
+ * identity of the logo in force.
+ *
+ * The logo is here because the page now depends on it: the same revision rendered under two
+ * different logos is two different documents. Left out, a PDF rendered before a rebrand would be
+ * served for that revision forever, while the HTML of the same revision had already switched to the
+ * new mark — the two doors showing a customer different pages.
+ *
+ * `logoKey` comes from `renderFrozenDocument`, so it describes the bytes that were actually
+ * rendered rather than a second guess at what they should have been.
+ */
+export function revisionDocumentKey(revision: FrozenRevision, logoKey = 'text'): string {
   // Everything a rendered page depends on, so a revision whose stored JSON was edited (which the
   // database refuses) cannot serve a stale PDF.
   return [
@@ -166,5 +198,6 @@ export function revisionDocumentKey(revision: FrozenRevision): string {
     JSON.stringify(revision.price),
     JSON.stringify(revision.company),
     JSON.stringify(revision.customer),
+    logoKey,
   ].join('|');
 }

@@ -23,7 +23,12 @@ import { renderQuoteHtml, renderPdf, readCachedPdf, writeCachedPdf, PdfUnavailab
 import { toCustomerDocument } from '@sq/core/documents';
 import { clientIp, sendFail } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
-import { loadFrozenRevision, renderFrozenHtml, RevisionNotFound, revisionDocumentKey } from '../lib/documents.js';
+import {
+  loadFrozenRevision,
+  renderFrozenDocument,
+  RevisionNotFound,
+  revisionDocumentKey,
+} from '../lib/documents.js';
 
 /** Where rendered PDFs live. Content-addressed by revision, so a re-download is cheap. */
 function pdfCacheRoot(): string {
@@ -142,11 +147,15 @@ async function buildHtml(
       revision: revisionNumber,
     });
 
+    // One render answers both: the HTML and the identity of the logo it used, which is what the
+    // PDF cache is keyed on. Two calls could disagree; one cannot.
+    const rendered = await renderFrozenDocument(frozen);
+
     return {
-      html: await renderFrozenHtml(frozen),
+      html: rendered.html,
       quoteNumber: frozen.quoteNumber,
       revision: frozen.revision,
-      cacheKey: revisionDocumentKey(frozen),
+      cacheKey: revisionDocumentKey(frozen, rendered.logoKey),
     };
   } catch (error) {
     if (error instanceof RevisionNotFound) {

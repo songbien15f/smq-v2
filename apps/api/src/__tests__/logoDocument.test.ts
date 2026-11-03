@@ -7,6 +7,8 @@ import { newId, now } from '@sq/db';
 import type { Db } from '@sq/db';
 import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
+import { revisionDocumentKey } from '../lib/documents';
+import { loadFrozenRevision, renderFrozenDocument } from '../lib/documents';
 
 /**
  * The platform logo through the API, without the licensed price book.
@@ -164,5 +166,77 @@ describe('the logo on a served document', () => {
     expect(after.statusCode).toBe(200);
     expect(after.body).not.toContain('data:image/png;base64,');
     expect(after.body).toContain('LOGO SHEDS');
+  });
+});
+
+describe('the PDF cache key', () => {
+  it('changes when the platform logo changes, so a cached PDF is never stale', async () => {
+    const company = await seedCompany(ctx.db, {
+      name: 'Cache Sheds Pty Ltd', slug: 'cache-sheds', code: 'CACHE', username: 'owner',
+      email: 'owner@cache.test', password: 'a-long-enough-password',
+    });
+    const quoteId = await seedQuoteWithLogo(ctx.db, company.tenantId, sha(PNG_1PX));
+
+    writeFileSync(join(dir, 'a.png'), PNG_1PX);
+    process.env.LOGO_FILE = join(dir, 'a.png');
+    const frozen = await loadFrozenRevision(ctx.db, { tenantId: company.tenantId, quoteId, revision: 1 });
+    const withA = revisionDocumentKey(frozen, (await renderFrozenDocument(frozen)).logoKey);
+
+    writeFileSync(join(dir, 'b.png'), PNG_OTHER);
+    process.env.LOGO_FILE = join(dir, 'b.png');
+    const withB = revisionDocumentKey(frozen, (await renderFrozenDocument(frozen)).logoKey);
+
+    // Same revision, different logo in force: the rendered page differs, so the cache key must too.
+    // Without this a PDF rendered under logo A is served forever after a rebrand.
+    expect(withA).not.toBe(withB);
+  });
+
+  it('renders the logo on the customer share link too', async () => {
+    /*
+     * The share link is the door a **customer** uses, so it is the one where a missing logo is most
+     * visible. It rendered through a different helper than the download until this was fixed, which
+     * is exactly the kind of drift the "one page from either door" rule exists to prevent.
+     */
+    const file = join(dir, 'share-logo.png');
+    writeFileSync(file, PNG_1PX);
+    process.env.LOGO_FILE = file;
+
+    const company = await seedCompany(ctx.db, {
+      name: 'Share Sheds Pty Ltd', slug: 'share-sheds', code: 'SHARES', username: 'owner',
+      email: 'owner@share.test', password: 'a-long-enough-password',
+    });
+    const quoteId = await seedQuoteWithLogo(ctx.db, company.tenantId, sha(PNG_1PX));
+
+    const revision = await ctx.db.get<{ id: string }>(
+      'SELECT id FROM quote_revisions WHERE quote_id = ? AND revision = 1',
+      [quoteId],
+    );
+    if (revision === null) throw new Error('the seeded quote has no revision 1');
+    const { hashToken, newToken } = await import('../lib/tokens');
+    const token = newToken();
+    await ctx.db.run(
+      `INSERT INTO quote_shares (id, tenant_id, quote_id, revision_id, token_hash, created_by, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+      [
+        (await import('@sq/db')).newId(),
+        company.tenantId,
+        quoteId,
+        revision.id,
+        hashToken(token),
+        new Date().toISOString(),
+        new Date(Date.now() + 86_400_000).toISOString(),
+      ],
+    );
+
+    const redeemed = await ctx.app.inject({
+      method: 'POST', url: '/api/v1/share/redeem', payload: { token },
+    });
+    expect(redeemed.statusCode).toBe(200);
+
+    const shared = await ctx.app.inject({
+      method: 'GET', url: '/api/v1/share/document', headers: { cookie: redeemed.headers['set-cookie'] as string },
+    });
+    expect(shared.statusCode).toBe(200);
+    expect(shared.body).toContain('data:image/png;base64,');
   });
 });

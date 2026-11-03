@@ -17,7 +17,12 @@ import { z } from 'zod';
 import { newId, now } from '@sq/db';
 import { loadSettings, saveSettings, type CompanySettings } from '../lib/settings.js';
 import { inviteRequest } from '@sq/contracts';
-import { createInvitation, INVITE_TTL_MS, RESET_TTL_MS } from '../lib/invitations.js';
+import {
+  createInvitation,
+  revokeLiveInvitations,
+  INVITE_TTL_MS,
+  RESET_TTL_MS,
+} from '../lib/invitations.js';
 import {
   sendInviteMail,
   sendResetMail,
@@ -180,8 +185,15 @@ export function registerSettings(
 
     // You may not demote yourself out of the last admin seat.
     if (request.params.email === session.email && role !== 'company_admin') {
+      /*
+       * `status = 'active'` is load-bearing. An invited-but-unaccepted administrator cannot
+       * administer anything, and counting one would let the last real administrator demote
+       * themselves into a company nobody can run — with the pending person not even visible on this
+       * screen, because it lists active members only.
+       */
       const admins = await db.get<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM memberships WHERE tenant_id = ? AND role = 'company_admin'`,
+        `SELECT COUNT(*) AS n FROM memberships
+          WHERE tenant_id = ? AND role = 'company_admin' AND status = 'active'`,
         [session.tenantId],
       );
       if (Number(admins?.n ?? 0) <= 1) {
@@ -303,6 +315,25 @@ export function registerSettings(
       );
     }
 
+    /*
+     * The username is a **second** unique key, on `(tenant_id, username)`, and the upsert below
+     * handles only the primary key. Checking it here does two things: it turns a constraint
+     * violation into a field error rather than a 500 carrying the raw SQL text, and it does so
+     * **before** a `users` row is created for an invitation that can never be sent.
+     *
+     * A person being re-invited keeps their own username, so their own row is excluded — comparing
+     * against `user_id` rather than trusting the caller.
+     */
+    const usernameTaken = await db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM memberships WHERE tenant_id = ? AND username = ? AND user_id <> ?',
+      [tenantId, body.username, existing?.user_id ?? ''],
+    );
+    if (Number(usernameTaken?.n ?? 0) > 0) {
+      return sendFail(reply, 'conflict', 'That username is already in use in this company.', [
+        { path: 'username', message: 'That username is already in use in this company.' },
+      ]);
+    }
+
     const tenant = await db.get<{ name: string; code: string | null }>(
       'SELECT name, code FROM tenants WHERE id = ?',
       [tenantId],
@@ -336,6 +367,10 @@ export function registerSettings(
        DO UPDATE SET role = excluded.role, status = 'pending', username = excluded.username, updated_at = excluded.updated_at`,
       [tenantId, userId, body.role, now(), now(), body.username],
     );
+
+    // One live invitation per person per company: a re-invite replaces the old link rather than
+    // leaving a forwarded one usable for its full seven days.
+    await revokeLiveInvitations(db, { tenantId, email: body.email, kind: 'member' });
 
     const invitation = await createInvitation(db, {
       tenantId,
@@ -392,6 +427,9 @@ export function registerSettings(
       'SELECT name, code FROM tenants WHERE id = ?',
       [tenantId],
     );
+
+    // A fresh reset replaces any live link for this person, so a forwarded older one stops working.
+    await revokeLiveInvitations(db, { tenantId, email: target.email, kind: 'reset' });
 
     const invitation = await createInvitation(db, {
       tenantId,

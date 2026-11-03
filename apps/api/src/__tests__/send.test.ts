@@ -335,7 +335,7 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
   });
 
   it('refuses a bad address before anything is queued', async () => {
-    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass' }, async () => {
+    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass', MAIL_FROM: 'no_reply@test.local' }, async () => {
       const response = await ctx.app.inject({
         method: 'POST',
         url: `/api/v1/quotes/${quoteId}/send`,
@@ -371,7 +371,7 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
       mockedLines: 3,
     });
 
-    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass' }, async () => {
+    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass', MAIL_FROM: 'no_reply@test.local' }, async () => {
       const response = await ctx.app.inject({
         method: 'POST',
         url: `/api/v1/quotes/${quoteId}/send`,
@@ -401,7 +401,7 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
       issues: [{ severity: 'assumption', code: 'GIRT_PRICE_FROM_PURLIN' }],
     });
 
-    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass' }, async () => {
+    await withEnv({ SMTP2GO_USER: 'test-user', SMTP2GO_PASS: 'test-pass', MAIL_FROM: 'no_reply@test.local' }, async () => {
       const blocked = await ctx.app.inject({
         method: 'POST',
         url: `/api/v1/quotes/${quoteId}/send`,

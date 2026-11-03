@@ -35,6 +35,7 @@ import { burnVerificationTime, hashPassword, verifyPassword } from '../lib/passw
 import {
   createInvitation,
   resolveInvitation,
+  revokeLiveInvitations,
   spendInvitation,
   RESET_TTL_MS,
 } from '../lib/invitations.js';
@@ -363,6 +364,14 @@ export function registerAuth(
       return sendOk(reply, answer);
     }
 
+    // A fresh request replaces any live link, so a forwarded older message cannot still change the
+    // password after the person asked again.
+    await revokeLiveInvitations(db, {
+      tenantId: target.tenant_id,
+      email: body.email,
+      kind: 'reset',
+    });
+
     const invitation = await createInvitation(db, {
       tenantId: target.tenant_id,
       email: body.email,
@@ -413,7 +422,9 @@ export function registerAuth(
     if (body === null) return;
 
     const invitation = await resolveInvitation(db, { token: body.token, kind: 'reset' });
-    if (invitation === null) {
+    if (invitation === null || invitation.tenantId === null || invitation.membershipStatus !== 'active') {
+      // A removed member's link is dead in the same sentence as an unknown one: naming the removal
+      // would tell a caller the address still belongs to somebody.
       return sendFail(reply, 'validation_failed', DEAD_LINK);
     }
 
@@ -456,7 +467,7 @@ export function registerAuth(
     if (body === null) return;
 
     const invitation = await resolveInvitation(db, { token: body.token, kind: 'member' });
-    if (invitation === null || invitation.tenantId === null) {
+    if (invitation === null || invitation.tenantId === null || invitation.membershipStatus !== 'pending') {
       return sendFail(reply, 'validation_failed', DEAD_LINK);
     }
 
@@ -465,10 +476,14 @@ export function registerAuth(
       'UPDATE users SET password_hash = ?, must_change_password = 0, password_set_at = ?, updated_at = ? WHERE id = ?',
       [hash, now(), now(), invitation.userId],
     );
-    await db.run(
-      "UPDATE memberships SET status = 'active', updated_at = ? WHERE tenant_id = ? AND user_id = ?",
+    const activated = await db.run(
+      "UPDATE memberships SET status = 'active', updated_at = ? WHERE tenant_id = ? AND user_id = ? AND status = 'pending'",
       [now(), invitation.tenantId, invitation.userId],
     );
+    if (activated.changes === 0) {
+      // Lost a race with a removal between resolve and update.
+      return sendFail(reply, 'validation_failed', DEAD_LINK);
+    }
     await spendInvitation(db, invitation.id);
 
     return completeSignIn({

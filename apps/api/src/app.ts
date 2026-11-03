@@ -59,6 +59,29 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
     bodyLimit: 1024 * 1024,
   });
 
+  /**
+   * One error handler, so an unhandled throw never returns a stack trace.
+   *
+   * The message is logged; the client gets a code and a sentence. A stack trace in a
+   * response is an inventory of the system handed to whoever asked.
+   *
+   * ## Why this is registered **before** the route plugin
+   *
+   * Fastify resolves handlers per encapsulation context. A handler set on the root instance
+   * *after* `register` has already created the child context is not inherited by it, so the routes
+   * answered with Fastify's default shape — including the original error `message`, which is how a
+   * raw `UNIQUE constraint failed: memberships.username` reached a browser. Registering first means
+   * the child is created with the handler already inherited.
+   */
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error }, 'unhandled');
+    reply.status(500).send({
+      ok: false,
+      code: 'internal',
+      message: 'Something went wrong. The details were logged.',
+    });
+  });
+
   await app.register(cookie);
 
   await app.register(cors, {
@@ -118,21 +141,6 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
     },
     { prefix: '/api/v1' },
   );
-
-  /**
-   * One error handler, so an unhandled throw never returns a stack trace.
-   *
-   * The message is logged; the client gets a code and a sentence. A stack trace in a
-   * response is an inventory of the system handed to whoever asked.
-   */
-  app.setErrorHandler((error, request, reply) => {
-    request.log.error({ err: error }, 'unhandled');
-    reply.status(500).send({
-      ok: false,
-      code: 'internal',
-      message: 'Something went wrong. The details were logged.',
-    });
-  });
 
   app.setNotFoundHandler((_request, reply) => {
     // The envelope shape is kept even for a 404, so a client parses one shape.
