@@ -20,13 +20,6 @@ export interface ApiConfig {
   allowedOrigins: string[];
   /** `true` in production; enables the strict checks below. */
   production: boolean;
-  /**
-   * One company on one database.
-   *
-   * Default true, and true in every deployment of this product. Passed through to the
-   * company module, which refuses to create a second company while it is set.
-   */
-  singleCompany: boolean;
 }
 
 const DEV_SECRET = 'dev-only-secret-change-me';
@@ -61,6 +54,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     sessionIdleHours: Number(env.SESSION_IDLE_HOURS ?? 24),
     allowedOrigins,
     production,
-    singleCompany: (env.SINGLE_COMPANY ?? '1').trim() !== '0',
   };
 }

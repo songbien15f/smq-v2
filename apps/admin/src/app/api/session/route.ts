@@ -24,7 +24,7 @@ const COOKIE = 'sq_session';
 export async function POST(request: Request): Promise<NextResponse> {
   const body = await request.text();
 
-  const upstream = await fetch(`${API}/auth/sign-in`, {
+  const upstream = await fetch(`${API}/auth/sign-in-platform`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body,

@@ -25,6 +25,18 @@ import { z } from 'zod';
 /** A paying customer: one shed company. */
 export const createCompanyRequest = z.object({
   name: z.string().trim().min(1, 'Enter the company name').max(200),
+  /**
+   * The business code a person types to reach this company — `VGG`, `SSA`.
+   *
+   * Separate from `slug`: the slug is the URL key and must stay URL-safe, while the code is what
+   * appears on a quote and is read down a phone line. Stored upper-cased by the API.
+   */
+  code: z
+    .string()
+    .trim()
+    .min(1, 'Enter a company code')
+    .max(16, 'A company code is at most 16 characters')
+    .regex(/^[A-Za-z0-9-]+$/, 'Letters, digits and dashes only'),
   /** A short, URL-safe identifier. Lowercase letters, digits and dashes. */
   slug: z
     .string()
@@ -48,6 +60,8 @@ export interface CompanyRow {
   id: string;
   name: string;
   slug: string;
+  /** The business code a person types at sign-in. */
+  code: string | null;
   status: 'active' | 'suspended';
   seats: number;
   /** Sessions active in the last few minutes. Compared against `seats`. */

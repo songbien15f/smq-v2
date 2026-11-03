@@ -1,19 +1,15 @@
 /**
- * The company — singular, on purpose.
+ * The company, and there can be more than one.
  *
- * This product is deployed **for one company on one database**. It is a conversion of the
- * old desktop app plus its licence server, and the licence server's multi-company control
- * plane existed to sell seats to many dealers; the conversion runs for one of them.
+ * Two deployments share this code: a quoting install runs for one customer on one database, while
+ * the licence-vendor control plane holds many. Both are the same model — a `tenants` row with its
+ * staff — so there is no mode to switch on and no single-company invariant to enforce. What makes
+ * cross-company data impossible is the schema, not a count: every business table carries
+ * `tenant_id` and its composite foreign keys, so a query cannot return another company's rows
+ * however many companies exist.
  *
- * Two consequences, and both are enforced here rather than assumed:
- *
- * 1. **Creating a second company is refused.** Not hidden in a UI — refused by the function
- *    that creates companies, so a route, a script or a future screen cannot do it by
- *    accident.
- * 2. **`tenant_id` stays in the schema.** It is one row, and it is the reason a query can
- *    never return another company's rows: the column and the composite foreign keys make
- *    cross-company data impossible rather than merely unintended. Dropping it would save
- *    six files and cost the ability to reproduce a reported bug locally in a minute.
+ * `tenant_id` therefore stays, and the business key a person types to reach a company is
+ * `tenants.code`.
  */
 
 import type { Db } from '@sq/db';
@@ -31,20 +27,12 @@ export interface Company {
   createdAt: string;
 }
 
-/** Raised when something tries to create a company on a single-company installation. */
-export class SingleCompanyError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SingleCompanyError';
-  }
-}
-
 /**
- * The installation's company, or `null` before it has been set up.
+ * A company, or `null` before any has been set up.
  *
- * Returns the first row by `created_at` rather than asserting a count, so a database with
- * two rows still opens and the operator can see what happened instead of meeting a startup
- * crash. `assertCompanyIsSingular` is the check that reports the anomaly.
+ * Returns the first row by `created_at`. With more than one company this answers "the oldest",
+ * which is only meaningful for a caller that predates multi-company; new code reads the company
+ * from the session instead of guessing.
  */
 export async function loadCompany(db: Db): Promise<Company | null> {
   const row = await db.get<{
@@ -81,35 +69,27 @@ export async function countCompanies(db: Db): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-/**
- * Refuse when more than one company exists.
- *
- * Called at boot. A second company is not a feature that was turned on; it is a state the
- * application cannot reason about — which company would a quote belong to? — so it is
- * reported loudly rather than half-supported.
- */
-export async function assertCompanyIsSingular(db: Db): Promise<number> {
-  const count = await countCompanies(db);
-  if (count > 1) {
-    throw new Error(
-      `This installation is configured for one company (SINGLE_COMPANY=1) but the database holds ${count} tenants. ` +
-        'Either remove the extra rows or set SINGLE_COMPANY=0, having understood that quotes, seats and settings ' +
-        'would then be shared across companies.',
-    );
-  }
-  return count;
-}
-
 /** What a caller must supply to create the company. No defaults: a placeholder company is
  *  a company nobody recognises six months later. */
 export interface CreateCompanyInput {
   name: string;
+  /** The business code printed on a quote and typed at sign-in. Unique, upper-cased. */
+  code: string;
   slug: string;
   abn?: string | null;
   seats: number;
   subscriptionEndsAt?: string | null;
   adminEmail: string;
   adminDisplayName: string;
+  /**
+   * The name the first administrator signs in with.
+   *
+   * Optional, defaulting to the local part of their email — which is what the 009 migration
+   * backfills for existing companies, so a created company and a migrated one look the same.
+   * A named value wins when the operator supplies one, because "owner" is a better sign-in name
+   * than the first word of somebody's mailbox.
+   */
+  adminUsername?: string;
   /**
    * The administrator's password.
    *
@@ -134,34 +114,29 @@ export interface CreatedCompany {
  * and an administrator with no company is a person who cannot sign in. A half-applied
  * create is worse than a refused one.
  *
- * `singleCompany` is a parameter rather than a module constant so the refusal is testable
- * without an environment variable, and so the one call site that legitimately permits more
- * than one — nothing today — would have to say so out loud.
+ * There is no longer any notion of "the" company: a second create is an ordinary operation, and
+ * the business code it is given is what a person types to reach it.
  */
-export async function createCompany(
-  db: Db,
-  input: CreateCompanyInput,
-  singleCompany: boolean,
-): Promise<CreatedCompany> {
-  if (singleCompany) {
-    const existing = await countCompanies(db);
-    if (existing > 0) {
-      throw new SingleCompanyError(
-        'This installation already has its company. It runs for one company on one database, so a second is refused; ' +
-          'edit the existing company instead.',
-      );
-    }
-  }
-
+export async function createCompany(db: Db, input: CreateCompanyInput): Promise<CreatedCompany> {
   const tenantId = newId();
   const userId = newId();
   const at = now();
 
   await db.transaction(async (tx) => {
     await tx.run(
-      `INSERT INTO tenants (id, name, slug, abn, status, seats, subscription_ends_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
-      [tenantId, input.name, input.slug, input.abn ?? null, input.seats, input.subscriptionEndsAt ?? null, at, at],
+      `INSERT INTO tenants (id, name, slug, code, abn, status, seats, subscription_ends_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+      [
+        tenantId,
+        input.name,
+        input.slug,
+        input.code.trim().toUpperCase(),
+        input.abn ?? null,
+        input.seats,
+        input.subscriptionEndsAt ?? null,
+        at,
+        at,
+      ],
     );
 
     await tx.run(
@@ -179,10 +154,18 @@ export async function createCompany(
       ],
     );
 
+    // A membership without a username is an administrator nobody can sign in as, because the
+    // username is the sign-in key. The default matches what migration 009 backfills, so a
+    // created company and a migrated one are reachable the same way.
+    const adminUsername =
+      input.adminUsername?.trim().toLowerCase() ||
+      input.adminEmail.split('@')[0]?.toLowerCase() ||
+      'admin';
+
     await tx.run(
-      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
-       VALUES (?, ?, 'company_admin', 'active', ?, ?)`,
-      [tenantId, userId, at, at],
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+       VALUES (?, ?, 'company_admin', 'active', ?, ?, ?)`,
+      [tenantId, userId, at, at, adminUsername],
     );
 
     // A settings row from the start, so a quote never has to handle "no settings". The GST

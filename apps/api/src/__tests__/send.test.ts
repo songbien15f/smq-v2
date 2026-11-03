@@ -493,8 +493,8 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
       [await hashPassword('a-long-enough-password'), now(), now(), now()],
     );
     await ctx.db.run(
-      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
-       VALUES (?, 'viewer-1', 'viewer', 'active', ?, ?)`,
+      `INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+       VALUES (?, 'viewer-1', 'viewer', 'active', ?, ?, 'viewer')`,
       [tenantId, now(), now()],
     );
 

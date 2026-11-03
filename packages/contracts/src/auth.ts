@@ -21,8 +21,9 @@ export const PASSWORD_MIN_LENGTH = 12;
  * quote; it is simply not the key that opens the door.
  *
  * `companyCode` is optional **here** only because the schema must also describe a caller that has
- * not supplied one yet — the route refuses that with a 400. It is not optional in the client app,
- * and it can never be absent from a successful sign-in.
+ * not supplied one yet — the route rejects that with the same 422 `validation_failed` a form
+ * renders under each field, with a `companyCode` detail. It is not optional in the client app, and
+ * it can never be absent from a successful sign-in.
  */
 export const signInRequest = z.object({
   companyCode: z.string().trim().max(16, 'A company code is at most 16 characters').optional(),

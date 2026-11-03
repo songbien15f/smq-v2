@@ -3,6 +3,7 @@
  *
  * ```bash
  * COMPANY_NAME="ABC Sheds Pty Ltd" \
+ * COMPANY_CODE=ABC \
  * COMPANY_ADMIN_EMAIL=owner@abcsheds.com.au \
  * pnpm install:company
  * ```
@@ -92,6 +93,22 @@ async function main(): Promise<void> {
     .replace(/^-+|-+$/g, '')
     .slice(0, 63);
 
+  // The business code a person types to reach this company. Defaults to the same shape migration
+  // 009 derives for existing rows, so an installed company and a migrated one look alike.
+  const code = (process.env.COMPANY_CODE ?? slug)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 16);
+  if (code === '') {
+    process.stderr.write('COMPANY_CODE produced an empty value. Use letters, digits or dashes.
+');
+    process.exitCode = 1;
+    return;
+  }
+
+  const adminUsername = process.env.COMPANY_ADMIN_USERNAME ?? adminEmail.split('@')[0] ?? 'admin';
+
   const seats = Number(process.env.COMPANY_SEATS ?? 5);
   const displayName = process.env.COMPANY_ADMIN_NAME ?? 'Company Administrator';
 
@@ -127,26 +144,28 @@ async function main(): Promise<void> {
       db,
       {
         name,
+        code,
         slug,
         abn: process.env.COMPANY_ABN ?? null,
         seats: Number.isFinite(seats) && seats > 0 ? seats : 5,
         subscriptionEndsAt: process.env.COMPANY_SUBSCRIPTION_ENDS ?? null,
         adminEmail,
         adminDisplayName: displayName,
+        adminUsername,
         adminPasswordHash: await hashPassword(password),
         // The password was chosen by the operator, not sent through a chat window, so there
         // is nothing to force them to replace.
         mustChangePassword: false,
       },
-      true,
     );
 
     process.stdout.write(
       `\nInstalled.\n\n` +
         `  company    ${name}\n` +
+        `  code       ${code}      <- typed at sign-in\n` +
         `  slug       ${slug}\n` +
         `  tenant id  ${created.tenantId}\n` +
-        `  admin      ${adminEmail}\n` +
+        `  admin      ${adminUsername} (${adminEmail})\n` +
         `  seats      ${seats}\n`,
     );
 

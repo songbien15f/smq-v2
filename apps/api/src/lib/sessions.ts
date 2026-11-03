@@ -28,6 +28,8 @@ export interface SessionRecord {
   sessionId: string;
   userId: string;
   tenantId: string | null;
+  /** The business code of the company this session is open in. Null for platform staff. */
+  tenantCode: string | null;
   email: string;
   displayName: string;
   /** Null when the caller is platform staff rather than a company's staff. */
@@ -170,11 +172,12 @@ export async function resolveSession(
     platform_role: string | null;
     user_disabled_at: string | null;
     tenant_status: string | null;
+    tenant_code: string | null;
     role: string | null;
     membership_status: string | null;
   }>(
     `SELECT s.id, s.user_id, s.tenant_id, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
-            u.email, u.display_name, u.must_change_password, u.platform_role,
+            t.code AS tenant_code, u.email, u.display_name, u.must_change_password, u.platform_role,
             u.disabled_at AS user_disabled_at,
             t.status AS tenant_status,
             m.role, m.status AS membership_status
@@ -214,6 +217,7 @@ export async function resolveSession(
     sessionId: row.id,
     userId: row.user_id,
     tenantId: row.tenant_id,
+    tenantCode: row.tenant_code ?? null,
     email: row.email,
     displayName: row.display_name,
     role: (row.role as CompanyRole | null) ?? null,
