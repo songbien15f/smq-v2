@@ -1,0 +1,64 @@
+{
+  "name": "@sq/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./domain": {
+      "types": "./dist/domain/index.d.ts",
+      "default": "./dist/domain/index.js"
+    },
+    "./bom": {
+      "types": "./dist/bom/index.d.ts",
+      "default": "./dist/bom/index.js"
+    },
+    "./pricing": {
+      "types": "./dist/pricing/index.d.ts",
+      "default": "./dist/pricing/index.js"
+    },
+    "./estimating": {
+      "types": "./dist/estimating/index.d.ts",
+      "default": "./dist/estimating/index.js"
+    },
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "default": "./dist/documents/index.js"
+    },
+    "./package.json": "./package.json",
+    "./quoteFile": {
+      "types": "./dist/quoteFile/index.d.ts",
+      "default": "./dist/quoteFile/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo",
+    "mock-book": "tsx scripts/make-mock-price-book.ts"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "zod": "4.6.7",
+    "puppeteer-core": "25.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "rimraf": "6.1.2",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5",
+    "tsx": "4.23.15"
+  }
+}

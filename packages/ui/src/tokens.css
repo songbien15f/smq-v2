@@ -1,0 +1,123 @@
+/*
+ * SmartQuote v2 design tokens.
+ *
+ * Every colour, size and duration in the product resolves through a variable in
+ * this file. That is not tidiness — it is what makes a change of visual direction
+ * a change to one file instead of a hunt through components for a hex value.
+ *
+ * Import order: this file first, then Tailwind (`@import "tailwindcss"`), so a
+ * Tailwind utility and a token never disagree.
+ *
+ * The palette is navy + gold. An earlier proposal of trust-blue + orange with
+ * frosted glass was rejected for this product: the gold accent is already the
+ * "attention" colour on a dense materials table, and a translucent surface over a
+ * forty-column BOM costs contrast for nothing.
+ */
+
+@theme {
+  /* ---- brand chrome ------------------------------------------------------ */
+  --color-sq-brand: #071832;
+  --color-sq-brand-hover: #0d2a52;
+  --color-sq-brand-soft: #12294a;
+
+  /* ---- accent ------------------------------------------------------------ */
+  /* Gold is an accent on navy. As *text* on a light surface it fails contrast, so
+     `--color-sq-gold-deep` exists for that case and is what components must use. */
+  --color-sq-gold: #f4cf75;
+  --color-sq-gold-deep: #8a6a1f;
+
+  /* ---- surfaces ---------------------------------------------------------- */
+  --color-sq-ground: #f6f7f9;
+  --color-sq-surface: #ffffff;
+  --color-sq-line: #e2e8f0;
+
+  /* ---- text -------------------------------------------------------------- */
+  --color-sq-ink: #0f172a;
+  --color-sq-ink-muted: #475569;
+
+  /* ---- state ------------------------------------------------------------- */
+  /* Amber means "needs attention" and nothing else: an unpriced line, a clamp
+     notice, an unacknowledged caveat. It is never used as brand colour. */
+  --color-sq-attention: #b45309;
+  --color-sq-danger: #b91c1c;
+  --color-sq-ok: #15803d;
+  --color-sq-info: #1d4ed8;
+
+  /* ---- type -------------------------------------------------------------- */
+  /* System stacks, deliberately. The build must work offline, and a `next/font`
+     fetch at build time fails without network. */
+  --font-sq-sans: Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-sq-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace;
+
+  --text-sq-micro: 0.75rem;   /* 12px — labels, never body copy */
+  --text-sq-body: 0.875rem;   /* 14px — the working size */
+  --text-sq-body-lg: 1rem;    /* 16px — the customer-facing site */
+  --text-sq-title: 1.25rem;   /* 20px */
+  --text-sq-display: 1.75rem; /* 28px — the contract price */
+
+  /* ---- spacing: density 8/10, a dashboard not a landing page ------------- */
+  --spacing-sq-1: 0.25rem;  /*  4px */
+  --spacing-sq-2: 0.5rem;   /*  8px */
+  --spacing-sq-3: 0.75rem;  /* 12px */
+  --spacing-sq-4: 1rem;     /* 16px */
+  --spacing-sq-6: 1.5rem;   /* 24px */
+  --spacing-sq-8: 2rem;     /* 32px */
+
+  /* ---- shape ------------------------------------------------------------- */
+  --radius-sq-sm: 0.25rem;
+  --radius-sq-md: 0.375rem;
+  --radius-sq-lg: 0.5rem;
+
+  /* ---- motion: subtle, and disabled wholesale under reduced motion ------- */
+  --duration-sq-fast: 150ms;
+  --duration-sq-base: 200ms;
+  --ease-sq: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Dense table rows. A BOM is read by scanning a column, so the row height and the
+   alignment matter more than any decoration. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-sq-ground);
+    color: var(--color-sq-ink);
+    font-family: var(--font-sq-sans);
+    font-size: var(--text-sq-body);
+    line-height: 1.5;
+  }
+
+  /* Numbers that are compared must line up. A proportional digit in a quantity
+     column makes a materials list unreadable at a glance. */
+  .sq-numeric {
+    font-family: var(--font-sq-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* A visible focus ring on every interactive element. Removing it without a
+     replacement is the single most common accessibility regression. */
+  :focus-visible {
+    outline: 2px solid var(--color-sq-brand);
+    outline-offset: 2px;
+  }
+
+  /* On navy chrome the navy ring would be invisible. */
+  .sq-on-brand :focus-visible {
+    outline-color: var(--color-sq-gold);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

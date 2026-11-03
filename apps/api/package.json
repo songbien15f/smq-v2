@@ -1,0 +1,38 @@
+{
+  "name": "@sq/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/server.ts",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist .turbo",
+    "seed": "node --env-file-if-exists=../../.env --import tsx scripts/seed.ts",
+    "install:company": "node --env-file-if-exists=../../.env --import tsx scripts/install.ts",
+    "publish-book": "node --env-file-if-exists=../../.env --import tsx scripts/publish-book.ts",
+    "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.5",
+    "@fastify/cors": "11.3.1",
+    "@sq/contracts": "workspace:*",
+    "@sq/core": "workspace:*",
+    "@sq/db": "workspace:*",
+    "fastify": "5.12.7",
+    "nodemailer": "7.0.5",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "@types/nodemailer": "^8.0.2",
+    "rimraf": "6.1.2",
+    "tsup": "8.5.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

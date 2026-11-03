@@ -1,0 +1,41 @@
+# Postgres for local development, when the machine has no PostgreSQL of its own.
+#
+# On a machine that already runs Postgres — port 5432 answers — this file is unnecessary.
+# Use scripts/postgres-setup.sql instead. Verified against a local PostgreSQL 18.1.
+#
+# It is **not** a deployment artefact: production runs Postgres the customer already has,
+# or a managed instance, not this container.
+#
+#   docker compose up -d
+#   cp .env.example .env          # DB_DRIVER=postgres is already the default
+#   pnpm db:migrate
+#   pnpm install:company
+#   pnpm dev
+#
+# The credentials here are deliberately obvious and local-only. They are the same values
+# `.env.example` points at, so the two agree; anything reachable from outside a laptop must
+# take its URL from a secret store instead.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: smartquote-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartquote
+      POSTGRES_PASSWORD: smartquote
+      POSTGRES_DB: smartquote
+    ports:
+      - '5432:5432'
+    volumes:
+      - smartquote-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The API refuses to boot on an unreachable database, so waiting here is what makes
+      # `docker compose up -d && pnpm db:migrate` reliable instead of a race.
+      test: ['CMD-SHELL', 'pg_isready -U smartquote -d smartquote']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  smartquote-pgdata:

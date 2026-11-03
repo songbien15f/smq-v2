@@ -1,0 +1,27 @@
+{
+  "name": "smartquote-v2",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:migrate": "pnpm --filter @sq/db migrate",
+    "db:seed": "pnpm --filter @sq/api seed",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "install:company": "pnpm --filter @sq/api install:company",
+    "publish-book": "pnpm --filter @sq/api publish-book",
+    "seats:release": "pnpm --filter @sq/api seats:release"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "rimraf": "6.1.2",
+    "turbo": "2.11.10",
+    "typescript": "5.9.3"
+  }
+}

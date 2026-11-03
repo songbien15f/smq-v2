@@ -1,0 +1,58 @@
+# Decision Record — SmartQuote v2
+
+Every entry is a decision that shapes the build. Anything marked **ASSUMED** was
+taken on the operator's behalf because the question was left open; it is cheap to
+reverse now and expensive later, so it is written down here rather than buried in code.
+
+Source of truth for the analysis this build is based on:
+`D:\Docs\OS.mr.Thi\docs\smartquote-analysis` (23 documents + `tong-ket/`).
+
+---
+
+## A. Architecture
+
+| # | Decision | Status | Rationale |
+|---|---|---|---|
+| A1 | **Monorepo with a separate backend**: pnpm workspaces + Turborepo; `apps/api` (NestJS/Fastify) is the only component that talks to a database; three Next.js front-ends consume it over HTTP. | ASSUMED | The request said "BE-FE (adminsite, clientsite)". A separate API is what makes "which site serves whom" a routing question rather than a permission question. |
+| A2 | **Three sites** — `admin` (the vendor's control plane), `client` (the shed company's workspace), `site` (the end customer) — **for one company on one database**. `SINGLE_COMPANY=1` is the default and the only configuration in use: a second company is refused by the function that creates companies, not hidden in a UI. | **Decided 2026-11-01 by the operator** | The conversion replaces a desktop app plus a licence server for one company ("convert project cũ … nên chỉ làm cho 1 công ty, 1 postgres"). The licence server's multi-company control plane existed to sell seats to many dealers; the conversion runs for one of them. `tenant_id` stays in the schema — it is one row, and it is what makes another company's rows unreachable — but a second row is a state the application cannot reason about (`which company would a quote belong to?`), so it stops the boot. |
+| A3 | **Database adapter with two drivers**: SQLite (`node:sqlite`, bundled in Node 22+) is the default for development and single-box installs; Postgres is the production driver. One interface, both drivers. Written by hand; **no ORM.** | ASSUMED, revised twice | (a) Postgres is the right production answer, but **neither `psql` nor Docker exists on this machine**, so a Postgres-only build could not be run or tested here. (b) **Drizzle was dropped**: two dialects means two schemas or dialect-specific column types, which means two migration sets that drift. A hand-written adapter plus a **portable SQL subset** (TEXT uuid ids from the application, ISO-8601 TEXT timestamps, INTEGER 0/1 booleans, INTEGER cents) gives one set of migrations. The cost is losing Postgres-native types; it is paid once per schema change avoided. |
+| A12 | **Every `?` placeholder is rewritten to `$1…$n` for Postgres by the driver.** The rewrite tracks quotes, so a `?` inside a string literal is left alone. | Decided | The alternative is a second copy of every statement. The restriction it imposes — no `?|` or `??` operators — is stated in `driver.ts` rather than assumed. |
+| A13 | **Prices, costs and masses are computed only in `@sq/core`; the API never recomputes a total.** | Decided | A second implementation on the server is a second answer, and the two would disagree the first time a formula changed. |
+| A14 | **The browser only talks to its own Next app; a route handler bridges to the API.** | Decided | Cross-origin cookies plus a CORS allow-list produce "the user is randomly signed out" when either is misconfigured, and the failure looks like a session bug rather than a configuration one. One bridge per app is one place to be right. |
+| A15 | **`node:sqlite` is loaded through an assembled specifier** (`['node','sqlite'].join(':')` via `createRequire`). | Decided | Both bundlers behind `tsup` rewrite `from 'node:sqlite'` to `from 'sqlite'`, which is a package name, not a built-in — so the build succeeds and the first query fails at runtime. Setting `external` does not help. See `sqliteRuntime.ts`. |
+| A16 | **Relative paths in configuration resolve from the workspace root, not `process.cwd()`.** | Decided | `pnpm --filter <pkg> <script>` runs inside the package directory, so `DB_FILE=./data/app.db` produced three different databases. The failure mode was `no such table: users` on a server that looked healthy. |
+| A17 | **Postgres is the default driver; SQLite is the offline fallback.** Same migrations, one driver chosen by `DB_DRIVER`. | **Decided 2026-11-01 by the operator** ("1 postgres") | Postgres is the target and `.env.example` names it. SQLite remains for a single-machine install and for a developer box without a server. **Verified on PostgreSQL 18.1 on 2026-11-01:** three migrations apply, 27 tables, both immutability triggers present, money is `integer`, the API serves `"database":"postgres"`, and the full API suite passes 19/19 on Postgres as well as on SQLite. |
+| A20 | **SQL is restricted to a subset both drivers accept, and the *parameter list* is built rather than passed as nulls.** | Decided after running on Postgres | Two real defects surfaced only when the driver changed: a `DO INSTEAD NOTHING` rule silently swallowed the immutability refusal *and* broke foreign-key enforcement on the parent table (`pg/003` replaces the rules with triggers); and `AND (? IS NULL OR col < ?)` answered **500 — "could not determine data type of parameter $2"** on every first page load, because Postgres infers a parameter's type from context and a bare `? IS NULL` gives it none. Neither is visible by reading the SQL. **This is the argument for running the suite on both drivers, which is now what `TEST_DB_DRIVER=postgres` exists for.** |
+| A18 | **A girt is priced from its own material, or from the purlin row with an explicit allowance.** `assumed` and `mocked` are different flags. | **Decided 2026-11-01 by the operator** | "Girt không phải purlin." A purlin is a roof member and a girt is a wall member: different sections, different loads. When a book lists no girt material the amount is still an approximation, so the line is marked `assumed` — a real catalogue price for a different member, which makes the quote *indicative* — and never `mocked`, which means no price was found and blocks a send. Collapsing the two would either refuse a sendable quote or present an approximation as exact. |
+| A19 | **A `.sqd` reader handles three formats and refuses the fourth.** | Decided after inspecting real files | Verification item C1 asked "AES or plaintext?" and the answer was *both, plus a third*: plaintext JSON, AES-256-CBC, and **.NET `BinaryFormatter`** output (the shipped sample data, written by a path the analysis had recorded as dead). Reading `BinaryFormatter` from Node means reimplementing a .NET object graph, so the reader detects it and refuses with an explanation — a half-parsed quote yields a plausible wrong price, which is the failure this product exists to prevent. |
+| A4 | **The price book stays SQLite**, content-addressed and read-only (`<sha256>.db`). It is an immutable artefact, not a transactional database. | Carried from 01 | Verified in `01.RFQ_PWA_SQ` (`src/lib/pricing/publish.ts`): a book is opened `readOnly`, every publication is a new file, backup is a file copy, no write contention. Porting it to Postgres would be redoing something that already works. |
+| A5 | **No byte-for-byte compatibility with the desktop.** The web replaces both the desktop app and the licence server; the licence *business* (seats, versions, templates, forced updates) becomes a feature of `apps/admin`. | ASSUMED | Stated in the request: "dựng lại project mới để thay desktop app + web license". This removes the hardest constraint in the original roadmap (Phase 2's byte-for-byte DTO/enum/route parity). |
+| A6 | **Extract the pure core from `01.RFQ_PWA_SQ`; do not clone the app.** | Decided | A clone carries the demo gate, the watermark, `/w/<tenantId>` URLs, the `settings.json` dashboard password and the two-mode shell — all of which are demo-only furniture this product must not have. |
+| A7 | **No `/w/<tenantId>` anywhere.** Tenancy comes from the session in every site. | Carried from 01 | `01` measured 4 pages and 19 API routes shaped by `[tenantId]` in the path, and the operator rejected that shape for a customer install ("1 site riêng để cty họ xài"). |
+| A8 | **BOM bugs are fixed, not replicated.** Every deliberate divergence is listed in `KNOWN-DEVIATIONS.md` with its price effect. | Decided 2026-10-21 | Recorded in project memory (`sales-pipeline-scope`). Replicating a bug to match numbers is the wrong goal when the desktop is itself incomplete. |
+| A9 | **`packages/core` never imports a database, HTTP or tenancy.** | Decided | `01` measured the core as tenant-free (0 of 14 domain files, 0 of 15 BOM files, 0 of 12 pricing files touch tenancy). Keeping that boundary is what lets the engine be tested without a database and reused by all three front-ends. |
+| A10 | **Three visual directions are proposed, the navy/gold anchor is the default.** | Decided | The blue + orange + glassmorphism result from `ui-ux-pro-max` was already rejected once (project memory `landing-and-workspace-ui-audit`) because the navy/gold palette passes AA. Do not regress. See `design-system/smartquote-v2/MASTER.md`. |
+| A11 | **Fonts are a system stack, not `next/font`.** | Carried from 01 | `01` must build offline; a Google Fonts import at build time fails without network. Numeric data uses a mono stack (`ui-monospace, "Cascadia Mono", Consolas`) with tabular figures — that is what makes a BOM column readable. |
+
+## B. Open questions (the operator's to answer, not blocking phases 0–3)
+
+**Answered 2026-11-01:** B1 keep the name **SmartQuote**; B2 built as one system rather than
+client-first; B3 **one company on one Postgres**; B4 `cost_purlin` is the price-book table and a
+girt is priced from its own material or from the purlin row *with an allowance* — see A18.
+
+| # | Question | Why it matters |
+|---|---|---|
+| B5 | **History/audit** — the desktop's dual-write history is dormant (wired, never called). Drop it, or build a real audit log? | The build has `audit_events` for access and admin changes only. A full row-history channel is a different, larger design. |
+| B6 | **Five real quotes as golden tests** | The single biggest open question is whether the BOM quantities match what a factory ships. The harness exists and reads a real `.sqd`; what it needs is the operator's issued quotes to compare against. Until then the engine is *traceable*, not *proven*. |
+
+## C. Verification items carried from the analysis
+
+These are the four items `05-rui-ro-va-quyet-dinh.md` says must be checked before
+porting. Two are now moot because A5 removes the constraint; two still apply.
+
+| # | Item | Status here |
+|---|---|---|
+| C1 | Is `.sqd` AES or plaintext? `ApplyAESSecurityProvider()` is commented out on some open/save paths. | **RESOLVED 2026-11-01.** Both, and a third: plaintext JSON, AES-256-CBC, and .NET `BinaryFormatter` (the shipped sample data). The reader detects all three, reads the first two, and refuses the third with an explanation. See A19. |
+| C2 | Is option material computed? `computeTotalOptionMaterial` is commented out at `ExportUtil.cs:783`. | **Still applies** to any BOM comparison against the desktop. Do not treat a desktop BOM with empty option lines as proof the formulas are wrong. |
+| C3 | Server baseline is a dirty working tree (Google Places + desktop auth are untracked). | Moot — nothing is being cloned. |
+| C4 | The real database is newer than the ORM metadata (16 columns + `DbAppAcc`). | **Applies to schema design.** Use `2026-10-31-real-ddl-12-tables.txt`, never the ORM metadata. |

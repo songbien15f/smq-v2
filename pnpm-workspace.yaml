@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+  - "tools/*"
+
+# esbuild ships a platform binary via a postinstall script. pnpm 12 refuses to run
+# dependency build scripts unless each one is named here.
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - konva@10.9.1

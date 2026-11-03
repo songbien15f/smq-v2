@@ -1,0 +1,12 @@
+{
+  "name": "@sq/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["tsconfig", "eslint"],
+  "exports": {
+    "./tsconfig/base": "./tsconfig/base.json",
+    "./tsconfig/library": "./tsconfig/library.json",
+    "./tsconfig/next": "./tsconfig/next.json"
+  }
+}

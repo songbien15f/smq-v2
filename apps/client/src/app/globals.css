@@ -1,0 +1,11 @@
+@import '@sq/ui/tokens.css';
+@import 'tailwindcss';
+
+/*
+ * Token import order matters: the design tokens declare the `@theme` block, and
+ * Tailwind reads it to generate utilities like `bg-sq-brand`. Importing Tailwind first
+ * would leave those utilities ungenerated.
+ *
+ * The workspace package is resolved through `transpilePackages`, so this import works
+ * in dev and in `next build` without a package build step.
+ */

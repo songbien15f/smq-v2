@@ -1,0 +1,92 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+
+  // `NODE_ENV` changes what the build produces, so it invalidates the cache.
+  "globalEnv": ["NODE_ENV"],
+
+  // Run-time configuration is passed through but does **not** invalidate the cache: none of
+  // these changes the artefact a task produces.
+  //
+  // Listed explicitly because Turbo filters the environment by default, and the failure is
+  // silent and misleading: `DB_DRIVER=sqlite pnpm dev` reached the app as *unset*, so it fell
+  // back to the default (Postgres), and the API refused to start with a message about
+  // DATABASE_URL — pointing at a setting that was never the problem.
+  "globalPassThroughEnv": [
+    "DB_DRIVER",
+    "DB_FILE",
+    "DATABASE_URL",
+    "SINGLE_COMPANY",
+    "API_PORT",
+    "API_HOST",
+    "API_BASE_URL",
+    "ADMIN_PORT",
+    "CLIENT_PORT",
+    "SITE_PORT",
+    "ADMIN_ORIGIN",
+    "CLIENT_ORIGIN",
+    "SITE_ORIGIN",
+    "SESSION_SECRET",
+    "SESSION_TTL_HOURS",
+    "SESSION_IDLE_HOURS",
+    "PRICE_BOOKS",
+    "PRICE_DUMP",
+    "PDF_CACHE",
+    "CHROME_PATH",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASS",
+    "MAIL_FROM",
+    "ENQUIRY_TO",
+    "GOOGLE_PLACES_API_KEY",
+    "SHEDSAFE_BASE_URL",
+    "SHEDSAFE_USERNAME",
+    "SHEDSAFE_PASSWORD",
+    "AI_BASE_URL",
+    "AI_API_KEY",
+    "AI_MODEL",
+    "COMPANY_NAME",
+    "COMPANY_SLUG",
+    "COMPANY_ABN",
+    "COMPANY_SEATS",
+    "COMPANY_SUBSCRIPTION_ENDS",
+    "COMPANY_ADMIN_EMAIL",
+    "COMPANY_ADMIN_PASSWORD",
+    "COMPANY_ADMIN_NAME",
+    "PLATFORM_ADMIN_EMAIL",
+    "PLATFORM_ADMIN_PASSWORD",
+    "PLATFORM_ADMIN_NAME",
+    "SEED_PLATFORM_EMAIL",
+    "SEED_PLATFORM_PASSWORD",
+    "SEED_COMPANY_SLUG",
+    "SEED_COMPANY_EMAIL",
+    "SEED_COMPANY_PASSWORD"
+  ],
+
+  "globalDependencies": ["tsconfig.base.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      // `^build` once before anything watches, so a freshly cloned checkout has the
+      // packages' `dist` before an app imports them. The watchers must not clean `dist`
+      // afterwards — see the `build` scripts in each package.
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}
