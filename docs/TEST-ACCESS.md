@@ -74,18 +74,44 @@ but it is **not** what you type to sign in.
 
 ### A second person with a smaller role
 
-The seed creates only the administrator. To test what an estimator sees, invite them from
-**Team** while signed in as `owner` (Settings → Team → invite, role `estimator`), then sign in with
-the company code `DEMOSHEDS` and the username they were invited under. Their capabilities are
-checked on the server for every operation, so a hidden button is never the only thing stopping them.
+**There is no invite screen yet.** The Team page can change a role and remove a member, and the API
+refuses a change that would leave the company with no administrator — but nothing creates a member.
+`inviteRequest` exists in `@sq/contracts` with no route and no form consuming it.
+
+Until that slice lands, add a person with the SQL below (or sign in as the existing administrator and
+work with one account). Their role decides what the server allows for every operation, so a hidden
+button is never the only thing stopping them.
+
+```sql
+-- Replace the values. `username` is what they type at sign-in, unique per company.
+INSERT INTO users (id, email, display_name, password_hash, must_change_password, password_set_at, created_at, updated_at)
+VALUES (gen_random_uuid()::text, 'sales@demo-sheds.local', 'Demo Sales',
+        '<scrypt hash>', 1, now()::text, now()::text, now()::text);
+
+INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at, username)
+SELECT t.id, u.id, 'estimator', 'active', now()::text, now()::text, 'sales'
+  FROM tenants t, users u
+ WHERE t.code = 'DEMOSHEDS' AND u.email = 'sales@demo-sheds.local';
+```
+
+Generating the hash by hand is awkward, so the practical route is `pnpm db:seed` on a scratch database
+or a small script — the point is that **no screen does it yet**.
 
 ### Adding your own company
 
-A second company is an ordinary operation now, not a refused one. From the admin app
-(`POST /api/v1/admin/companies`), supply a `code` (letters, digits, dashes; stored upper-case) and
-the first administrator's email and name; the response carries a one-time password, and the
-username defaults to the part of that email before the `@`. A created company signs in exactly the
-way above.
+A second company is an ordinary operation now, not a refused one — **but there is no create-company
+form in the admin app either.** `POST /api/v1/admin/companies` exists and is behind
+`platform:companies`, so it is reachable with the vendor session:
+
+```bash
+curl -s -X POST http://localhost:3060/api/v1/admin/companies \
+  -H 'content-type: application/json' -H 'cookie: sq_session=…' \
+  -d '{"name":"Second Sheds","code":"SECOND","slug":"second-sheds","seats":3,
+       "subscriptionEndsAt":null,"adminEmail":"boss@second.test","adminDisplayName":"Second Boss"}'
+```
+
+The response carries a one-time password. The username defaults to the part of the admin email before
+the `@`. The new company then signs in exactly the way above, with its own code.
 
 ## Integration credentials (`.env` only)
 
