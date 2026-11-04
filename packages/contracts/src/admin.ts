@@ -26,7 +26,7 @@ import { z } from 'zod';
 export const createCompanyRequest = z.object({
   name: z.string().trim().min(1, 'Enter the company name').max(200),
   /**
-   * The business code a person types to reach this company — `VGG`, `SSA`.
+   * The business code a person types to reach this company — a short string like `ACME`.
    *
    * Separate from `slug`: the slug is the URL key and must stay URL-safe, while the code is what
    * appears on a quote and is read down a phone line. Stored upper-cased by the API.

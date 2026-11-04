@@ -29,9 +29,9 @@ describe('the sign-in form', () => {
     render(<SignInForm />);
     const code = screen.getByLabelText(/company code/i) as HTMLInputElement;
 
-    fireEvent.change(code, { target: { value: 'vgg' } });
+    fireEvent.change(code, { target: { value: 'acme' } });
 
-    expect(code.value).toBe('VGG');
+    expect(code.value).toBe('ACME');
   });
 
   it('posts the company code, the username and the password — never an email', async () => {
@@ -48,12 +48,12 @@ describe('the sign-in form', () => {
     );
 
     render(<SignInForm />);
-    fireEvent.change(screen.getByLabelText(/company code/i), { target: { value: 'vgg' } });
+    fireEvent.change(screen.getByLabelText(/company code/i), { target: { value: 'acme' } });
     fireEvent.change(screen.getByLabelText(/username/i), { target: { value: 'Jo' } });
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'a-long-enough-password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0]).toEqual({ companyCode: 'VGG', username: 'jo', password: 'a-long-enough-password' });
+    expect(posted[0]).toEqual({ companyCode: 'ACME', username: 'jo', password: 'a-long-enough-password' });
   });
 });
