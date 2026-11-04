@@ -138,6 +138,51 @@ curl -s -X POST http://localhost:3060/api/v1/admin/companies \
 The response carries a one-time password. The username defaults to the part of the admin email before
 the `@`. The new company then signs in exactly the way above, with its own code.
 
+## What this database holds today
+
+Measured from the running database on **2026-11-04**, not copied from the defaults above — the two
+can drift, and when they did the launcher was printing a password the database no longer held.
+
+```sql
+-- The whole account list, if this table is ever out of date:
+SELECT t.code, t.name, t.status, t.seats, m.username, u.email, m.role
+  FROM memberships m
+  JOIN tenants t ON t.id = m.tenant_id
+  JOIN users   u ON u.id = m.user_id
+ ORDER BY t.code, m.username;
+```
+
+### Companies
+
+| Code | Name | Slug | Status | Seats |
+| ---- | ---- | ---- | ------ | ----- |
+| `DEMOSHEDS` | Demo Sheds Pty Ltd | `demo-sheds` | active | 5 |
+
+One company. It is the only tenant; nothing else has been provisioned.
+
+### People
+
+| Company code | Username | Email | Role | Can sign in at |
+| ------------ | -------- | ----- | ---- | -------------- |
+| `DEMOSHEDS` | `owner` | owner@demo-sheds.local | `company_admin` | http://localhost:3061 (code + username + password `a-long-enough-password`) |
+| — | — | ops@smartquote.local | `platform_admin` | http://localhost:3062 (email + password `platform-password-change-me`) |
+
+Two accounts in total. There is **no** salesperson, estimator or viewer account — the doc used to
+name a `sales@demo-sheds.local` that the seed never created. Add a second person from **Team →
+Invite** if you need one.
+
+### Two things that were reset after testing
+
+Both were side effects of the reset-password verification on 2026-11-03, and both are back to the
+values above:
+
+- **The demo owner's password** was changed to `a-brand-new-password` while exercising the reset
+  flow. It has been restored to `a-long-enough-password`, so the launcher and this file agree.
+- **Every seat was held** by the sessions that verification left open, so a sign-in answered 403
+  "every seat in this company is in use". `pnpm seats:release` freed them. If that error appears
+  again, that is the fix — a seat is a live session, and a browser that was closed without signing
+  out holds one until the session expires.
+
 ## Integration credentials (`.env` only)
 
 Both integrations are **optional**. When a key is absent, the relevant UI degrades to the hand-typed

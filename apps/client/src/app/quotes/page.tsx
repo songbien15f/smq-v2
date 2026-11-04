@@ -49,13 +49,14 @@ export default async function QuotesPage() {
   const needsPrice = items.filter((q) => q.incomplete).length;
 
   const summary = [
-    { label: 'Open', value: String(open), hint: 'draft or issued', tone: '' },
-    { label: 'Accepted', value: String(accepted), hint: 'ready to schedule', tone: '' },
-    { label: 'On the books', value: money(onTheBooks), hint: 'contract value', tone: '' },
+    { label: 'Open', value: String(open), tone: '' },
+    { label: 'Accepted', value: String(accepted), tone: '' },
+    { label: 'On the books', value: money(onTheBooks), tone: '' },
     {
       label: 'Needs a price',
       value: String(needsPrice),
-      hint: needsPrice === 0 ? 'every line priced' : 'do not send these',
+      // The one piece of state in the strip that a person must act on, so it is the one that is
+      // coloured. Everything else reads the same whatever it says.
       tone: needsPrice > 0 ? 'text-sq-attention' : '',
     },
   ];
@@ -82,17 +83,25 @@ export default async function QuotesPage() {
     >
       <div className="flex flex-col gap-sq-4">
         {result.ok && items.length > 0 && (
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sq-lg border border-sq-line bg-sq-line lg:grid-cols-4">
+          /*
+            One line, not four cards.
+            The strip answers "what is on the books" at a glance, so it earns its place only while it
+            stays out of the way: the four cards it replaced were 114 px tall and pushed the table to
+            314 px, which is a third of a laptop screen spent on four numbers nobody reads twice. The
+            label and the figure now sit on one baseline, and the hint line that repeated the label is
+            gone. The tone still carries the one piece of state that matters — an attention-coloured
+            figure means there is a quote that must not be sent.
+          */
+          <dl className="grid grid-cols-2 gap-x-sq-4 gap-y-sq-1 rounded-sq-lg border border-sq-line bg-sq-surface px-sq-4 py-sq-2 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-sq-6 sm:gap-y-0">
             {summary.map((cell) => (
-              <div key={cell.label} className="bg-sq-surface px-sq-4 py-sq-3">
-                <span className="text-sq-micro font-semibold uppercase tracking-wider text-sq-ink-muted">{cell.label}</span>
-                <b className={`sq-numeric mt-1 block text-sq-display font-semibold tracking-tight ${cell.tone || 'text-sq-ink'}`}>
+              <div key={cell.label} className="flex items-baseline gap-sq-2">
+                <dt className="text-sq-micro font-semibold uppercase tracking-wider text-sq-ink-muted">{cell.label}</dt>
+                <dd className={`sq-numeric text-sq-body-lg font-semibold tracking-tight ${cell.tone || 'text-sq-ink'}`}>
                   {cell.value}
-                </b>
-                <span className="text-sq-micro text-sq-ink-muted">{cell.hint}</span>
+                </dd>
               </div>
             ))}
-          </div>
+          </dl>
         )}
 
         {!result.ok && (

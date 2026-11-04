@@ -12,8 +12,8 @@
  *
  * - The form posts to this app's own `/api/session` route, not directly to the API, so the session
  *   cookie is set on this origin and the browser never sends credentials cross-origin.
- * - The company code is **displayed** upper-cased but **stored** as typed, so a paste of `vgg` shows
- *   `VGG` and an operator who typed spaces is not quietly corrected.
+ * - The company code is **displayed** upper-cased but **stored** as typed, so a paste of `abc` shows
+ *   `ABC` and an operator who typed spaces is not quietly corrected.
  * - Errors appear above the fields **and** under them, and focus moves to the first invalid field —
  *   a message at the top of a form with no focus move is a message a keyboard user has to hunt for.
  * - The submit button is disabled while a request is in flight, so a double-click is not two
@@ -109,7 +109,7 @@ export function SignInForm({ next }: { next?: string }) {
         required
         value={companyCode.toUpperCase()}
         onChange={(event) => setCompanyCode(event.target.value)}
-        hint="The short code on your quote, e.g. VGG."
+        hint="The short code printed on your quotes."
         error={fieldErrors.companyCode}
       />
 
