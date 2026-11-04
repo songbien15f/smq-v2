@@ -22,6 +22,7 @@
  */
 
 import { create } from 'zustand';
+import { DEFAULT_ADDITION_LINES } from '@sq/core/domain';
 import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
 import type { PricingInput } from '@sq/contracts';
 
@@ -148,6 +149,7 @@ const DEFAULT_PRICING: PricingInput = {
   engineeringCents: 0,
   extraCents: 0,
   additionsCents: 0,
+  additionLines: DEFAULT_ADDITION_LINES,
   contractOverrideCents: null,
   depositOverrideCents: null,
   progressOverrideCents: null,

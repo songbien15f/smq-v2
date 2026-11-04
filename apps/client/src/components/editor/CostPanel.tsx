@@ -25,6 +25,8 @@
 import { useState } from 'react';
 import type { PriceView } from '@sq/contracts';
 import { chargesSubtotalCents, chargeAmountCents } from '@sq/core/domain';
+import { DEFAULT_ADDITION_LINES, additionsTotalCents } from '@sq/core/domain';
+import type { AdditionLine } from '@sq/core/domain';
 import { money, percent, Panel, StatusPill } from '@sq/ui';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
@@ -60,6 +62,18 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
   const patchCharge = useShedStore((state) => state.patchCharge);
   const removeCharge = useShedStore((state) => state.removeCharge);
   const [showDerivation, setShowDerivation] = useState(false);
+
+  /*
+   * Additions: the desktop's itemised block. Labour and equipment carry `+GST`; the fees
+   * are entered as invoiced. The total is recomputed from the lines on every edit, and
+   * the number input under them is the desktop's "Real Addition" override.
+   */
+  const additionLines = pricing.additionLines ?? DEFAULT_ADDITION_LINES;
+  const computedAdditions = additionsTotalCents(additionLines);
+  const updateAddition = (id: string, patch: Partial<AdditionLine>): void => {
+    const next = additionLines.map((line) => (line.id === id ? { ...line, ...patch } : line));
+    setPricing({ additionLines: next, additionsCents: additionsTotalCents(next) });
+  };
 
   if (price === null) {
     return (
@@ -237,13 +251,72 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
             onChange={(cents) => setPricing({ extraCents: cents })}
             hint="Anything else the customer agreed to pay."
           />
-          <MoneyField
-            id="cost-additions"
-            label="Additions"
-            valueCents={pricing.additionsCents}
-            onChange={(cents) => setPricing({ additionsCents: cents })}
-            hint="Crane hire, permits. Added once to the contract — never through the material margin."
-          />
+          <div className="flex flex-col gap-sq-1 rounded-md border border-sq-line p-sq-2">
+            <div className="flex items-baseline justify-between gap-sq-2">
+              <span className="text-sq-micro font-medium text-sq-ink">
+                Additions (after the quote rate)
+              </span>
+              <span className="sq-numeric text-sq-body text-sq-ink">{money(computedAdditions)}</span>
+            </div>
+            <ul className="flex flex-col gap-sq-1">
+              {additionLines.map((line) => (
+                <li key={line.id} className="flex items-center gap-sq-1">
+                  <input
+                    type="checkbox"
+                    checked={line.enabled}
+                    onChange={(event) => updateAddition(line.id, { enabled: event.target.checked })}
+                    aria-label={`Include ${line.label}`}
+                    className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-sq-brand)]"
+                  />
+                  <span className="min-w-0 flex-1 text-sq-micro text-sq-ink">
+                    {line.label}
+                    {line.taxable ? ' +GST' : ''}
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={0.5}
+                    value={line.quantity}
+                    onChange={(event) => updateAddition(line.id, { quantity: Number(event.target.value) })}
+                    aria-label={`${line.label} quantity`}
+                    className="min-h-8 w-16 rounded border border-sq-line bg-sq-surface px-1 text-right text-sq-micro"
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={0.5}
+                    value={line.unitPriceCents / 100}
+                    onChange={(event) =>
+                      updateAddition(line.id, {
+                        unitPriceCents: Math.round(Number(event.target.value) * 100),
+                      })
+                    }
+                    aria-label={`${line.label} unit price`}
+                    className="min-h-8 w-20 rounded border border-sq-line bg-sq-surface px-1 text-right text-sq-micro"
+                  />
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-center justify-between gap-sq-2 pt-sq-1">
+              <span className="text-sq-micro text-sq-ink-muted">
+                Override total (typing here ignores the lines)
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.5}
+                value={pricing.additionsCents / 100}
+                onChange={(event) =>
+                  setPricing({ additionsCents: Math.round(Number(event.target.value) * 100) })
+                }
+                aria-label="Additions override total"
+                className="min-h-8 w-24 rounded border border-sq-line bg-sq-surface px-1 text-right text-sq-micro"
+              />
+            </label>
+          </div>
         </div>
       </Panel>
 

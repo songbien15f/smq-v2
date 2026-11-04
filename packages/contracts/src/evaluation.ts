@@ -53,6 +53,25 @@ export const pricingInput = z.object({
   extraCents: z.number().int().min(0),
   /** Additions (crane hire, permits…) added once to the contract, not to material cost. */
   additionsCents: z.number().int().min(0),
+  /**
+   * The itemised additions, when the operator built them up line by line.
+   *
+   * Optional so a revision written before this field existed still parses. The engine
+   * prices `additionsCents`; the lines explain where that figure came from and let the
+   * screen rebuild it when the quote is reopened.
+   */
+  additionLines: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        taxable: z.boolean(),
+        enabled: z.boolean(),
+        quantity: z.number().min(0),
+        unitPriceCents: z.number().int().min(0),
+      }),
+    )
+    .optional(),
 
   /**
    * The operator's own contract price, or `null` to use the computed one.
