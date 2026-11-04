@@ -20,8 +20,8 @@
  */
 
 import { useId, useState } from 'react';
-import { COLORBOND } from '@sq/core/domain';
-import type { DisplayUnit } from '@sq/core/domain';
+import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
+import type { DisplayUnit, ShedColors } from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
 import { DimensionField } from './DimensionField';
@@ -617,19 +617,24 @@ function ShedGroup({
 
 /* ---------------------------------------------------------------- Colours */
 
-/** What each colour role is called in the trade, so the label is not a code name. */
-const COLOUR_ROLES: { key: string; label: string }[] = [
-  { key: 'wall', label: 'Wall' },
-  { key: 'roof', label: 'Roof' },
-  { key: 'barge', label: 'Barge and fascia' },
-  { key: 'downpipe', label: 'Downpipe' },
-  { key: 'gutter', label: 'Gutter' },
-  { key: 'window', label: 'Window' },
-  { key: 'paDoor', label: 'PA door' },
-  { key: 'rollerDoor', label: 'Roller door' },
-  { key: 'slidingDoor', label: 'Sliding door' },
-  { key: 'dividingWall', label: 'Dividing wall' },
-];
+/**
+ * What each colour role is called in the trade, so the label is not a code name.
+ *
+ * Keyed by `keyof ShedColors`: adding a role to the domain is a compile error here,
+ * not a role that silently has no swatch grid.
+ */
+const COLOUR_LABELS: Record<keyof ShedColors, string> = {
+  wall: 'Wall',
+  roof: 'Roof',
+  barge: 'Barge and fascia',
+  downpipe: 'Downpipe',
+  gutter: 'Gutter',
+  window: 'Window',
+  paDoor: 'PA door',
+  rollerDoor: 'Roller door',
+  slidingDoor: 'Sliding door',
+  dividingWall: 'Dividing wall',
+};
 
 function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }) {
   const config = useShedStoreConfig();
@@ -640,23 +645,24 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
   const nameOf = (hex: string): string =>
     entries.find(([, value]) => value.toLowerCase() === hex.toLowerCase())?.[0] ?? '';
 
-  const setColour = (key: string, hex: string): void => {
+  const setColour = (key: keyof ShedColors, hex: string): void => {
     applyPartial({ colors: { ...config.colors, [key]: hex } as never });
   };
 
   return (
     <Group
       title="Colours"
-      issueCount={COLOUR_ROLES.filter((role) => issuesByPath.has(`colours-${role.key}`)).length}
+      issueCount={COLOUR_ROLES.filter((key) => issuesByPath.has(`colours-${key}`)).length}
     >
       <div className="flex flex-col gap-sq-3">
-        {COLOUR_ROLES.map((role) => {
-          const hex = (config.colors as unknown as Record<string, string>)[role.key] ?? '';
+        {COLOUR_ROLES.map((key) => {
+          const label = COLOUR_LABELS[key];
+          const hex = config.colors[key];
           const name = nameOf(hex);
           return (
-            <fieldset key={role.key} className="flex flex-col gap-sq-1">
+            <fieldset key={key} className="flex flex-col gap-sq-1">
               <legend className="flex w-full items-center justify-between text-sq-micro font-medium text-sq-ink">
-                <span>{role.label}</span>
+                <span>{label}</span>
                 <span className="sq-numeric text-sq-ink-muted">{name === '' ? hex : name}</span>
               </legend>
               {/*
@@ -668,10 +674,10 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
               */}
               <div
                 role="radiogroup"
-                aria-label={`${role.label} colour`}
-                aria-invalid={issuesByPath.has(`colours-${role.key}`) || undefined}
+                aria-label={`${label} colour`}
+                aria-invalid={issuesByPath.has(`colours-${key}`) || undefined}
                 aria-describedby={
-                  issuesByPath.has(`colours-${role.key}`) ? `colours-${role.key}-error` : undefined
+                  issuesByPath.has(`colours-${key}`) ? `colours-${key}-error` : undefined
                 }
                 className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto rounded-md border border-sq-line p-sq-2"
               >
@@ -685,7 +691,7 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
                       aria-checked={selected}
                       aria-label={colourName}
                       title={colourName}
-                      onClick={() => setColour(role.key, colourHex)}
+                      onClick={() => setColour(key, colourHex)}
                       className={[
                         'grid h-8 w-8 cursor-pointer place-items-center rounded-md border transition-transform duration-sq-fast',
                         selected
@@ -711,9 +717,9 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
                   );
                 })}
               </div>
-              {issuesByPath.has(`colours-${role.key}`) && (
-                <p id={`colours-${role.key}-error`} className="text-sq-micro text-sq-danger">
-                  {issuesByPath.get(`colours-${role.key}`)?.message}
+              {issuesByPath.has(`colours-${key}`) && (
+                <p id={`colours-${key}-error`} className="text-sq-micro text-sq-danger">
+                  {issuesByPath.get(`colours-${key}`)?.message}
                 </p>
               )}
             </fieldset>

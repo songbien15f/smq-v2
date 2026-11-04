@@ -23,12 +23,24 @@ import { sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import { BookMissingError, activeBookHash, openBookDatabase } from '../lib/priceBook.js';
 
+/** A published book is named by the SHA-256 of the dump it was built from. */
+const BOOK_HASH = /^[a-f0-9]{64}$/;
+
 export function registerCatalogues(scope: FastifyInstance, db: Db): void {
   scope.get('/price-books/:id/catalogues', async (request, reply) => {
     const session = requireCompanyCapability(request, reply, 'quote:read');
     if (session === null) return reply;
 
     const id = (request.params as { id: string }).id;
+    /*
+     * Only `active` or a real hash. Fastify has already URL-decoded this segment, so
+     * `..%2F..%2Fdata%2Fapp` arrives as a traversal string; passing it to the book
+     * opener would let any signed-in estimator probe the server's filesystem.
+     */
+    if (id !== 'active' && !BOOK_HASH.test(id)) {
+      return sendFail(reply, 'not_found', 'No such price book.');
+    }
+
     const hash = id === 'active' ? await activeBookHash(db) : id;
 
     if (hash === null) {
@@ -39,7 +51,15 @@ export function registerCatalogues(scope: FastifyInstance, db: Db): void {
       const catalogue = createSqliteCatalogueSource(openBookDatabase(hash)).load();
       return sendOk(reply, { bookHash: hash, catalogue });
     } catch (error) {
-      if (error instanceof BookMissingError) return sendFail(reply, 'conflict', error.message);
+      if (error instanceof BookMissingError) {
+        // The database names a book that is not on disk. The absolute path is server
+        // state, so the answer says what to do rather than where the file should be.
+        return sendFail(
+          reply,
+          'conflict',
+          'The price book named in the database is not on disk. Publish it again, or restore the file.',
+        );
+      }
       throw error;
     }
   });

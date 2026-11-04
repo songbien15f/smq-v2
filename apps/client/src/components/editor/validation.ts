@@ -48,7 +48,7 @@ export interface DraftForValidation {
     /**
      * The colour roles, as the domain types them.
      *
-     * `Record<string, string>` would be a lie about `ShedColors` — a closed type with four named
+     * `Record<string, string>` would be a lie about `ShedColors` — a closed type with ten named
      * roles and no index signature — and TypeScript refuses the assignment rather than letting the
      * validator see a shape the domain does not have. Naming the roles keeps the check honest: a
      * new role added to the domain is a compile error here, not a rule that quietly stops running.

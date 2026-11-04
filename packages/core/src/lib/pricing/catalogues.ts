@@ -114,8 +114,16 @@ type Row = Record<string, unknown>;
 function rows(db: DatabaseSync, sql: string): Row[] {
   try {
     return db.prepare(sql).all() as Row[];
-  } catch {
-    return [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    /*
+     * An older dump lacks a table this build knows about; that is a book with fewer
+     * catalogues, not a failure. Anything else — a missing **column**, a corrupt
+     * file, a closed handle — is a real incompatibility, and turning it into `[]`
+     * would leave the editor with an empty list and no error to act on.
+     */
+    if (/no such table/i.test(message)) return [];
+    throw error;
   }
 }
 

@@ -52,4 +52,12 @@ describe('createSqliteCatalogueSource', () => {
     expect(c.spanHints).toEqual([]);
     expect(c.deliveryScopes).toEqual([]);
   });
+
+  it('ném lỗi khi bảng có nhưng thiếu cột, thay vì trả rỗng', () => {
+    // A dump that predates a column is a real incompatibility. Returning `[]` would
+    // leave the editor with an empty colour list and no error to act on.
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE TABLE system_colour (colour_name TEXT, colour_value TEXT, colour_status INTEGER)');
+    expect(() => createSqliteCatalogueSource(db).load()).toThrow(/no such column/i);
+  });
 });

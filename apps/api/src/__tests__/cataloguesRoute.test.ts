@@ -106,7 +106,7 @@ describe.skipIf(!hasDump)('price book catalogues', () => {
     expect(catalogue.deliveryScopes.length).toBeGreaterThan(0);
   });
 
-  it('answers 409 for a book that is not on disk', async () => {
+  it('answers 409 for a book that is not on disk, without leaking the path', async () => {
     const response = await ctx.app.inject({
       method: 'GET',
       url: `/api/v1/price-books/${'0'.repeat(64)}/catalogues`,
@@ -114,5 +114,26 @@ describe.skipIf(!hasDump)('price book catalogues', () => {
     });
     expect(response.statusCode).toBe(409);
     expect(response.json().code).toBe('conflict');
+    // The books directory is server state; the answer must not name it.
+    expect(response.json().message).not.toMatch(/[A-Za-z]:\\|\/data\//);
+  });
+
+  it('refuses an id that is neither `active` nor a book hash', async () => {
+    // Fastify decodes a path parameter, so a traversal arrives here already decoded.
+    // Opening whatever file the string points at would let any signed-in estimator
+    // probe the server's filesystem.
+    const traversal = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/price-books/..%2F..%2Fdata%2Fapp/catalogues',
+      headers: { cookie },
+    });
+    expect(traversal.statusCode).toBe(404);
+
+    const absolute = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/price-books/C%3A%5CWindows%5Cwin.ini/catalogues',
+      headers: { cookie },
+    });
+    expect(absolute.statusCode).toBe(404);
   });
 });
