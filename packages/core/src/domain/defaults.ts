@@ -83,6 +83,7 @@ export const DEFAULT_SHED: ShedConfig = {
   height: 4200,
   roofPitchDeg: 10,
   bays: 4,
+  nomBaySpacing: 6000,
   openings: [],
   options: [],
   charges: [],
@@ -97,6 +98,16 @@ export const DEFAULT_SHED: ShedConfig = {
   importanceLevel: 1,
   topographyFactor: 1,
   stateCode: 'QLD',
+  wallProfile: 'Corro',
+  roofProfile: 'Corro',
+  downpipeType: '',
+  footingType: '',
+  footingSubType: '',
+  endOpening: { left: false, right: false },
+  sideOpening: { front: false, back: false },
+  buildingClass: null,
+  snowLoad: null,
+  designWindSpeed: null,
   // Real Colorbond names and values. The colours are not decoration: flashing and
   // roof screws are priced per colour, so a made-up hex matches nothing in the
   // book and those lines silently fall back to a generic price. Shale Grey walls

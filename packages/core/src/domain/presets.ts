@@ -73,12 +73,14 @@ export const PRESETS: Preset[] = [
   {
     name: 'Domestic Garage',
     config: {
+      ...DEFAULT_SHED,
       structureType: 'gable',
       span: 6000,
       length: 6000,
       height: 2400,
       roofPitchDeg: 15,
       bays: 2,
+      nomBaySpacing: 3000,
       openings: [rollerDoor(4200, 2100)],
       options: [],
       charges: [],
@@ -96,12 +98,14 @@ export const PRESETS: Preset[] = [
   {
     name: 'Farm Machinery',
     config: {
+      ...DEFAULT_SHED,
       structureType: 'gable',
       span: 12000,
       length: 24000,
       height: 4200,
       roofPitchDeg: 10,
       bays: 4,
+      nomBaySpacing: 6000,
       // 5100 wide, not 6000: the roller-door catalogue's tallest wide opening is
       // 5100 mm at a 3600 height, and a preset asking for more finds nothing and
       // quotes incomplete.
@@ -122,12 +126,14 @@ export const PRESETS: Preset[] = [
   {
     name: 'Skillion Workshop',
     config: {
+      ...DEFAULT_SHED,
       structureType: 'skillion',
       span: 9000,
       length: 15000,
       height: 3600,
       roofPitchDeg: 5,
       bays: 3,
+      nomBaySpacing: 5000,
       openings: [rollerDoor(4800, 3000)],
       options: [],
       charges: [],
@@ -145,12 +151,14 @@ export const PRESETS: Preset[] = [
   {
     name: 'Open Carport',
     config: {
+      ...DEFAULT_SHED,
       structureType: 'gable_carport',
       span: 6000,
       length: 6000,
       height: 2400,
       roofPitchDeg: 15,
       bays: 2,
+      nomBaySpacing: 3000,
       openings: [],
       options: [],
       charges: [],

@@ -44,3 +44,47 @@ export function computeBayWidths(length: number, bays: number): number[] {
   }
   return widths;
 }
+
+/**
+ * Reconcile the three bay fields the desktop lets a person edit.
+ *
+ * The desktop form has `Overall Length`, `No. of Bays` and `Nom. Bay Spacing`, and
+ * editing any one of them drives the other two: a spacing and a bay count give a
+ * length, a length and a bay count give a spacing. Keeping all three as typed by
+ * the user would let a quote claim a length no bay grid sums to, so this function
+ * decides which pair wins.
+ *
+ * A spacing that is set (positive) wins: `length = spacing × bays`. Otherwise the
+ * spacing is derived as `floor(length / bays)`, and the final bay absorbs the
+ * remainder — the desktop's own rule.
+ */
+export function reconcileBays(input: {
+  length: number;
+  bays: number;
+  nomBaySpacing: number;
+}): { length: number; bays: number; nomBaySpacing: number } {
+  const bays = clampBays(input.bays);
+
+  if (Number.isFinite(input.nomBaySpacing) && input.nomBaySpacing > 0) {
+    const spacing = Math.round(input.nomBaySpacing);
+    return { length: spacing * bays, bays, nomBaySpacing: spacing };
+  }
+
+  const length = Number.isFinite(input.length) ? Math.max(0, Math.round(input.length)) : 0;
+  return { length, bays, nomBaySpacing: Math.floor(length / bays) };
+}
+
+/**
+ * True when the stored spacing and bay count do not add up to the length.
+ *
+ * The desktop's message is "Total bay length is not equal to overall length."
+ * A remainder means one bay is a different length from the rest, which changes
+ * the purlin run and therefore the price, so it is reported rather than rounded.
+ */
+export function baySpacingMismatch(config: {
+  length: number;
+  bays: number;
+  nomBaySpacing: number;
+}): boolean {
+  return config.nomBaySpacing > 0 && config.nomBaySpacing * config.bays !== config.length;
+}

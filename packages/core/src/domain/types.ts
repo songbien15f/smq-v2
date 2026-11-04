@@ -271,6 +271,14 @@ export interface ShedConfig {
   height: number; // wall height, mm
   roofPitchDeg: number; // 0..45
   bays: number; // 2..30, along `length`
+  /**
+   * The nominal spacing the bays were set to, mm.
+   *
+   * Stored rather than derived because the desktop lets a person type it and then
+   * computes the overall length from it. `reconcileBays` keeps the three fields
+   * consistent; `baySpacingMismatch` reports one that is not.
+   */
+  nomBaySpacing: number;
   openings: Opening[];
   /** Added objects, in creation order. Empty for a fresh shed. */
   options: ShedOption[];
@@ -301,6 +309,30 @@ export interface ShedConfig {
   topographyFactor: number;
   /** State the site is in, which selects the price margin. */
   stateCode: StateCode;
+  /** Wall sheeting profile; horizontal cladding is only offered on `Corro`. */
+  wallProfile: string;
+  /** Roof sheeting profile. */
+  roofProfile: string;
+  /** Downpipe catalogue code. */
+  downpipeType: string;
+  /** Footing type code; the sub-type list is filtered by it. */
+  footingType: string;
+  /** Footing sub-type code. */
+  footingSubType: string;
+  /**
+   * Wall-open switches from the desktop's Design block.
+   *
+   * A shed with an end or side wall open is priced for a different internal
+   * pressure, so these are part of the building rather than a display preference.
+   */
+  endOpening: { left: boolean; right: boolean };
+  sideOpening: { front: boolean; back: boolean };
+  /** Certified ShedSafe values, read-only in the form. `null` = not calculated. */
+  buildingClass: string | null;
+  /** Ground snow load, kPa, from the ShedSafe check. */
+  snowLoad: number | null;
+  /** Design wind speed, m/s, from the ShedSafe check. */
+  designWindSpeed: number | null;
   colors: ShedColors;
   displayUnit: DisplayUnit;
 }

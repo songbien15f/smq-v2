@@ -526,6 +526,7 @@ const tolerantShedConfigSchema = z.object({
   height: positiveDimensionSchema.catch(DEFAULT_SHED.height),
   roofPitchDeg: pitchSchema.catch(DEFAULT_SHED.roofPitchDeg),
   bays: bayCountSchema.catch(DEFAULT_SHED.bays),
+  nomBaySpacing: z.coerce.number().finite().catch(DEFAULT_SHED.nomBaySpacing),
   colors: z
     .object({
       wall: hexColorSchema.catch(DEFAULT_SHED.colors.wall),
@@ -550,6 +551,24 @@ const tolerantShedConfigSchema = z.object({
   importanceLevel: z.union([z.literal(1), z.literal(2)]).catch(DEFAULT_SHED.importanceLevel),
   topographyFactor: factorSchema.catch(DEFAULT_SHED.topographyFactor),
   stateCode: stateCodeSchema.catch(DEFAULT_SHED.stateCode),
+  wallProfile: z.string().catch(DEFAULT_SHED.wallProfile),
+  roofProfile: z.string().catch(DEFAULT_SHED.roofProfile),
+  downpipeType: z.string().catch(DEFAULT_SHED.downpipeType),
+  footingType: z.string().catch(DEFAULT_SHED.footingType),
+  footingSubType: z.string().catch(DEFAULT_SHED.footingSubType),
+  endOpening: z
+    .object({ left: panelFlagSchema, right: panelFlagSchema })
+    .partial()
+    .transform((value) => ({ left: value.left ?? false, right: value.right ?? false }))
+    .catch({ left: false, right: false }),
+  sideOpening: z
+    .object({ front: panelFlagSchema, back: panelFlagSchema })
+    .partial()
+    .transform((value) => ({ front: value.front ?? false, back: value.back ?? false }))
+    .catch({ front: false, back: false }),
+  buildingClass: z.string().nullable().catch(null),
+  snowLoad: z.number().nullable().catch(null),
+  designWindSpeed: z.number().nullable().catch(null),
 });
 
 /**
@@ -853,14 +872,22 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
   // Options are clamped against the *final* scalar config: `bays` has already
   // been clamped above, so a skylight in bay 40 of a 500-bay request lands in
   // the last real bay rather than in a bay that no longer exists.
+  const finalBays = clampBays(parsed.bays);
+  const finalLength = Math.round(parsed.length);
   const finalShed: ShedConfig = {
     ...DEFAULT_SHED,
     ...parsed,
     span: Math.round(parsed.span),
-    length: Math.round(parsed.length),
+    length: finalLength,
     height: Math.round(parsed.height),
     roofPitchDeg: Math.min(45, Math.max(0, parsed.roofPitchDeg)),
-    bays: clampBays(parsed.bays),
+    bays: finalBays,
+    // Derived when the stored spacing is absent or unusable, so every config has
+    // a spacing that divides its own length into its own bays.
+    nomBaySpacing:
+      Number.isFinite(parsed.nomBaySpacing) && parsed.nomBaySpacing > 0
+        ? Math.round(parsed.nomBaySpacing)
+        : Math.floor(finalLength / finalBays),
     openings,
     options: [],
   };
