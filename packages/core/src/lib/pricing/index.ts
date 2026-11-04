@@ -1,5 +1,6 @@
 export * from "./catalogue";
 export * from "./catalogueManifest";
+export * from "./catalogues";
 export * from "./db";
 export * from "./excel";
 export * from "./import";
