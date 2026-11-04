@@ -487,6 +487,7 @@ export const shedConfigSchema = z.object({
   height: positiveDimensionSchema,
   roofPitchDeg: pitchSchema,
   bays: bayCountSchema,
+  nomBaySpacing: z.coerce.number().finite(),
   openings: z.array(openingSchema),
   options: z.array(completeOptionSchema),
   charges: z.array(chargeSchema),
@@ -510,6 +511,16 @@ export const shedConfigSchema = z.object({
   importanceLevel: z.union([z.literal(1), z.literal(2)]),
   topographyFactor: factorSchema,
   stateCode: stateCodeSchema,
+  wallProfile: z.string(),
+  roofProfile: z.string(),
+  downpipeType: z.string(),
+  footingType: z.string(),
+  footingSubType: z.string(),
+  endOpening: z.object({ left: z.boolean(), right: z.boolean() }),
+  sideOpening: z.object({ front: z.boolean(), back: z.boolean() }),
+  buildingClass: z.string().nullable(),
+  snowLoad: z.number().nullable(),
+  designWindSpeed: z.number().nullable(),
 });
 
 // --- Tolerant schema: every field falls back rather than throwing -----------
