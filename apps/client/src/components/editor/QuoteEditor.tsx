@@ -491,6 +491,13 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                   if (values.importanceLevel !== null) {
                     applyPartial({ importanceLevel: values.importanceLevel as never });
                   }
+                  if (values.buildingClass !== null) {
+                    applyPartial({ buildingClass: values.buildingClass });
+                  }
+                  if (values.snowLoad !== null) applyPartial({ snowLoad: values.snowLoad });
+                  if (values.designWindSpeed !== null) {
+                    applyPartial({ designWindSpeed: values.designWindSpeed });
+                  }
                 }}
               />
             </div>

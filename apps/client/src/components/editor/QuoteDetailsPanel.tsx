@@ -21,6 +21,9 @@
 
 import { useId, useState } from 'react';
 import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
+import { defaultOptionsFor } from '@sq/core/domain';
+import { reconcileBays } from '@sq/core/domain';
+import type { Catalogue } from '@sq/core/pricing';
 import type { DisplayUnit, ShedColors } from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
@@ -389,7 +392,12 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
       </Group>
 
       <DesignGroup issuesByPath={issuesByPath} />
-      <ShedGroup issuesByPath={issuesByPath} unit={unit} onUnitChange={onUnitChange} />
+      <ShedGroup
+        issuesByPath={issuesByPath}
+        unit={unit}
+        onUnitChange={onUnitChange}
+        catalogue={catalogue}
+      />
       <ColourGroup issuesByPath={issuesByPath} />
     </div>
   );
@@ -431,6 +439,40 @@ function DesignGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
+
+  const options = config.options;
+  const hasGable = (end: 'front' | 'back'): boolean =>
+    options.some((option) => option.kind === 'gable_infill' && option.end === end);
+  const toggleGable = (end: 'front' | 'back'): void => {
+    const next = hasGable(end)
+      ? options.filter((option) => !(option.kind === 'gable_infill' && option.end === end))
+      : [
+          ...options,
+          ...defaultOptionsFor('gable_infill', config).filter(
+            (option) => option.kind === 'gable_infill' && option.end === end,
+          ),
+        ];
+    applyPartial({ options: next });
+  };
+
+  const cantileverFor = (wall: 'front' | 'back') =>
+    options.find((option) => option.kind === 'cantilever' && option.wall === wall);
+  const setCantilever = (wall: 'front' | 'back', length: number): void => {
+    const existing = cantileverFor(wall);
+    let next;
+    if (length <= 0) {
+      next = options.filter((option) => !(option.kind === 'cantilever' && option.wall === wall));
+    } else if (existing !== undefined) {
+      next = options.map((option) => (option === existing ? { ...option, length } : option));
+    } else {
+      const base = defaultOptionsFor('cantilever', config).find(
+        (option) => option.kind === 'cantilever',
+      );
+      if (base === undefined || base.kind !== 'cantilever') return;
+      next = [...options, { ...base, wall, length }];
+    }
+    applyPartial({ options: next });
+  };
 
   return (
     <Group
@@ -508,6 +550,106 @@ function DesignGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
         onChange={(value) => applyPartial({ internalPressure: value as never })}
         hint="A closed building pushes on the frame from inside as well as outside."
       />
+
+      {/*
+        The certified values the site check returned. Read-only here because they are
+        not a design choice: ShedSafe computed them, and typing over one would produce
+        a quote priced against a rating the certificate does not carry.
+      */}
+      <dl className="grid grid-cols-3 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
+        {[
+          ['Building class', config.buildingClass ?? '—'],
+          ['Ground snow', config.snowLoad === null ? '—' : `${config.snowLoad} kPa`],
+          ['Wind speed', config.designWindSpeed === null ? '—' : `${config.designWindSpeed} m/s`],
+        ].map(([label, shown]) => (
+          <div key={label} className="flex flex-col">
+            <dt className="text-sq-micro text-sq-ink-muted">{label}</dt>
+            <dd className="sq-numeric text-sq-body text-sq-ink">{shown}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <fieldset className="flex flex-col gap-sq-1">
+        <legend className="text-sq-micro font-medium text-sq-ink">Walls left open</legend>
+        <div className="grid grid-cols-2 gap-sq-2">
+          <Switch
+            label="End wall, left"
+            checked={config.endOpening.left}
+            onChange={(checked) =>
+              applyPartial({ endOpening: { ...config.endOpening, left: checked } })
+            }
+          />
+          <Switch
+            label="End wall, right"
+            checked={config.endOpening.right}
+            onChange={(checked) =>
+              applyPartial({ endOpening: { ...config.endOpening, right: checked } })
+            }
+          />
+          <Switch
+            label="Side wall, front"
+            checked={config.sideOpening.front}
+            onChange={(checked) =>
+              applyPartial({ sideOpening: { ...config.sideOpening, front: checked } })
+            }
+          />
+          <Switch
+            label="Side wall, back"
+            checked={config.sideOpening.back}
+            onChange={(checked) =>
+              applyPartial({ sideOpening: { ...config.sideOpening, back: checked } })
+            }
+          />
+        </div>
+        <p className="text-sq-micro text-sq-ink-muted">
+          An open wall changes the internal pressure the frame is designed for.
+        </p>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-sq-1">
+        <legend className="text-sq-micro font-medium text-sq-ink">Gable infill</legend>
+        <div className="flex gap-sq-3">
+          {(['front', 'back'] as const).map((end) => (
+            <Switch
+              key={end}
+              label={end === 'front' ? 'Front end' : 'Back end'}
+              checked={hasGable(end)}
+              onChange={() => toggleGable(end)}
+            />
+          ))}
+        </div>
+        <p className="text-sq-micro text-sq-ink-muted">
+          Closes the triangle above wall height at that end.
+        </p>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-sq-1">
+        <legend className="text-sq-micro font-medium text-sq-ink">Cantilever (mm)</legend>
+        <div className="grid grid-cols-2 gap-sq-2">
+          {(['front', 'back'] as const).map((wall) => {
+            const option = cantileverFor(wall);
+            const length = option !== undefined && option.kind === 'cantilever' ? option.length : 0;
+            return (
+              <label key={wall} className="flex flex-col gap-sq-1">
+                <span className="text-sq-micro capitalize text-sq-ink">{wall}</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={3000}
+                  step={100}
+                  value={length}
+                  onChange={(event) => setCantilever(wall, Number(event.target.value))}
+                  className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body outline-none"
+                />
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-sq-micro text-sq-ink-muted">
+          0 removes the cantilever. Over 1400 mm is flagged on a standard building.
+        </p>
+      </fieldset>
     </Group>
   );
 }
@@ -518,16 +660,27 @@ function ShedGroup({
   issuesByPath,
   unit,
   onUnitChange,
+  catalogue,
 }: {
   issuesByPath: Map<string, DraftIssue>;
   unit: DisplayUnit;
   onUnitChange: (unit: DisplayUnit) => void;
+  catalogue: Catalogue | null;
 }) {
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
 
   const perBay = config.bays > 0 ? config.length / config.bays : 0;
+
+  /** Apply a reconciled bay triple, so the three fields can never disagree. */
+  const applyBays = (input: { length: number; bays: number; nomBaySpacing: number }): void => {
+    const next = reconcileBays(input);
+    applyPartial({ length: next.length, bays: next.bays, nomBaySpacing: next.nomBaySpacing });
+  };
+
+  const wallProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isWall);
+  const roofProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isRoof);
 
   return (
     <Group
@@ -604,7 +757,7 @@ function ShedGroup({
           maxMm={120000}
           required
           error={errorAt('shed-length')}
-          onCommit={(mm) => applyPartial({ length: mm })}
+          onCommit={(mm) => applyBays({ length: mm, bays: config.bays, nomBaySpacing: 0 })}
         />
         <label className="flex flex-col gap-sq-1">
           <span className="text-sq-micro font-medium text-sq-ink">
@@ -625,7 +778,9 @@ function ShedGroup({
             aria-describedby={errorAt('shed-bays') !== undefined ? 'shed-bays-error' : 'shed-bays-hint'}
             onChange={(event) => {
               const next = Number(event.target.value);
-              if (Number.isFinite(next)) applyPartial({ bays: next });
+              if (Number.isFinite(next)) {
+                applyBays({ length: config.length, bays: next, nomBaySpacing: 0 });
+              }
             }}
             className={[
               'min-h-[38px] rounded-md border bg-sq-surface px-sq-2 py-sq-1 text-sq-body outline-none',
@@ -642,6 +797,86 @@ function ShedGroup({
             </span>
           )}
         </label>
+      </div>
+
+      <label className="flex flex-col gap-sq-1">
+        <span className="text-sq-micro font-medium text-sq-ink">Nominal bay spacing</span>
+        <span className="flex items-center gap-sq-2">
+          <input
+            id="shed-nomBaySpacing"
+            type="number"
+            inputMode="numeric"
+            min={1000}
+            max={20000}
+            step={100}
+            value={config.nomBaySpacing}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (Number.isFinite(next)) {
+                applyBays({ length: config.length, bays: config.bays, nomBaySpacing: next });
+              }
+            }}
+            className="min-h-[38px] w-32 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body outline-none"
+          />
+          <span className="text-sq-micro text-sq-ink-muted">
+            mm — changing this sets the overall length
+          </span>
+        </span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-sq-2">
+        {wallProfiles.length > 0 && (
+          <SelectField
+            id="shed-wallProfile"
+            label="Wall profile"
+            value={config.wallProfile}
+            options={wallProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
+            onChange={(value) => applyPartial({ wallProfile: value })}
+          />
+        )}
+        {roofProfiles.length > 0 && (
+          <SelectField
+            id="shed-roofProfile"
+            label="Roof profile"
+            value={config.roofProfile}
+            options={roofProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
+            onChange={(value) => applyPartial({ roofProfile: value })}
+          />
+        )}
+      </div>
+
+      <Field
+        id="shed-downpipeType"
+        label="Downpipe type"
+        value={config.downpipeType}
+        onChange={(event) => applyPartial({ downpipeType: event.target.value })}
+      />
+
+      <div className="grid grid-cols-2 gap-sq-2">
+        {catalogue !== null && catalogue.footingTypes.length > 0 && (
+          <SelectField
+            id="shed-footingType"
+            label="Footing type"
+            value={config.footingType}
+            options={catalogue.footingTypes.map((footing) => ({
+              value: footing.code,
+              label: footing.label,
+            }))}
+            onChange={(value) => applyPartial({ footingType: value })}
+          />
+        )}
+        {catalogue !== null && catalogue.footingSubTypes.length > 0 && (
+          <SelectField
+            id="shed-footingSubType"
+            label="Footing sub-type"
+            value={config.footingSubType}
+            options={catalogue.footingSubTypes.map((footing) => ({
+              value: footing.code,
+              label: footing.label,
+            }))}
+            onChange={(value) => applyPartial({ footingSubType: value })}
+          />
+        )}
       </div>
 
       <label className="flex flex-col gap-sq-1">
@@ -714,6 +949,22 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
       issueCount={COLOUR_ROLES.filter((key) => issuesByPath.has(`colours-${key}`)).length}
     >
       <div className="flex flex-col gap-sq-3">
+        {/*
+          The desktop's "Assign Wall Colour for All": most sheds are one colour, and
+          choosing it ten times is ten chances to leave one surface in the old colour.
+        */}
+        <button
+          type="button"
+          onClick={() => {
+            const wall = config.colors.wall;
+            applyPartial({
+              colors: Object.fromEntries(COLOUR_ROLES.map((role) => [role, wall])) as never,
+            });
+          }}
+          className="min-h-9 self-start cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+        >
+          Assign wall colour to all
+        </button>
         {COLOUR_ROLES.map((key) => {
           const label = COLOUR_LABELS[key];
           const hex = config.colors[key];
@@ -790,6 +1041,29 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
 }
 
 /* ------------------------------------------------------------------ Shared */
+
+/** A labelled checkbox, sized to the same touch target as the other controls. */
+function Switch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex min-h-9 cursor-pointer items-center gap-sq-2 text-sq-body text-sq-ink">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 cursor-pointer accent-[var(--color-sq-brand)]"
+      />
+      {label}
+    </label>
+  );
+}
 
 /** A labelled select, with the error plumbing the other fields have. */
 function SelectField({
