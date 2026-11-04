@@ -37,6 +37,7 @@ import type { EditorStep } from './StepRail';
 import { StepRail } from './StepRail';
 import { QuoteDetailsPanel } from './QuoteDetailsPanel';
 import { PlanPanel } from './PlanPanel';
+import { PlanView } from './PlanView';
 import { CostPanel } from './CostPanel';
 import { SiteCheckPanel } from './SiteCheckPanel';
 import { PricePanel } from './PricePanel';
@@ -561,35 +562,14 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         </div>
 
         {/* -------------------------------------------------- middle: the plan */}
-        <div className={`min-w-0 ${step === 'cost' ? 'hidden lg:block' : ''}`}>
-          {step !== 'cost' ? (
-            <div className="lg:hidden">
-              {/* Below `lg` the plan is its own step rather than a squeezed column. */}
-              <button
-                type="button"
-                onClick={() => goTo('options')}
-                className="min-h-11 w-full cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium"
-              >
-                Show the plan
-              </button>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-sq-line p-sq-4 text-sq-body text-sq-ink-muted">
-              The plan is on the previous step. The price has been calculated from the building as it
-              stands there.
-            </div>
-          )}
-          {step !== 'cost' && (
-            <div className="hidden lg:block">
-              <TreeViewSummary
-                span={config.span}
-                length={config.length}
-                height={config.height}
-                bays={config.bays}
-                openings={config.openings.length}
-              />
-            </div>
-          )}
+        {/*
+          The plan is on every step, not only the Options step. Step 1 changes the
+          building's dimensions and Step 3 negotiates its price; both need the building
+          visible. On Options it is the working surface; elsewhere it is a live preview
+          with pointer events off.
+        */}
+        <div className="min-h-[320px] min-w-0 lg:min-h-0">
+          <PlanView interactive={step === 'options'} />
         </div>
 
         {/* -------------------------------------------------- right: the price */}
@@ -612,32 +592,5 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * A text summary of the building, shown where a wide screen would put the plan on the cost step.
- *
- * Not decoration: the plan is on step 2, and a person negotiating a price needs to confirm they
- * are pricing the building they think they are. One line of dimensions is enough for that.
- */
-function TreeViewSummary({
-  span,
-  length,
-  height,
-  bays,
-  openings,
-}: {
-  span: number;
-  length: number;
-  height: number;
-  bays: number;
-  openings: number;
-}) {
-  return (
-    <p className="sq-numeric rounded-lg border border-sq-line bg-sq-surface p-sq-3 text-sq-body text-sq-ink">
-      {span} × {length} mm, {height} mm walls, {bays} bays, {openings}{' '}
-      {openings === 1 ? 'opening' : 'openings'}
-    </p>
   );
 }

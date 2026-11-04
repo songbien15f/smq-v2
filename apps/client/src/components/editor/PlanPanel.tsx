@@ -28,18 +28,15 @@
  * exactly as the desktop's "Add" per category did.
  */
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   OPENING_TYPE_OPTIONS,
   OPTION_GROUP_LABELS,
   OPTION_KIND_OPTIONS,
   canDuplicate,
-  describeSelection,
 } from '@sq/core/domain';
 import type { OpeningType, ShedOption } from '@sq/core/domain';
 import { Button, Panel, StatusPill } from '@sq/ui';
-import { Render2D } from './Render2D';
-import { Render3D } from './Render3D';
 import { useShedStore } from '@/store/useShedStore';
 
 /** The tools the operator can place. Windows and doors are the ones a quote is built from. */
@@ -98,8 +95,6 @@ export function PlanPanel() {
   const select = useShedStore((state) => state.select);
   const undo = useShedStore((state) => state.undo);
   const redo = useShedStore((state) => state.redo);
-  const view = useShedStore((state) => state.view);
-  const setView = useShedStore((state) => state.setView);
   const past = useShedStore((state) => state.history.length);
   const future = useShedStore((state) => state.future.length);
   const notices = useShedStore((state) => state.notices);
@@ -108,10 +103,6 @@ export function PlanPanel() {
 
   const selectedId = selection.kind === 'opening' ? selection.id : null;
   const selectedOptionId = selection.kind === 'option' ? selection.id : null;
-  const selectedLabel = useMemo(() => {
-    const description = describeSelection(config, selection);
-    return description.title === '' ? 'nothing' : description.title;
-  }, [selection, config]);
 
   return (
     <div className="flex flex-col gap-sq-3">
@@ -229,64 +220,6 @@ export function PlanPanel() {
             ))}
           </ul>
         )}
-
-        {/* ---------------------------------------------------------------- canvas */}
-        <div className="mt-sq-3">
-          {/*
-            The view toggle. 2D is where you place and drag; 3D is where a customer sees what they
-            are buying. Both read the same config, so the model is never a second drawing that can
-            disagree with the plan.
-
-            A toggle rather than two panes: the plan is the working surface and the model is the
-            check, and splitting a 380 px column in two would make both unusable.
-          */}
-          <div className="mb-sq-2 flex items-center gap-sq-1" role="group" aria-label="View">
-            {(['2d', '3d'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={view === mode}
-                onClick={() => setView(mode)}
-                className={[
-                  'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
-                  view === mode
-                    ? 'border-sq-brand bg-sq-brand text-white'
-                    : 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground',
-                ].join(' ')}
-              >
-                {mode === '2d' ? 'Plan' : '3D'}
-              </button>
-            ))}
-          </div>
-
-          {/*
-            The canvas is decorative to a screen reader: everything it shows is in the lists below,
-            with real controls. This is the pattern the UX guidance requires for a drag surface —
-            the lists are the accessible interface, the canvas is the convenience.
-          */}
-          <div
-            className="overflow-hidden rounded-md border border-sq-line bg-white"
-            role="img"
-            aria-label={
-              view === '2d'
-                ? `Plan of a ${config.span} by ${config.length} millimetre shed with ${config.openings.length} openings and ${config.options.length} options`
-                : `3D view of a ${config.span} by ${config.length} millimetre shed`
-            }
-            style={{ height: view === '3d' ? '420px' : undefined }}
-          >
-            {view === '2d' ? <Render2D /> : <Render3D />}
-          </div>
-          <p className="mt-sq-1 text-sq-micro text-sq-ink-muted">
-            {view === '2d' ? (
-              <>
-                Drag a door or an option to move it, or use the lists below. Selected:{' '}
-                <strong className="text-sq-ink">{selectedLabel}</strong>
-              </>
-            ) : (
-              <>Drag to orbit, scroll or pinch to zoom. The model is built from the plan, so the two cannot disagree.</>
-            )}
-          </p>
-        </div>
       </Panel>
 
       {/* ---------------------------------------------------------------- the list */}
