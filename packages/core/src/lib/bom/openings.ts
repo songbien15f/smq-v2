@@ -23,6 +23,7 @@
  */
 
 import type { Opening, OpeningType, ShedConfig } from '@/domain/types';
+import { doorColour } from '@/domain/colors';
 import type { DoorKind, PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from './types';
 import { safeCall } from './safe';
@@ -106,7 +107,7 @@ export function openingLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
     // A door takes the colour of the wall it sits in. A painted door is dearer
     // than a zincalume one and the book states both prices, so the colour is not
     // cosmetic here — it is a 16% swing on the line.
-    const painted = isPainted(shed.colors.door, lookup);
+    const painted = isPainted(doorColour(shed.colors, opening.type), lookup);
     const row = safeCall(() =>
       lookup.door(kind, opening.width, opening.height, { endWall, hangar, painted }),
     );

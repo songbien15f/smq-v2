@@ -77,8 +77,15 @@ export interface Opening {
 export interface ShedColors {
   wall: string; // hex
   roof: string; // hex
-  trim: string; // hex
-  door: string; // hex
+  /** Barge and fascia. */
+  barge: string; // hex
+  downpipe: string; // hex
+  gutter: string; // hex
+  window: string; // hex
+  paDoor: string; // hex
+  rollerDoor: string; // hex
+  slidingDoor: string; // hex
+  dividingWall: string; // hex
 }
 
 /**

@@ -621,8 +621,14 @@ function ShedGroup({
 const COLOUR_ROLES: { key: string; label: string }[] = [
   { key: 'wall', label: 'Wall' },
   { key: 'roof', label: 'Roof' },
-  { key: 'trim', label: 'Barge and fascia' },
-  { key: 'door', label: 'Doors and windows' },
+  { key: 'barge', label: 'Barge and fascia' },
+  { key: 'downpipe', label: 'Downpipe' },
+  { key: 'gutter', label: 'Gutter' },
+  { key: 'window', label: 'Window' },
+  { key: 'paDoor', label: 'PA door' },
+  { key: 'rollerDoor', label: 'Roller door' },
+  { key: 'slidingDoor', label: 'Sliding door' },
+  { key: 'dividingWall', label: 'Dividing wall' },
 ];
 
 function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }) {

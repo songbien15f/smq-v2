@@ -104,8 +104,14 @@ export const DEFAULT_SHED: ShedConfig = {
   colors: {
     wall: COLORBOND['Shale Grey'],
     roof: COLORBOND['Surfmist'],
-    trim: COLORBOND['Surfmist'],
-    door: COLORBOND['Monument'],
+    barge: COLORBOND['Surfmist'],
+    downpipe: COLORBOND['Surfmist'],
+    gutter: COLORBOND['Surfmist'],
+    window: COLORBOND['Monument'],
+    paDoor: COLORBOND['Monument'],
+    rollerDoor: COLORBOND['Monument'],
+    slidingDoor: COLORBOND['Monument'],
+    dividingWall: COLORBOND['Surfmist'],
   },
   displayUnit: 'm',
 };

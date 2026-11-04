@@ -1,5 +1,8 @@
 'use client';
 
+import { COLOUR_ROLES } from '@sq/core/domain';
+import type { ShedColors } from '@sq/core/domain';
+
 /**
  * Validation for the quote draft.
  *
@@ -50,7 +53,7 @@ export interface DraftForValidation {
      * validator see a shape the domain does not have. Naming the roles keeps the check honest: a
      * new role added to the domain is a compile error here, not a rule that quietly stops running.
      */
-    colors: { wall: string; roof: string; trim: string; door: string };
+    colors: ShedColors;
   };
   customer: {
     firstName: string;
@@ -66,7 +69,7 @@ export interface DraftForValidation {
 
 /** The colour roles a quote must have. Spelled out because `ShedColors` is a closed type, and a
  *  validator that iterated it loosely would silently stop checking when a role is added. */
-export const REQUIRED_COLOUR_ROLES = ['wall', 'roof', 'trim', 'door'] as const;
+export const REQUIRED_COLOUR_ROLES = COLOUR_ROLES;
 
 /** Limits taken from the desktop's own accepted ranges, so a valid desktop quote stays valid. */
 const LIMITS = {

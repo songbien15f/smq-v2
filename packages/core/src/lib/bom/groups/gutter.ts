@@ -110,10 +110,11 @@ export function gutterLines(
   const gutterMetres = eaveMetres(shed) * eaves;
   const brackets = gutterBracketCount(shed, rules);
 
-  // The gutter is colour-matched to the trim, the same way the flashing is. The
-  // book prices the same profile galvanised and painted, and an unpainted gutter
-  // on a Colorbond shed is a callback — so the name is resolved once here.
-  const colour = safeCall(() => lookup.colourName(shed.colors.trim));
+  // The gutter has its own colour role now that the studio paints it separately
+  // from the barge. The book prices the same profile galvanised and painted, and
+  // an unpainted gutter on a Colorbond shed is a callback — so the name is
+  // resolved once here.
+  const colour = safeCall(() => lookup.colourName(shed.colors.gutter));
 
   return [
     ...lengthLine('gutter', 'Gutter', gutterMetres, safeCall(() => lookup.gutter(DEFAULT_GUTTER_SIZE, colour))),
@@ -154,7 +155,7 @@ export function flashingLines(
   // Flashing is colour-matched. The config stores hex; the book indexes by name,
   // so the name is resolved once here. An unknown colour falls back to the book's
   // painted price rather than its galvanised one, which is dearer.
-  const colour = safeCall(() => lookup.colourName(shed.colors.trim));
+  const colour = safeCall(() => lookup.colourName(shed.colors.barge));
   const flashing = (type: string) => safeCall(() => lookup.flashing(type, colour));
 
   // Ridge capping runs the full length at the apex. Without it a gable quote

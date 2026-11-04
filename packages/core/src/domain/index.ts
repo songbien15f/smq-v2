@@ -1,5 +1,6 @@
 export * from "./bays";
 export * from "./charges";
+export * from "./colors";
 export * from "./defaults";
 export * from "./fallbackParser";
 export * from "./jsonSchema";

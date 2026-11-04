@@ -24,7 +24,7 @@ import * as THREE from 'three';
 import type { ShedConfig, Opening, OpeningType, OptionKind } from '@sq/core/domain';
 import { buildWallGeometries, type WallGeometry, type WallHole } from '@sq/core/domain';
 import { computeBayPositions } from '@sq/core/domain';
-import { resolveOptions, type ResolvedOption } from '@sq/core/domain';
+import { doorColour, resolveOptions, type ResolvedOption } from '@sq/core/domain';
 
 /** Wall thickness, mm. */
 const WALL_DEPTH = 50;
@@ -302,7 +302,7 @@ function OpeningPanel({
   if (!hasOpeningPanel(type)) return null;
   const cx = hole.u + hole.width / 2;
   const cy = hole.sill + hole.height / 2;
-  const panelColor = type === 'window' ? colors.trim : colors.door;
+  const panelColor = doorColour(colors, type);
 
   // Roller door: a subtle horizontal rib pattern via repeated thin slats.
   if (type === 'roller_door') {
@@ -320,7 +320,7 @@ function OpeningPanel({
             position={[0, -hole.height / 2 + (index + 1) * slatHeight, 12]}
           >
             <boxGeometry args={[hole.width * 0.98, 18, 8]} />
-            <meshStandardMaterial color={colors.trim} metalness={0.4} roughness={0.5} />
+            <meshStandardMaterial color={colors.barge} metalness={0.4} roughness={0.5} />
           </mesh>
         ))}
       </group>
@@ -343,7 +343,7 @@ function OpeningPanel({
         </mesh>
         <mesh position={[0, 0, 8]}>
           <boxGeometry args={[hole.width + 60, hole.height + 60, 20]} />
-          <meshStandardMaterial color={colors.trim} />
+          <meshStandardMaterial color={colors.barge} />
         </mesh>
       </group>
     );
@@ -359,12 +359,12 @@ function OpeningPanel({
       </mesh>
       <mesh position={[0, 0, 16]}>
         <boxGeometry args={[hole.width - frame, hole.height - frame, 12]} />
-        <meshStandardMaterial color={colors.trim} />
+        <meshStandardMaterial color={colors.barge} />
       </mesh>
       {opening !== undefined && hasTrackRail(opening) && (
         <mesh position={[0, hole.height / 2 + 30, 20]}>
           <boxGeometry args={[hole.width + 120, 30, 20]} />
-          <meshStandardMaterial color={colors.trim} metalness={0.5} roughness={0.4} />
+          <meshStandardMaterial color={colors.barge} metalness={0.5} roughness={0.4} />
         </mesh>
       )}
       {/* A double track adds a second rail further out from the wall, which is
@@ -372,7 +372,7 @@ function OpeningPanel({
       {opening !== undefined && hasTrackRail(opening) && opening.track === 'double' && (
         <mesh position={[0, hole.height / 2 + 30, 55]}>
           <boxGeometry args={[hole.width + 120, 30, 20]} />
-          <meshStandardMaterial color={colors.trim} metalness={0.5} roughness={0.4} />
+          <meshStandardMaterial color={colors.barge} metalness={0.5} roughness={0.4} />
         </mesh>
       )}
     </group>
@@ -398,7 +398,7 @@ export function Shed3D({ config }: { config: ShedConfig }) {
       {/* Floor slab. */}
       <mesh position={[config.span / 2, -25, config.length / 2]}>
         <boxGeometry args={[config.span, 50, config.length]} />
-        <meshStandardMaterial color={config.colors.trim} roughness={0.95} />
+        <meshStandardMaterial color={config.colors.barge} roughness={0.95} />
       </mesh>
 
       {/* Four holed walls, each positioned and rotated by its domain transform. */}
@@ -439,7 +439,7 @@ export function Shed3D({ config }: { config: ShedConfig }) {
           {[0, config.span].map((x) => (
             <mesh key={x} position={[x, config.height / 2, z]}>
               <boxGeometry args={[90, config.height, 90]} />
-              <meshStandardMaterial color={config.colors.trim} metalness={0.3} roughness={0.6} />
+              <meshStandardMaterial color={config.colors.barge} metalness={0.3} roughness={0.6} />
             </mesh>
           ))}
         </group>
@@ -482,7 +482,7 @@ export function Shed3D({ config }: { config: ShedConfig }) {
           <mesh key={option.id} position={[x, y, z]}>
             <boxGeometry args={[width, height, depth]} />
             <meshStandardMaterial
-              color={config.colors.trim}
+              color={config.colors.barge}
               transparent={translucent}
               opacity={translucent ? 0.45 : 1}
               metalness={0.25}

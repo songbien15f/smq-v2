@@ -273,8 +273,11 @@ export function toCustomerDocument(revision: FrozenRevision): CustomerDocument {
       colours: {
         wall: colourLabel(config.colors.wall),
         roof: colourLabel(config.colors.roof),
-        trim: colourLabel(config.colors.trim),
-        door: colourLabel(config.colors.door),
+        // The document template still names these two rows "trim" and "door".
+        // They map onto the roles the customer actually sees: the barge/fascia
+        // and the doors-and-windows colour.
+        trim: colourLabel(config.colors.barge),
+        door: colourLabel(config.colors.rollerDoor),
       },
     },
     inclusions: inclusions(config),
