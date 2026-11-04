@@ -42,6 +42,11 @@ const ALLOWED_PREFIXES = [
    */
   'team',
   /*
+   * The price book's dropdown catalogues: colours, delivery scopes, profiles, footings.
+   * The book itself never reaches the browser, only the lists the editor offers.
+   */
+  'price-books',
+  /*
    * The price list: template download, preview and apply. The API routes live under `/admin/prices`
    * because they change every future quote's numbers, and they are gated by `price:manage` there.
    */

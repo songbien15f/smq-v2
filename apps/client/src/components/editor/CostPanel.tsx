@@ -233,26 +233,6 @@ export function CostPanel({ price, stale, calculating, onRecalculate }: CostPane
             hint="Crane hire, permits. Added once to the contract — never through the material margin."
           />
         </div>
-
-        <label className="mt-sq-3 flex flex-col gap-sq-1">
-          <span className="text-sq-micro font-medium text-sq-ink">
-            Quote rate
-            <span className="ml-sq-2 text-sq-ink-muted">
-              an uplift on the whole job, for a dealer or a rate card
-            </span>
-          </span>
-          <input
-            id="cost-quoteRatePct"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            max={100}
-            step={0.5}
-            value={pricing.quoteRatePct}
-            onChange={(event) => setPricing({ quoteRatePct: Number(event.target.value) })}
-            className="min-h-[38px] max-w-40 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
-          />
-        </label>
       </Panel>
 
       {/*

@@ -28,6 +28,7 @@ import { DimensionField } from './DimensionField';
 import type { DraftIssue } from './validation';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
+import { useCatalogue } from '@/hooks/useCatalogue';
 
 /** A group that can be collapsed, remembering nothing between visits on purpose. */
 function Group({
@@ -109,6 +110,10 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
   const site = useDraftStore((state) => state.site);
   const setCustomer = useDraftStore((state) => state.setCustomer);
   const setSite = useDraftStore((state) => state.setSite);
+  const pricing = useDraftStore((state) => state.pricing);
+  const setPricing = useDraftStore((state) => state.setPricing);
+  const { catalogue } = useCatalogue();
+  const deliveryScopes = catalogue?.deliveryScopes ?? [];
 
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
   const countIn = (paths: string[]): number =>
@@ -125,6 +130,30 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
         title="Quote & client"
         issueCount={countIn(['customer-firstName', 'customer-lastName', 'customer-email'])}
       >
+        {/*
+          Quote rate sits in this group because the desktop puts it here: it is a
+          property of the sale, agreed with the customer, not a figure discovered at
+          the cost step. It moves the total on every quote, so it must be visible
+          before anyone reaches the price.
+        */}
+        <label className="flex flex-col gap-sq-1">
+          <span className="text-sq-micro font-medium text-sq-ink">Quote rate (%)</span>
+          <input
+            id="customer-quoteRatePct"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={100}
+            step={0.5}
+            value={pricing.quoteRatePct}
+            onChange={(event) => setPricing({ quoteRatePct: Number(event.target.value) })}
+            className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 py-sq-1 text-sq-body outline-none"
+          />
+          <span className="text-sq-micro text-sq-ink-muted">
+            An uplift on the whole job; 0 for none.
+          </span>
+        </label>
+
         <div className="grid grid-cols-2 gap-sq-2">
           <Field
             id="customer-firstName"
@@ -282,6 +311,25 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
         issueCount={countIn(['site-deliveryAcknowledged'])}
         defaultOpen={false}
       >
+        <div className="flex items-start justify-between gap-sq-2">
+          <p className="text-sq-micro text-sq-ink-muted">
+            Where the materials are delivered. Often the site itself.
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              setSite({
+                deliveryAddress: [site.address, site.suburb, site.state, site.postcode]
+                  .map((part) => part.trim())
+                  .filter((part) => part !== '')
+                  .join(', '),
+              })
+            }
+            className="min-h-9 shrink-0 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            Copy from above
+          </button>
+        </div>
         <Field
           id="site-deliveryAddress"
           label="Delivery address"
@@ -289,13 +337,24 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
           value={site.deliveryAddress}
           onChange={(event) => setSite({ deliveryAddress: event.target.value })}
         />
-        <Field
-          id="site-deliveryScope"
-          label="Delivery scope"
-          hint="What is included — for example “delivered to site, customer unloads”."
-          value={site.deliveryScope}
-          onChange={(event) => setSite({ deliveryScope: event.target.value })}
-        />
+        {deliveryScopes.length > 0 ? (
+          <SelectField
+            id="site-deliveryScope"
+            label="Delivery scope"
+            value={site.deliveryScope}
+            options={deliveryScopes.map((scope) => ({ value: scope.name, label: scope.name }))}
+            onChange={(value) => setSite({ deliveryScope: value })}
+            hint="From this company's price book."
+          />
+        ) : (
+          <Field
+            id="site-deliveryScope"
+            label="Delivery scope"
+            hint="What is included — for example “delivered to site, customer unloads”."
+            value={site.deliveryScope}
+            onChange={(event) => setSite({ deliveryScope: event.target.value })}
+          />
+        )}
 
         {/*
           A checkbox with an explicit acknowledgement, because delivery terms are where a shed
