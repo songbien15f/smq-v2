@@ -20,6 +20,7 @@ import { registerAuth, SESSION_COOKIE } from './routes/auth.js';
 import { registerQuotes } from './routes/quotes.js';
 import { registerEvaluations } from './routes/evaluations.js';
 import { registerPriceBooks } from './routes/priceBooks.js';
+import { registerCatalogues } from './routes/catalogues.js';
 import { registerDocuments } from './routes/documents.js';
 import { registerShares } from './routes/shares.js';
 import { registerSend } from './routes/send.js';
@@ -122,6 +123,7 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       registerQuotes(scope, db);
       registerEvaluations(scope, db);
       registerPriceBooks(scope, db);
+      registerCatalogues(scope, db);
       registerDocuments(scope, db);
       // A share link is minted for the **site's** origin, because that is where a customer opens it.
       // The client app is where the operator creates it, and the two are different hosts.

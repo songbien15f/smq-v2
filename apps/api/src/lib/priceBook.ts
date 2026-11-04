@@ -86,6 +86,23 @@ export class BookMissingError extends Error {
 }
 
 /**
+ * The open SQLite handle for a book.
+ *
+ * `openBook` returns the lookup, which is all the pricing path needs. The catalogue
+ * reader needs the raw tables, so this exposes the same cached handle rather than
+ * opening a second connection to an immutable file. It throws `BookMissingError`
+ * for a hash that is not on disk, exactly as `openBook` does.
+ */
+export function openBookDatabase(hash: string): ReturnType<typeof openPublishedBook> {
+  openBook(hash);
+  const entry = openBooks.get(hash);
+  if (entry === undefined) {
+    throw new BookMissingError(`The price book ${hash.slice(0, 12)}… could not be opened.`);
+  }
+  return entry.db;
+}
+
+/**
  * Close every open book.
  *
  * Called on shutdown, and by a test that published into a temporary directory — an open SQLite
