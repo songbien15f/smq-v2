@@ -38,9 +38,21 @@ export interface CostPanelProps {
   /** True while a calculation is in flight. */
   calculating: boolean;
   onRecalculate: () => void;
+  /** True for a role that may see the internal cost breakdown. */
+  canSeeMargin: boolean;
 }
 
-export function CostPanel({ price, stale, calculating, onRecalculate }: CostPanelProps) {
+/** The derivation rows the desktop showed only to a SuperAdmin. */
+const MARGIN_ONLY_ROWS = new Set([
+  'Materials, from the building',
+  'Total material cost',
+  'Margin applied',
+  'Kit price',
+  'Quote rate',
+  'Additions',
+]);
+
+export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMargin }: CostPanelProps) {
   const pricing = useDraftStore((state) => state.pricing);
   const setPricing = useDraftStore((state) => state.setPricing);
   const charges = useShedStore((state) => state.config.charges);
@@ -397,7 +409,9 @@ export function CostPanel({ price, stale, calculating, onRecalculate }: CostPane
               ['Quote rate', null, price.quoteRatePct === 0 ? 'None applied.' : `${percent(price.quoteRatePct)} uplift.`],
               ['Additions', price.additionsCents, null],
               ['GST included', price.gstCents, 'Extracted from the contract, not added to it.'],
-            ].map(([label, value, note]) => (
+            ].map(([label, value, note]) => {
+              if (!canSeeMargin && MARGIN_ONLY_ROWS.has(String(label))) return null;
+              return (
               <div key={String(label)} className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1 last:border-0">
                 <dt className="text-sq-ink">
                   {String(label)}
@@ -409,7 +423,8 @@ export function CostPanel({ price, stale, calculating, onRecalculate }: CostPane
                   {typeof value === 'number' ? money(value) : '—'}
                 </dd>
               </div>
-            ))}
+              );
+            })}
             <div className="flex items-baseline justify-between gap-sq-2 pt-sq-2">
               <dt className="font-semibold text-sq-ink">Contract price, GST inclusive</dt>
               <dd className="sq-numeric font-semibold text-sq-ink">{money(price.contractCents)}</dd>

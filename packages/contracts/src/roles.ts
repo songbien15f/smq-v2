@@ -36,6 +36,12 @@ export const CAPABILITIES = [
   'quote:write',
   'quote:send',
   'cost:read',
+  /*
+   * The internal cost breakdown: material cost, the margin multiplier, the kit price
+   * and the additions. The desktop showed these to a SuperAdmin only — an estimator
+   * quotes from the sell price, not from what the company paid.
+   */
+  'cost:margin',
   'price:manage',
   'members:manage',
   'settings:manage',
@@ -57,6 +63,7 @@ const COMPANY_POLICY: Record<CompanyRole, readonly Capability[]> = {
     'quote:write',
     'quote:send',
     'cost:read',
+    'cost:margin',
     'price:manage',
     'members:manage',
     'settings:manage',

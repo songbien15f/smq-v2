@@ -511,6 +511,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
               stale={pricedAt === 'stale'}
               calculating={calculating}
               onRecalculate={() => void calculate()}
+              canSeeMargin={session.capabilities.includes('cost:margin')}
             />
           )}
 
