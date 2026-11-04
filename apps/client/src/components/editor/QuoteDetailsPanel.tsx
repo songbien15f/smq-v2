@@ -22,9 +22,9 @@
 import { useId, useState } from 'react';
 import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
-import { reconcileBays } from '@sq/core/domain';
+import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
-import type { DisplayUnit, ShedColors } from '@sq/core/domain';
+import type { DisplayUnit, ShedColors, ShedConfig } from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
 import { DimensionField } from './DimensionField';
@@ -673,10 +673,32 @@ function ShedGroup({
 
   const perBay = config.bays > 0 ? config.length / config.bays : 0;
 
+  /**
+   * Apply a dimension change, asking first when it invalidates placed options.
+   *
+   * The desktop wiped options on a span/height/pitch/bay change and asked first. Doing
+   * it silently would delete work; never doing it would leave a door on a wall that no
+   * longer exists. The confirm is that middle ground, and it only appears when there is
+   * something to lose.
+   */
+  const applyDimension = (patch: Partial<ShedConfig>): void => {
+    const next = { ...config, ...patch };
+    const wipes = shouldWipeOptions(config, next);
+    if (
+      wipes &&
+      !window.confirm(
+        'Changing this size removes every option placed on the building. Continue?',
+      )
+    ) {
+      return;
+    }
+    applyPartial(wipes ? { ...patch, options: [] } : patch);
+  };
+
   /** Apply a reconciled bay triple, so the three fields can never disagree. */
   const applyBays = (input: { length: number; bays: number; nomBaySpacing: number }): void => {
     const next = reconcileBays(input);
-    applyPartial({ length: next.length, bays: next.bays, nomBaySpacing: next.nomBaySpacing });
+    applyDimension({ length: next.length, bays: next.bays, nomBaySpacing: next.nomBaySpacing });
   };
 
   const wallProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isWall);
@@ -732,7 +754,7 @@ function ShedGroup({
           required
           hint="Clear width, inside the columns."
           error={errorAt('shed-span')}
-          onCommit={(mm) => applyPartial({ span: mm })}
+          onCommit={(mm) => applyDimension({ span: mm })}
         />
         <DimensionField
           id="shed-height"
@@ -743,7 +765,7 @@ function ShedGroup({
           maxMm={12000}
           required
           error={errorAt('shed-height')}
-          onCommit={(mm) => applyPartial({ height: mm })}
+          onCommit={(mm) => applyDimension({ height: mm })}
         />
       </div>
 
@@ -890,7 +912,9 @@ function ShedGroup({
             step={0.5}
             value={config.roofPitchDeg}
             aria-describedby="shed-roofPitchDeg-value"
-            onChange={(event) => applyPartial({ roofPitchDeg: Number(event.target.value) })}
+            onChange={(event) =>
+              applyDimension({ roofPitchDeg: Number(event.target.value) })
+            }
             className="h-2 flex-1 cursor-pointer accent-[var(--color-sq-brand)]"
           />
           <output

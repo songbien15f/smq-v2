@@ -28,24 +28,15 @@
  * exactly as the desktop's "Add" per category did.
  */
 
-import { useState } from 'react';
 import {
   OPENING_TYPE_OPTIONS,
-  OPTION_GROUP_LABELS,
   OPTION_KIND_OPTIONS,
   canDuplicate,
 } from '@sq/core/domain';
-import type { OpeningType, ShedOption } from '@sq/core/domain';
+import type { ShedOption } from '@sq/core/domain';
 import { Button, Panel, StatusPill } from '@sq/ui';
 import { useShedStore } from '@/store/useShedStore';
-
-/** The tools the operator can place. Windows and doors are the ones a quote is built from. */
-const PLACEABLE: { type: OpeningType; label: string }[] = [
-  { type: 'roller_door', label: 'Roller door' },
-  { type: 'pa_door', label: 'PA door' },
-  { type: 'sliding_door', label: 'Sliding door' },
-  { type: 'window', label: 'Window' },
-];
+import { CategoryDock } from './CategoryDock';
 
 /**
  * A short line describing one option, for its row in the list.
@@ -86,10 +77,8 @@ function optionSummary(option: ShedOption): string {
 export function PlanPanel() {
   const config = useShedStore((state) => state.config);
   const selection = useShedStore((state) => state.selection);
-  const addOpening = useShedStore((state) => state.addOpening);
   const patchOpening = useShedStore((state) => state.patchOpening);
   const removeOpening = useShedStore((state) => state.removeOpening);
-  const addOption = useShedStore((state) => state.addOption);
   const duplicateOption = useShedStore((state) => state.duplicateOption);
   const removeOption = useShedStore((state) => state.removeOption);
   const select = useShedStore((state) => state.select);
@@ -98,8 +87,6 @@ export function PlanPanel() {
   const past = useShedStore((state) => state.history.length);
   const future = useShedStore((state) => state.future.length);
   const notices = useShedStore((state) => state.notices);
-
-  const [pendingType, setPendingType] = useState<OpeningType | null>(null);
 
   const selectedId = selection.kind === 'opening' ? selection.id : null;
   const selectedOptionId = selection.kind === 'option' ? selection.id : null;
@@ -132,83 +119,7 @@ export function PlanPanel() {
           </div>
         }
       >
-        {/* ---------------------------------------------------------------- tools */}
-        <div className="flex flex-wrap items-center gap-sq-2">
-          <span className="text-sq-micro font-medium text-sq-ink-muted" id="place-tools-label">
-            Place
-          </span>
-          <div role="group" aria-labelledby="place-tools-label" className="flex flex-wrap gap-sq-1">
-            {PLACEABLE.map((tool) => {
-              const active = pendingType === tool.type;
-              return (
-                <button
-                  key={tool.type}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => {
-                    if (active) {
-                      setPendingType(null);
-                      return;
-                    }
-                    setPendingType(tool.type);
-                    // Adding through the store rather than waiting for a click on the canvas: the
-                    // store places it at a legal position and raises a notice if it cannot, which
-                    // is the same rule the drag path uses.
-                    addOpening({ type: tool.type });
-                    setPendingType(null);
-                  }}
-                  className={[
-                    'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
-                    active
-                      ? 'border-sq-brand bg-sq-brand text-white'
-                      : 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground',
-                  ].join(' ')}
-                >
-                  {tool.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/*
-          The eleven option kinds, one button each, grouped by where the object sits. Every kind the
-          domain knows is reachable here — the canvas can place openings only, so without these the
-          options the BOM already prices could never be added.
-        */}
-        <div className="mt-sq-2 flex flex-col gap-sq-1">
-          <span className="text-sq-micro font-medium text-sq-ink-muted" id="place-options-label">
-            Place option
-          </span>
-          <div
-            role="group"
-            aria-labelledby="place-options-label"
-            className="flex flex-col gap-sq-1"
-          >
-            {OPTION_GROUP_LABELS.map((group) => (
-              <div
-                key={group.value}
-                role="group"
-                aria-label={`Place option: ${group.label}`}
-                className="flex flex-wrap items-center gap-sq-1"
-              >
-                <span className="w-16 shrink-0 text-sq-micro text-sq-ink-muted">
-                  {group.label}
-                </span>
-                {OPTION_KIND_OPTIONS.filter((option) => option.group === group.value).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => addOption(option.value)}
-                    className="min-h-11 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
+        <CategoryDock />
 
         {notices.length > 0 && (
           <ul className="mt-sq-2 flex flex-col gap-1" aria-live="polite">

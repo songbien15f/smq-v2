@@ -17,7 +17,7 @@ import { newCharge } from '@sq/core/domain';
 import { defaultOptionsFor, normaliseOption, refusePlacement } from '@sq/core/domain';
 import { clampNotices, normaliseShedConfig, placeOpening } from '@sq/core/domain';
 import type { Selection } from '@sq/core/domain';
-import type { Charge, Opening, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
+import type { Charge, Opening, OpeningType, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
 
 /** Which renderer the user is looking at. */
 export type ViewMode = '2d' | '3d';
@@ -201,6 +201,12 @@ export interface ShedState {
    * whole gable infill.
    */
   addOption(kind: OptionKind): void;
+  /** Add a catalogue accessory, priced by the book, at a chosen quantity. */
+  addMiscOption(input: { name: string; quantity: number; unit: string }): void;
+  /** Remove every opening of one type. */
+  removeAllOpenings(type: OpeningType): void;
+  /** Remove every option of one kind. */
+  removeAllOptions(kind: OptionKind): void;
   patchOption(id: string, patch: Partial<ShedOption>): void;
   removeOption(id: string): void;
   duplicateOption(id: string): void;
@@ -426,6 +432,27 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     const normalised = normaliseOption(merged, config);
     const options = config.options.map((option, i) => (i === index ? normalised : option));
     get().applyPartial({ options });
+  },
+
+  addMiscOption(input) {
+    const option = normaliseOption(
+      { id: freshOptionId('misc_option'), kind: 'misc_option', ...input },
+      get().config,
+    );
+    get().applyPartial({ options: [...get().config.options, option] });
+    get().select({ kind: 'option', id: option.id });
+  },
+
+  removeAllOpenings(type) {
+    get().applyPartial({
+      openings: get().config.openings.filter((opening) => opening.type !== type),
+    });
+  },
+
+  removeAllOptions(kind) {
+    get().applyPartial({
+      options: get().config.options.filter((option) => option.kind !== kind),
+    });
   },
 
   removeOption(id) {
