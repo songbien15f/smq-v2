@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { clampBays } from './bays';
+import { migrateColors } from './colors';
 import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from './defaults';
 import { normaliseCharge } from './charges';
 import { normaliseOption } from './options';
@@ -833,7 +834,19 @@ function parseOpeningEntry(entry: unknown): Opening | undefined {
 export function normaliseShedConfig(input: unknown): ShedConfig {
   const source = isPlainObject(input) ? input : {};
   const { openings: rawOpenings, options: rawOptions, charges: rawCharges, ...rest } = source;
-  const parsed = tolerantShedConfigSchema.parse(rest);
+  /*
+   * Read the colour block **before** the tolerant parse.
+   *
+   * A revision written before the parity change stores four roles. The tolerant
+   * schema only knows the ten current keys, so it would replace the old block
+   * with `DEFAULT_SHED.colors` — the quote would open in a palette the customer
+   * never saw. `migrateColors` maps the old roles onto the new ones instead, and
+   * is idempotent on a block that already has all ten.
+   */
+  const parsed = tolerantShedConfigSchema.parse({
+    ...rest,
+    colors: migrateColors((rest as { colors?: unknown }).colors),
+  });
 
   const entries = Array.isArray(rawOpenings) ? rawOpenings : [];
   const parsedOpenings: Opening[] = [];
@@ -937,6 +950,17 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
     charges,
   };
 }
+
+/**
+ * Read any stored config — including a revision written before this build — as
+ * the current shape.
+ *
+ * The name exists because the read path should say what it is doing. The work is
+ * `normaliseShedConfig`'s: per-field fallbacks, the colour-block mapping, and the
+ * derived `nomBaySpacing`. It is pure and does not rewrite the revision; a frozen
+ * revision is never edited.
+ */
+export const migrateShedConfig = normaliseShedConfig;
 
 /**
  * Parse and normalise the charge list, one entry at a time.
