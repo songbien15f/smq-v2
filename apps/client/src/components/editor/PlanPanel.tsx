@@ -81,6 +81,8 @@ function optionSummary(option: ShedOption): string {
       return `${option.depth} mm on the ${option.wall} wall`;
     case 'cantilever':
       return `bay ${option.bay + 1} on the ${option.wall} wall`;
+    case 'misc_option':
+      return option.name === '' ? 'Choose a catalogue item' : `${option.quantity} ${option.unit} × ${option.name}`;
   }
 }
 

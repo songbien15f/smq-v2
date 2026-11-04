@@ -190,6 +190,8 @@ const completeOptionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('overhang'), id: z.string().min(1), wall: wallSideSchema, depth: z.number() }),
   z.object({ kind: z.literal('cantilever'), id: z.string().min(1), wall: wallSideSchema,
     bay: z.number().int(), length: z.number() }),
+  z.object({ kind: z.literal('misc_option'), id: z.string().min(1), name: z.string(),
+    quantity: z.number(), unit: z.string() }),
 ]);
 
 /** A charge line as a complete value. */
@@ -718,6 +720,13 @@ const tolerantOptionSchema = z.discriminatedUnion('kind', [
     bay: z.coerce.number().catch(0),
     length: z.coerce.number().catch(1200),
   }),
+  z.object({
+    kind: z.literal('misc_option'),
+    id: z.string().catch(''),
+    name: z.string().catch(''),
+    quantity: z.coerce.number().catch(1),
+    unit: z.string().catch('ea'),
+  }),
 ]);
 
 /** The id prefix each option kind mints when one has to be repaired. */
@@ -733,6 +742,7 @@ const OPTION_ID_PREFIX: Record<OptionKind, string> = {
   horizontal_cladding: 'hc',
   overhang: 'oh',
   cantilever: 'cl',
+  misc_option: 'mo',
 };
 
 /**
@@ -1112,6 +1122,9 @@ export function coerceToMillimetres(config: ShedConfig): ShedConfig {
           return { ...option, depth: dim(option.depth) };
         case 'cantilever':
           return { ...option, length: dim(option.length) };
+        case 'misc_option':
+          // A quantity of 3 is three rolls, not three metres; never rescaled.
+          return option;
       }
     }),
   };

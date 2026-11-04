@@ -237,3 +237,23 @@ describe('the HTML', () => {
     expect(html).not.toMatch(/NOT FOR CONSTRUCTION/);
   });
 });
+
+describe('catalogue accessories', () => {
+  it('names the accessory and its quantity, not its kind', () => {
+    const config = normaliseShedConfig({
+      ...DEFAULT_SHED,
+      options: [
+        {
+          kind: 'misc_option',
+          id: 'mo-1',
+          name: 'Insulation - Foil 1200w',
+          quantity: 2,
+          unit: 'roll',
+        },
+      ],
+    });
+
+    const document = toCustomerDocument(revision({ config }));
+    expect(document.inclusions).toContain('Insulation - Foil 1200w × 2');
+  });
+});

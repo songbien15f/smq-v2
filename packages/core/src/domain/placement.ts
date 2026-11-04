@@ -578,9 +578,10 @@ export function constrainOptionDrag(
 
     // An overhang and a cladding band span their whole wall: their only free
     // dimension is a depth or a band height, which the editor owns, so a drag
-    // has nothing to change.
+    // has nothing to change. A catalogue accessory is not on the plan at all.
     case 'overhang':
     case 'horizontal_cladding':
+    case 'misc_option':
       return option;
   }
 }

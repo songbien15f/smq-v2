@@ -423,6 +423,13 @@ const OPTION_ROLE: Record<OptionKind, { role: OptionRole; dashed: boolean }> = {
   overhang: { role: 'roof', dashed: false },
   stable: { role: 'exterior', dashed: false },
   horizontal_cladding: { role: 'exterior', dashed: false },
+  /*
+   * A catalogue accessory has no shape, so this entry is never read: `resolveOptions`
+   * filters it out before the plan is built. It exists because the map is keyed by
+   * every kind, and a missing key would be a compile error — which is the right
+   * pressure: a new kind has to state where it draws, or that it does not.
+   */
+  misc_option: { role: 'structure', dashed: true },
 };
 
 /**

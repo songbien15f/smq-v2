@@ -104,7 +104,8 @@ export type OptionKind =
   | 'carry_beam'
   | 'horizontal_cladding'
   | 'overhang'
-  | 'cantilever';
+  | 'cantilever'
+  | 'misc_option';
 
 interface OptionBase {
   id: string;
@@ -232,6 +233,22 @@ export interface CantileverOption extends OptionBase {
   length: number; // mm outward
 }
 
+/**
+ * A catalogue accessory sold by quantity — insulation, bird proofing, a screen.
+ *
+ * Deliberately has **no geometry**: it is a line on the materials list, not a shape
+ * on the plan. The name is the price book's `misc_option.option_name`, which is also
+ * the key the lookup prices it by.
+ */
+export interface MiscOption extends OptionBase {
+  kind: 'misc_option';
+  /** The catalogue row's `option_name`, e.g. `Insulation - Foil 1200w`. */
+  name: string;
+  quantity: number;
+  /** The catalogue row's unit, e.g. `ea`, `m`, `roll`. */
+  unit: string;
+}
+
 export type ShedOption =
   | SkylightOption
   | MezzanineOption
@@ -243,7 +260,8 @@ export type ShedOption =
   | CarryBeamOption
   | HorizontalCladdingOption
   | OverhangOption
-  | CantileverOption;
+  | CantileverOption
+  | MiscOption;
 
 /**
  * A line on the Charges tab.

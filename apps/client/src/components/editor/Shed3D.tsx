@@ -86,7 +86,7 @@ export interface OptionMesh {
  * in jsdom cannot.
  */
 export function buildOptionMeshes(shed: ShedConfig): OptionMesh[] {
-  return resolveOptions(shed).map((option: ResolvedOption) => {
+  return resolveOptions(shed).map((option: ResolvedOption): OptionMesh | null => {
     const { rect, id, kind } = option;
     const centreX = rect.x + rect.width / 2;
     const centreZ = rect.y + rect.height / 2;
@@ -185,8 +185,11 @@ export function buildOptionMeshes(shed: ShedConfig): OptionMesh[] {
           position: [centreX, option.zHigh, centreZ],
           size: { width: rect.width, height: 60, depth: rect.height },
         };
+      case 'misc_option':
+        // `resolveOptions` already drops it; this states the reason for the compiler.
+        return null;
     }
-  });
+  }).filter((mesh): mesh is OptionMesh => mesh !== null);
 }
 
 /**

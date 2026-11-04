@@ -47,9 +47,9 @@ describe('OPENING_TYPE_OPTIONS', () => {
 describe('OPTION_KIND_OPTIONS', () => {
   // The place-option buttons and the options list are both derived from this
   // list, so a kind missing here is a kind nobody can place. Pinning the whole
-  // set means adding a twelfth `OptionKind` without adding it here fails loudly
+  // set means adding another `OptionKind` without adding it here fails loudly
   // rather than shipping an option only the BOM knows about.
-  it('lists all eleven option kinds with their labels', () => {
+  it('lists every option kind with its label', () => {
     expect(OPTION_KIND_OPTIONS.map((o) => ({ value: o.value, label: o.label }))).toEqual([
       { value: 'skylight', label: 'Skylight' },
       { value: 'overhang', label: 'Overhang' },
@@ -62,6 +62,7 @@ describe('OPTION_KIND_OPTIONS', () => {
       { value: 'mezzanine', label: 'Mezzanine' },
       { value: 'dividing_wall', label: 'Dividing wall' },
       { value: 'carry_beam', label: 'Carry beam' },
+      { value: 'misc_option', label: 'Miscellaneous option' },
     ]);
   });
 

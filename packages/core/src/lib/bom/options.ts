@@ -369,6 +369,10 @@ export function optionLines(
       case 'cantilever':
         lines.push(...cantileverLines(frame, option, lookup));
         break;
+      case 'misc_option':
+        // A catalogue accessory is priced in the `misc` section, not as option
+        // material: it has no geometry and no per-option construction rule.
+        break;
     }
   }
 

@@ -35,6 +35,7 @@ import { bracingLines } from './groups/bracing';
 import { fixingLines } from './groups/fixings';
 import { optionLines } from './options';
 import { openingLines } from './openings';
+import { miscOptionLines } from './groups/misc';
 import { safeCall } from './safe';
 import { DEFAULT_BOM_RULES, type BomRules } from './rules';
 import { DEFAULT_CONTRACTS } from '@/lib/pricing/catalogueManifest';
@@ -327,9 +328,20 @@ export function buildBomWithEvidence(
   // to prevent. So it is a priced line in `misc`, visible on the materials list,
   // and it flows through the margin like the steel it sits beside.
   const shedSafe = safeCall(() => lookup.miscOption('Shed Safe fee'));
-  byId.set(
-    'misc',
-    shedSafe === undefined
+
+  // The operator's own catalogue accessories sit beside the ShedSafe fee: they are
+  // cost items the margin must recover, and the book prices each by name.
+  const miscOptions = safeCall(() => miscOptionLines(shed, lookup)) ?? { lines: [], unknown: [] };
+  for (const name of miscOptions.unknown) {
+    issues.push({
+      code: 'MISC_OPTION_UNKNOWN',
+      severity: 'assumption',
+      message: `“${name}” is not priced in the price book, so it is left out of the materials list. Choose another catalogue item or add it as a charge.`,
+    });
+  }
+
+  byId.set('misc', [
+    ...(shedSafe === undefined
       ? []
       : [
           bomLine({
@@ -341,8 +353,9 @@ export function buildBomWithEvidence(
             unitCost: shedSafe.unitCost,
             massKg: 0,
           }),
-        ],
-  );
+        ]),
+    ...miscOptions.lines,
+  ]);
 
   // Every group appears, in the document's order, even when it is empty: a
   // section that vanishes makes a reader wonder whether something failed.

@@ -80,6 +80,7 @@ const OPTION_ID_PREFIX: Record<OptionKind, string> = {
   horizontal_cladding: 'hc',
   overhang: 'oh',
   cantilever: 'cl',
+  misc_option: 'mo',
 };
 
 /** A fresh option id carrying `kind`'s prefix. */
@@ -137,6 +138,10 @@ function nudgeOption(option: ShedOption): ShedOption {
       return { ...option, depth: option.depth + 200 };
     case 'cantilever':
       return { ...option, bay: option.bay + 1 };
+    case 'misc_option':
+      // Nothing to nudge: the line has no position. A duplicate is simply another
+      // line the operator can set a different quantity on.
+      return option;
   }
 }
 

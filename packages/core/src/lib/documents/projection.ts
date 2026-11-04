@@ -140,6 +140,11 @@ function inclusions(config: ShedConfig): string[] {
   }
 
   for (const option of config.options) {
+    if (option.kind === 'misc_option') {
+      const name = option.name.trim() === '' ? 'Catalogue item' : option.name;
+      items.push(option.quantity > 1 ? `${name} × ${option.quantity}` : name);
+      continue;
+    }
     items.push(option.kind.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()));
   }
 

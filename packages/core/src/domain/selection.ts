@@ -193,6 +193,7 @@ const OPTION_TITLES: Record<OptionKind, string> = {
   horizontal_cladding: 'Cladding',
   overhang: 'Overhang',
   cantilever: 'Cantilever',
+  misc_option: 'Miscellaneous option',
 };
 
 /**
@@ -201,7 +202,7 @@ const OPTION_TITLES: Record<OptionKind, string> = {
  * Purely a cataloguing aid — the BOM and the geometry never read it — so it can
  * be regrouped without touching what a quote costs.
  */
-export type OptionGroup = 'roof' | 'wall' | 'interior' | 'frame';
+export type OptionGroup = 'roof' | 'wall' | 'interior' | 'frame' | 'extras';
 
 /** The heading each group is shown under, in the order the groups are offered. */
 export const OPTION_GROUP_LABELS: { value: OptionGroup; label: string }[] = [
@@ -209,6 +210,7 @@ export const OPTION_GROUP_LABELS: { value: OptionGroup; label: string }[] = [
   { value: 'wall', label: 'Walls' },
   { value: 'interior', label: 'Interior' },
   { value: 'frame', label: 'Frame' },
+  { value: 'extras', label: 'Extras' },
 ];
 
 /**
@@ -231,6 +233,7 @@ export const OPTION_KIND_OPTIONS: { value: OptionKind; label: string; group: Opt
   { value: 'mezzanine', label: OPTION_TITLES.mezzanine, group: 'interior' },
   { value: 'dividing_wall', label: OPTION_TITLES.dividing_wall, group: 'interior' },
   { value: 'carry_beam', label: OPTION_TITLES.carry_beam, group: 'frame' },
+  { value: 'misc_option', label: OPTION_TITLES.misc_option, group: 'extras' },
 ];
 
 const CORNER_OPTIONS: { value: string; label: string }[] = [
@@ -367,6 +370,10 @@ function optionFields(option: ShedOption, shed: ShedConfig): FieldSpec[] {
         { key: 'wall', label: 'Wall', type: 'select', value: option.wall, options: WALL_OPTIONS },
         { key: 'bay', label: 'Bay', type: 'number', value: option.bay, min: 0, step: 1 },
         { key: 'length', label: 'Length', type: 'number', value: option.length, min: 500, unit },
+      ];
+    case 'misc_option':
+      return [
+        { key: 'quantity', label: 'Quantity', type: 'number', value: option.quantity, min: 1, max: 999, step: 1 },
       ];
   }
 }

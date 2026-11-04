@@ -42,6 +42,7 @@ import type {
   SkylightOption,
   StableOption,
   WallSide,
+  MiscOption,
 } from './types';
 
 /** A plan-space rectangle in millimetres. */
@@ -131,6 +132,7 @@ const ID_PREFIX: Record<OptionKind, string> = {
   horizontal_cladding: 'hc',
   overhang: 'oh',
   cantilever: 'cl',
+  misc_option: 'mo',
 };
 
 /** Clamp a value into `[min, max]`, rounding to whole millimetres. */
@@ -272,6 +274,8 @@ export function defaultOptionsFor(kind: OptionKind, shed: ShedConfig): ShedOptio
       return [
         { id: mintId(kind), kind, wall: 'front', bay: 0, length: 1200 } satisfies CantileverOption,
       ];
+    case 'misc_option':
+      return [{ id: mintId(kind), kind, name: '', quantity: 1, unit: 'ea' } satisfies MiscOption];
   }
 }
 
@@ -287,6 +291,13 @@ export function defaultOptionsFor(kind: OptionKind, shed: ShedConfig): ShedOptio
  */
 export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOption {
   switch (option.kind) {
+    case 'misc_option':
+      return {
+        ...option,
+        name: option.name.trim().slice(0, 120),
+        quantity: clamp(option.quantity, 1, 999),
+        unit: option.unit.trim() === '' ? 'ea' : option.unit.trim().slice(0, 20),
+      };
     case 'skylight': {
       const bay = clamp(option.bay, 0, Math.max(0, shed.bays - 1));
       const limit = Math.min(SKYLIGHT_MAX, shed.span, shed.length);
@@ -399,6 +410,15 @@ export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOpt
   const normalised = normaliseOption(option, shed);
 
   switch (normalised.kind) {
+    case 'misc_option':
+      // A catalogue line is not a shape: no plan rect, no height, nothing to draw.
+      return {
+        id: normalised.id,
+        kind: normalised.kind,
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+        zLow: 0,
+        zHigh: 0,
+      };
     case 'skylight': {
       const { start, end } = bayInterval(shed, normalised.bay);
       const centreY = start + (end - start) * normalised.alongBay;
@@ -602,9 +622,23 @@ export function carryBeamSpan(shed: ShedConfig, beam: CarryBeamOption): { start:
   return bayInterval(shed, beam.beginBay);
 }
 
-/** Resolve every stored option, in creation order. */
+/**
+ * True when an option of this kind is a shape on the plan.
+ *
+ * A catalogue accessory is a line on the materials list, not a drawing. Keeping the
+ * predicate here — beside the resolver — means the plan, the model and the "no longer
+ * fits" check all agree about which kinds to ask for, instead of each filtering by
+ * name.
+ */
+export function hasPlanGeometry(kind: OptionKind): boolean {
+  return kind !== 'misc_option';
+}
+
+/** Resolve every stored option that has a shape, in creation order. */
 export function resolveOptions(shed: ShedConfig): ResolvedOption[] {
-  return shed.options.map((option) => resolveOption(option, shed));
+  return shed.options
+    .filter((option) => hasPlanGeometry(option.kind))
+    .map((option) => resolveOption(option, shed));
 }
 
 /**

@@ -32,7 +32,7 @@
  */
 
 import type { OptionKind, ShedConfig, ShedOption } from './types';
-import { resolveOption } from './options';
+import { hasPlanGeometry, resolveOption } from './options';
 
 /** Why a placement was refused, addressed to a person. */
 export interface PlacementRefusal {
@@ -194,8 +194,10 @@ export function optionsThatNoLongerFit(shed: ShedConfig): { id: string; kind: Op
     /*
      * A resolved option whose footprint is zero on either axis is one the geometry could not place —
      * a skylight wider than the roof, an awning longer than its wall. `resolveOption` clamps rather
-     * than throwing, so this is the only signal that the shape is degenerate.
+     * than throwing, so this is the only signal that the shape is degenerate. A kind with no plan
+     * geometry has nothing to measure and is never reported here.
      */
+    if (!hasPlanGeometry(option.kind)) continue;
     const resolved = resolveOption(option, shed);
     if (resolved.rect.width <= 0 || resolved.rect.height <= 0) {
       problems.push({
