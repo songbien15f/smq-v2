@@ -1,0 +1,230 @@
+/**
+ * Placement rules: may this door go on this wall, and if not, what would work.
+ *
+ * The desktop refuses a placement in one of three ways — it fits, it does not fit but
+ * a small change would make it fit ("POSSIBLE ACTION: GO WITH …"), or it cannot be
+ * made to fit at all. That third answer is a sentence naming what is in the way, never
+ * a silent no-op.
+ *
+ * ## What this module can and cannot see
+ *
+ * It works on the plan model this build has: walls with a run in millimetres, and
+ * openings with a width, a height and an offset along their wall. Three desktop rules
+ * depend on a model that does not exist here — gable infill columns (R3/R5), track
+ * segment lengths (R11) and the roof-sheet grid (R12) — so they are not implemented
+ * and are recorded as gaps in the slice plan rather than approximated. A rule that
+ * guesses is worse than a rule that is absent, because the operator cannot tell which
+ * one just refused their door.
+ *
+ * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
+ */
+
+import type { Opening, ShedConfig, WallSide } from './types';
+
+/** Clearance from either end of a wall, mm. The desktop's own figure. */
+const WALL_MARGIN = 100;
+/** A roller door below this size is not a catalogue item the factory supplies. */
+const ROLLER_MIN_HEIGHT = 2000;
+const ROLLER_MIN_WIDTH = 1000;
+/** A carry beam is not offered on a building wider than this, mm. */
+const CARRY_BEAM_MAX_RUN = 15000;
+
+/** One suggestion that would make the placement legal. */
+export interface OpeningProposal {
+  /** The sentence a menu shows, e.g. `GO WITH 1300 mm from the left corner`. */
+  label: string;
+  opening: Opening;
+}
+
+/** The three answers a placement can have. */
+export type OpeningPlacement =
+  | { ok: true; opening: Opening }
+  | { ok: false; reason: string }
+  | { ok: false; proposals: OpeningProposal[] };
+
+/** The run of `wall` in millimetres. */
+function wallRun(shed: ShedConfig, wall: WallSide): number {
+  return wall === 'front' || wall === 'back' ? shed.span : shed.length;
+}
+
+/** The wall-local offset an alignment resolves to, clamped onto the wall. */
+function offsetFor(opening: Opening, run: number): number {
+  const max = Math.max(0, run - opening.width);
+  switch (opening.align) {
+    case 'left':
+      return 0;
+    case 'right':
+      return max;
+    case 'custom':
+      return Math.min(Math.max(opening.offset ?? 0, 0), max);
+    case 'center':
+    default:
+      return max / 2;
+  }
+}
+
+/** A copy of `opening` pinned to an explicit offset. */
+function atOffset(opening: Opening, offset: number): Opening {
+  return { ...opening, align: 'custom', offset: Math.round(offset) };
+}
+
+/** The half-open interval `[u, u + width)`. */
+function interval(u: number, width: number): [number, number] {
+  return [u, u + width];
+}
+
+/** True when two wall intervals share any millimetre. */
+function overlaps(a: [number, number], b: [number, number]): boolean {
+  return a[0] < b[1] && b[0] < a[1];
+}
+
+/**
+ * Decide whether `request` can be placed on its wall, and what would fix it.
+ *
+ * Order is deliberate: a size the catalogue cannot supply is answered before a
+ * position, because resizing changes whether the position is even legal.
+ */
+export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlacement {
+  const run = wallRun(shed, request.wall);
+
+  // R10 — a roller door has a catalogue minimum. Offer the smallest legal size.
+  if (
+    request.type === 'roller_door' &&
+    (request.height < ROLLER_MIN_HEIGHT || request.width < ROLLER_MIN_WIDTH)
+  ) {
+    const width = Math.max(request.width, ROLLER_MIN_WIDTH);
+    const height = Math.max(request.height, ROLLER_MIN_HEIGHT);
+    if (width <= run - 2 * WALL_MARGIN) {
+      return {
+        ok: false,
+        proposals: [
+          { label: `GO WITH ${width} × ${height} mm`, opening: { ...request, width, height } },
+        ],
+      };
+    }
+    return {
+      ok: false,
+      reason: `A roller door needs at least ${ROLLER_MIN_WIDTH} × ${ROLLER_MIN_HEIGHT} mm, which does not fit this ${run} mm wall.`,
+    };
+  }
+
+  if (request.width > run - 2 * WALL_MARGIN) {
+    return {
+      ok: false,
+      reason: `This opening is ${request.width} mm wide, wider than the ${run} mm wall allows with a ${WALL_MARGIN} mm margin at each end.`,
+    };
+  }
+
+  const u = offsetFor(request, run);
+
+  // R1 — 100 mm clear at both ends.
+  if (u < WALL_MARGIN || u + request.width > run - WALL_MARGIN) {
+    const clamped = Math.min(Math.max(u, WALL_MARGIN), run - WALL_MARGIN - request.width);
+    if (clamped >= WALL_MARGIN && clamped + request.width <= run - WALL_MARGIN) {
+      return {
+        ok: false,
+        proposals: [
+          {
+            label: `GO WITH ${Math.round(clamped)} mm from the left corner`,
+            opening: atOffset(request, clamped),
+          },
+        ],
+      };
+    }
+    return {
+      ok: false,
+      reason: `The opening does not fit on this wall with a ${WALL_MARGIN} mm margin at each end.`,
+    };
+  }
+
+  // R2 — no overlap with another opening on the same wall.
+  const candidate = interval(u, request.width);
+  const blockers = shed.openings
+    .filter((other) => other.wall === request.wall && other.id !== request.id)
+    .map((other) => ({ other, span: interval(offsetFor(other, run), other.width) }))
+    .filter((entry) => overlaps(candidate, entry.span));
+
+  if (blockers.length > 0) {
+    const proposals: OpeningProposal[] = [];
+    for (const blocker of blockers) {
+      const left = blocker.span[0] - request.width;
+      const right = blocker.span[1];
+      if (left >= WALL_MARGIN) {
+        proposals.push({
+          label: `GO WITH ${Math.round(left)} mm from the left corner`,
+          opening: atOffset(request, left),
+        });
+      }
+      if (right + request.width <= run - WALL_MARGIN) {
+        proposals.push({
+          label: `GO WITH ${Math.round(right)} mm from the left corner`,
+          opening: atOffset(request, right),
+        });
+      }
+    }
+    if (proposals.length > 0) return { ok: false, proposals };
+    return { ok: false, reason: 'There is no room beside the opening already on this wall.' };
+  }
+
+  return { ok: true, opening: atOffset(request, u) };
+}
+
+/** R7 — a carry beam is not offered above this span. */
+export function carryBeamRefusal(shed: ShedConfig): string | null {
+  if (shed.span > CARRY_BEAM_MAX_RUN) {
+    return `A carry beam is not available on a building wider than ${CARRY_BEAM_MAX_RUN} mm (this one is ${shed.span} mm).`;
+  }
+  return null;
+}
+
+/**
+ * Remove an opening, and clear any carry beam that claimed to span it.
+ *
+ * A beam whose pointer is left dangling would draw as spanning a door that is no
+ * longer there; clearing the pointer keeps the beam and drops the false claim.
+ */
+export function removeOpeningWithCascade(id: string, shed: ShedConfig): ShedConfig {
+  return {
+    ...shed,
+    openings: shed.openings.filter((opening) => opening.id !== id),
+    options: shed.options.map((option) =>
+      option.kind === 'carry_beam' && option.openingId === id
+        ? { ...option, openingId: null }
+        : option,
+    ),
+  };
+}
+
+/** Remove one option. */
+export function removeOptionWithCascade(id: string, shed: ShedConfig): ShedConfig {
+  return { ...shed, options: shed.options.filter((option) => option.id !== id) };
+}
+
+/**
+ * Drop every option, keeping the openings and the charges.
+ *
+ * This mirrors the desktop's wipe when a structural dimension changes: the options
+ * were placed against a building that no longer exists. Openings are not part of the
+ * wipe because the desktop keeps them; charges are commercial and unrelated.
+ */
+export function wipeOptions(shed: ShedConfig): ShedConfig {
+  return { ...shed, options: [] };
+}
+
+/**
+ * True when a dimension change invalidates every placed option.
+ *
+ * The caller asks this **before** applying the change, so it can show the desktop's
+ * confirmation. Wiping without asking would silently delete work; asking on every
+ * keystroke would be noise, which is why the comparison is against the previous
+ * committed config rather than the field being typed.
+ */
+export function shouldWipeOptions(before: ShedConfig, after: ShedConfig): boolean {
+  if (before.options.length === 0) return false;
+  return (
+    before.span !== after.span ||
+    before.height !== after.height ||
+    before.roofPitchDeg !== after.roofPitchDeg ||
+    before.bays !== after.bays
+  );
+}

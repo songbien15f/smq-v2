@@ -33,6 +33,7 @@
 
 import type { OptionKind, ShedConfig, ShedOption } from './types';
 import { hasPlanGeometry, resolveOption } from './options';
+import { carryBeamRefusal } from './placementRules';
 
 /** Why a placement was refused, addressed to a person. */
 export interface PlacementRefusal {
@@ -135,6 +136,12 @@ export function refusePlacement(kind: OptionKind, shed: ShedConfig): PlacementRe
         };
       }
       return null;
+    }
+
+    case 'carry_beam': {
+      // R7: a beam is not offered on a building wider than the desktop's limit.
+      const reason = carryBeamRefusal(shed);
+      return reason === null ? null : { kind, reason };
     }
 
     // Every other kind has a position along its wall or across the bays, so a second instance is

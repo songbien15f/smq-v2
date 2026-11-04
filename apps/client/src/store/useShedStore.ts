@@ -15,7 +15,7 @@ import { create } from 'zustand';
 import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from '@sq/core/domain';
 import { newCharge } from '@sq/core/domain';
 import { defaultOptionsFor, normaliseOption, refusePlacement } from '@sq/core/domain';
-import { clampNotices, normaliseShedConfig } from '@sq/core/domain';
+import { clampNotices, normaliseShedConfig, placeOpening } from '@sq/core/domain';
 import type { Selection } from '@sq/core/domain';
 import type { Charge, Opening, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
 
@@ -336,7 +336,29 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   addOpening(opening) {
     const id = opening?.id ?? newOpeningId();
     const next: Opening = { ...defaultOpening(id), ...opening, id };
-    get().applyPartial({ openings: [...get().config.openings, next] });
+
+    /*
+     * Run the desktop's placement rules before the door enters the plan. A door the
+     * rule says cannot sit there either moves to the position the rule prefers (the
+     * same "GO WITH …" the desktop showed) or is refused with a sentence, so the
+     * operator never finds a door on a wall the factory would not build.
+     */
+    const placement = placeOpening(next, get().config);
+    if (!placement.ok) {
+      if ('reason' in placement) {
+        set((state) => ({ notices: [...state.notices, placement.reason] }));
+        return;
+      }
+      const chosen = placement.proposals[0];
+      if (chosen === undefined) return;
+      const applied = { ...chosen.opening, id };
+      get().applyPartial({ openings: [...get().config.openings, applied] });
+      get().select({ kind: 'opening', id });
+      set((state) => ({ notices: [...state.notices, `${chosen.label} — applied.`] }));
+      return;
+    }
+
+    get().applyPartial({ openings: [...get().config.openings, placement.opening] });
     // Select the door the user just created, so the popover opens on it.
     get().select({ kind: 'opening', id });
   },
