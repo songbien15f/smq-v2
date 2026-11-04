@@ -125,7 +125,9 @@ export function renderQuoteHtml(document: CustomerDocument, options: QuoteHtmlOp
   .logo { font-size: 20pt; font-weight: 700; letter-spacing: 1px; }
   .logo-img { max-height: 16mm; max-width: 55mm; object-fit: contain; }
   .company { font-size: 9pt; color: #333; }
-  h1 { font-size: 15pt; margin: 6mm 0 2mm; }
+  /* Figures in a column, the way a ledger sets them: every amount occupies one width. */
+  .mono { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace; font-variant-numeric: tabular-nums; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-size: 20pt; font-weight: 600; letter-spacing: -.01em; margin: 7mm 0 3mm; padding-bottom: 2.5mm; border-bottom: 1px solid #c9a227; }
   h2 { font-size: 11pt; text-transform: uppercase; letter-spacing: .5px; margin: 6mm 0 2mm; border-bottom: 1px solid #ccc; padding-bottom: 1mm; }
   .row { display: flex; gap: 4mm; }
   .row dt { width: 45mm; color: #555; flex-shrink: 0; }
@@ -133,9 +135,9 @@ export function renderQuoteHtml(document: CustomerDocument, options: QuoteHtmlOp
   ul { margin: 0; padding-left: 5mm; }
   li { margin-bottom: 1mm; }
   table.price { width: 100%; border-collapse: collapse; margin-top: 2mm; }
-  table.price th, table.price td { text-align: left; padding: 1.5mm 0; border-bottom: 1px solid #ddd; }
-  table.price td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.total td { font-weight: 700; border-top: 2px solid #111; border-bottom: none; font-size: 12pt; }
+  table.price th, table.price td { text-align: left; padding: 1.5mm 0; border-bottom: 1px dotted #c9c9c4; }
+  table.price td.amount { text-align: right; white-space: nowrap; }
+  tr.total td { font-weight: 700; border-top: 2px solid #111; border-bottom: none; font-size: 15pt; }
   .note { font-size: 9pt; color: #555; }
   .status { display: inline-block; border: 1px solid #b45309; color: #b45309; padding: .5mm 2mm; font-size: 9pt; border-radius: 1mm; }
   /* Fixed positioning so the mark repeats on every printed page without JavaScript. */
@@ -158,7 +160,7 @@ ${indicative ? `<div class="watermark">INDICATIVE — ALLOWANCES APPLY</div>` : 
     </div>
   </div>
   <div class="company" style="text-align:right">
-    <strong>Quote ${escapeHtml(document.quoteNumber)}</strong><br>
+    <strong>Quote <span class="mono">${escapeHtml(document.quoteNumber)}</span></strong><br>
     Revision ${document.revision}<br>
     Issued ${escapeHtml(readableDate(document.issuedAt))}<br>
     Valid until ${escapeHtml(readableDate(document.validUntil))}
@@ -231,15 +233,15 @@ ${document.inclusions.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n')}
 
 <h2>Price</h2>
 <table class="price">
-  <tr class="total"><td>Contract price</td><td class="amount">${money(price.contractCents)}</td></tr>
-  <tr><td>Includes GST</td><td class="amount">${money(price.gstCents)}</td></tr>
+  <tr class="total"><td>Contract price</td><td class="amount mono">${money(price.contractCents)}</td></tr>
+  <tr><td>Includes GST</td><td class="amount mono">${money(price.gstCents)}</td></tr>
 </table>
 
 <h2>Payment</h2>
 <table class="price">
-  <tr><td>Deposit on signing</td><td class="amount">${money(price.depositCents)}</td></tr>
-  <tr><td>Progress payment at frame stage</td><td class="amount">${money(price.progressCents)}</td></tr>
-  <tr><td>Balance before delivery</td><td class="amount">${money(price.balanceCents)}</td></tr>
+  <tr><td>Deposit on signing</td><td class="amount mono">${money(price.depositCents)}</td></tr>
+  <tr><td>Progress payment at frame stage</td><td class="amount mono">${money(price.progressCents)}</td></tr>
+  <tr><td>Balance before delivery</td><td class="amount mono">${money(price.balanceCents)}</td></tr>
 </table>
 
 <h2>What this estimate covers</h2>
@@ -271,7 +273,7 @@ ${document.terms.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n')}
 <p>This quotation is valid until ${escapeHtml(readableDate(document.validUntil))}.</p>
 
 <footer>
-  ${escapeHtml(company.name)} · Quote ${escapeHtml(document.quoteNumber)} revision ${document.revision} ·
+  ${escapeHtml(company.name)} · Quote <span class="mono">${escapeHtml(document.quoteNumber)}</span> revision <span class="mono">${document.revision}</span> ·
   Prices in Australian dollars and include GST.<br>
   Engineering review applies to every quotation.
 </footer>
