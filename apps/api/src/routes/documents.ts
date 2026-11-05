@@ -23,12 +23,22 @@ import { renderQuoteHtml, renderPdf, readCachedPdf, writeCachedPdf, PdfUnavailab
 import { toCustomerDocument } from '@sq/core/documents';
 import { clientIp, sendFail } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
+import type { PrintKind } from '@sq/core/documents';
 import {
   loadFrozenRevision,
   renderFrozenDocument,
   RevisionNotFound,
   revisionDocumentKey,
 } from '../lib/documents.js';
+
+/** The document kinds this product prints. */
+const PRINT_KINDS: ReadonlySet<string> = new Set<PrintKind>([
+  'quotation',
+  'contract',
+  'order',
+  'supplier-quotation',
+  'supplier-contract',
+]);
 
 /** Where rendered PDFs live. Content-addressed by revision, so a re-download is cheap. */
 function pdfCacheRoot(): string {
@@ -147,15 +157,28 @@ async function buildHtml(
       revision: revisionNumber,
     });
 
+    /*
+     * Which kind of document is being printed. The default keeps every existing caller on the
+     * customer quotation, and an unknown value is refused rather than silently treated as one —
+     * printing a client's price on a supplier's order is the leak this parameter exists to stop.
+     */
+    const requested = (request.query as { kind?: string }).kind ?? 'quotation';
+    if (!PRINT_KINDS.has(requested)) {
+      sendFail(reply, 'validation_failed', 'That is not a document this product prints.');
+      return null;
+    }
+    const printKind = requested as PrintKind;
+
     // One render answers both: the HTML and the identity of the logo it used, which is what the
     // PDF cache is keyed on. Two calls could disagree; one cannot.
-    const rendered = await renderFrozenDocument(frozen);
+    const rendered = await renderFrozenDocument(frozen, printKind);
 
     return {
       html: rendered.html,
       quoteNumber: frozen.quoteNumber,
       revision: frozen.revision,
-      cacheKey: revisionDocumentKey(frozen, rendered.logoKey),
+      // The kind joins the cache key: a supplier copy must never be served the client's PDF.
+      cacheKey: `${revisionDocumentKey(frozen, rendered.logoKey)}|${printKind}`,
     };
   } catch (error) {
     if (error instanceof RevisionNotFound) {

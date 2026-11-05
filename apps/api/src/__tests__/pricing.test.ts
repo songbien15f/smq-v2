@@ -724,6 +724,58 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(Number(revisions?.n)).toBe(1);
   });
 
+  it('serves a supplier copy with no client price, and refuses an unknown kind', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-print-kinds',
+        expectedRev: 0,
+        customer: { firstName: 'Pri', lastName: 'Nted', email: 'pr@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    const quoteId = saved.json().data.quoteId;
+    const contract = (saved.json().data.contractCents / 100).toLocaleString('en-AU', {
+      minimumFractionDigits: 2,
+    });
+
+    const client = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${quoteId}/revisions/1/html`,
+      headers: { cookie },
+    });
+    expect(client.statusCode).toBe(200);
+    expect(client.body).toContain(contract);
+
+    const supplier = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${quoteId}/revisions/1/html?kind=order`,
+      headers: { cookie },
+    });
+    expect(supplier.statusCode).toBe(200);
+    // The margin is the difference between these two; a supplier copy must not show it.
+    expect(supplier.body).not.toContain(contract);
+    expect(supplier.body).toContain('<h1>Order</h1>');
+
+    const bogus = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${quoteId}/revisions/1/html?kind=payslip`,
+      headers: { cookie },
+    });
+    expect(bogus.statusCode).toBe(422);
+  });
+
   it('exports the desktop .vqu with colour names, not hex', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',

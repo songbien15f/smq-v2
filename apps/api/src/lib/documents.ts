@@ -15,7 +15,7 @@
 
 import type { Db } from '@sq/db';
 import { resolveFromRoot } from '@sq/db';
-import type { FrozenIssue, FrozenPrice, FrozenRevision } from '@sq/core/documents';
+import type { FrozenIssue, FrozenPrice, FrozenRevision, PrintKind } from '@sq/core/documents';
 import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
 import { normaliseShedConfig } from '@sq/core/domain';
 import { loadLogo } from '@sq/core/branding';
@@ -61,11 +61,12 @@ export async function renderFrozenHtml(frozen: FrozenRevision): Promise<string> 
  */
 export async function renderFrozenDocument(
   frozen: FrozenRevision,
+  printKind: PrintKind = 'quotation',
 ): Promise<{ html: string; logoKey: string }> {
   const logo = await loadPlatformLogo();
   const used = logo !== null && frozen.company.logoHash === logo.sha256 ? logo.sha256 : 'text';
   return {
-    html: renderQuoteHtml(toCustomerDocument(frozen), { logo }),
+    html: renderQuoteHtml(toCustomerDocument(frozen), { logo, printKind }),
     logoKey: used,
   };
 }
