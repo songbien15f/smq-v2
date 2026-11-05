@@ -203,6 +203,8 @@ export interface ShedState {
   addOption(kind: OptionKind): void;
   /** Add a catalogue accessory, priced by the book, at a chosen quantity. */
   addMiscOption(input: { name: string; quantity: number; unit: string }): void;
+  /** Add a mezzanine at a chosen design floor load. */
+  addMezzanine(floorLoad: 1.5 | 3 | 5 | 7.5): void;
   /** Remove every opening of one type. */
   removeAllOpenings(type: OpeningType): void;
   /** Remove every option of one kind. */
@@ -442,6 +444,20 @@ export const useShedStore = create<ShedState>()((set, get) => ({
       get().config,
     );
     get().applyPartial({ options: [...get().config.options, option] });
+    get().select({ kind: 'option', id: option.id });
+  },
+
+  addMezzanine(floorLoad) {
+    const { config } = get();
+    const refusal = refusePlacement('mezzanine', config);
+    if (refusal !== null) {
+      set({ notices: [refusal.reason] });
+      return;
+    }
+    const base = defaultOptionsFor('mezzanine', config)[0];
+    if (base === undefined) return;
+    const option = normaliseOption({ ...base, floorLoad } as ShedOption, config);
+    get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
   },
 

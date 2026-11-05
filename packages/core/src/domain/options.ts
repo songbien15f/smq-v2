@@ -80,6 +80,8 @@ const SKYLIGHT_MIN = 300;
 const SKYLIGHT_MAX = 3000;
 const MEZZ_MIN = 1000;
 const MEZZ_LEVEL_MIN = 2100;
+/** The four design loads the book prices; anything else snaps into this set. */
+const MEZZ_LOADS = [1.5, 3, 5, 7.5] as const;
 /** Clearance between a mezzanine's top and the eaves, mm. */
 const MEZZ_HEADROOM = 300;
 /** Slab thickness, mm. */
@@ -138,6 +140,20 @@ const ID_PREFIX: Record<OptionKind, string> = {
 /** Clamp a value into `[min, max]`, rounding to whole millimetres. */
 function clamp(value: number, min: number, max: number): number {
   return Math.round(Math.min(Math.max(value, min), max));
+}
+
+/**
+ * The nearest load the book prices.
+ *
+ * Ties go **up**, the structurally safer side: a 4 kPa request becomes 5, not 3, so the
+ * frame is never specified lighter than the operator asked for.
+ */
+function nearestMezzanineLoad(value: number | undefined): 1.5 | 3 | 5 | 7.5 {
+  if (value === undefined || !Number.isFinite(value)) return 1.5;
+  for (const load of MEZZ_LOADS) {
+    if (value <= load) return load;
+  }
+  return 7.5;
 }
 
 /** A fresh id for one instance of `kind`. */
@@ -315,6 +331,7 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
         width: clamp(option.width, Math.min(MEZZ_MIN, shed.span), shed.span),
         depth: clamp(option.depth, Math.min(MEZZ_MIN, shed.length), shed.length),
         level: clamp(option.level, MEZZ_LEVEL_MIN, Math.max(MEZZ_LEVEL_MIN, shed.height - MEZZ_HEADROOM)),
+        floorLoad: nearestMezzanineLoad(option.floorLoad),
       };
     case 'awning': {
       const run = wallRun(shed, option.wall);

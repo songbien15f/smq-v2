@@ -37,15 +37,27 @@ const BMT = 0.42;
 /**
  * Mezzanine rates, cents per square metre, by floor-load class.
  *
- * The desktop's `FLOOR_LOAD_VALUE = {1.5, 3.0, 5.0, 7.5}` kPa maps to
- * `{40, 45, 60, 80}`. This build's mezzanine has no floor-load field, so the
- * lightest class is used — a storage platform, which is what a shed mezzanine
- * almost always is. A customer wanting a 7.5 kPa floor needs the heavier rate and
- * the field to state it. Recorded at `/deviations`.
+ * The desktop's `FLOOR_LOAD_VALUE = {1.5, 3.0, 5.0, 7.5}` kPa maps to `{40, 45, 60, 80}`.
+ * It hardcoded that table and fell through to **$0** for any other value — a mezzanine
+ * sold for nothing. Here the load is snapped to the set before pricing (`normaliseOption`),
+ * so an unknown value can only choose one of these, never zero.
  */
-const MEZZANINE_RATE_CENTS_PER_M2 = 4000;
+const MEZZANINE_RATES: Record<1.5 | 3 | 5 | 7.5, number> = {
+  1.5: 4000,
+  3: 4500,
+  5: 6000,
+  7.5: 8000,
+};
 /** The desktop's Queensland multiplier on a mezzanine. */
 const MEZZANINE_QLD_FACTOR = 1.4;
+
+/** The mezzanine rate for `load`, with the Queensland uplift. Exported for its test. */
+export function mezzanineRateCentsPerM2(
+  load: 1.5 | 3 | 5 | 7.5,
+  stateCode: ShedConfig['stateCode'],
+): number {
+  return Math.round(MEZZANINE_RATES[load] * (stateCode === 'QLD' ? MEZZANINE_QLD_FACTOR : 1));
+}
 /** The batten spacing behind horizontal cladding, mm. */
 const BATTEN_SPACING = 900;
 /** The girt spacing a dividing wall is framed at, mm. */
@@ -165,14 +177,14 @@ function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
 /** A mezzanine: a priced floor area, not a list of members. */
 function mezzanineLines(shed: ShedConfig, option: MezzanineOption): BomLine[] {
   const area = (option.width / 1000) * (option.depth / 1000);
-  const rate =
-    Math.round(MEZZANINE_RATE_CENTS_PER_M2 * (shed.stateCode === 'QLD' ? MEZZANINE_QLD_FACTOR : 1));
+  const load = option.floorLoad ?? 1.5;
+  const rate = mezzanineRateCentsPerM2(load, shed.stateCode);
   const quantity = Math.round(area * 100) / 100;
   return [
     bomLine({
       group: 'option',
       code: 'MEZZANINE',
-      description: `Mezzanine floor, ${option.width} × ${option.depth} mm at ${option.level} mm — storage rate`,
+      description: `Mezzanine floor, ${option.width} × ${option.depth} mm at ${option.level} mm — ${load} kPa storage rate`,
       unit: 'm',
       quantity,
       unitCost: rate,

@@ -151,6 +151,11 @@ export interface MezzanineOption extends OptionBase {
   width: number; // mm, along the span
   depth: number; // mm, along the length
   level: number; // mm, floor level above the slab
+  /**
+   * Design floor load, kPa. The book prices four rates only (1.5/3/5/7.5); a load
+   * outside the set is snapped on normalise rather than priced at zero.
+   */
+  floorLoad?: 1.5 | 3 | 5 | 7.5;
 }
 
 /** A roof extension projecting outward from one wall. */

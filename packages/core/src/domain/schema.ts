@@ -177,7 +177,8 @@ const completeOptionSchema = z.discriminatedUnion('kind', [
     alongBay: z.number(), width: z.number(), height: z.number() }),
   z.object({ kind: z.literal('mezzanine'), id: z.string().min(1),
     corner: z.enum(['front_left', 'front_right', 'back_left', 'back_right']),
-    width: z.number(), depth: z.number(), level: z.number() }),
+    width: z.number(), depth: z.number(), level: z.number(),
+    floorLoad: z.union([z.literal(1.5), z.literal(3), z.literal(5), z.literal(7.5)]).optional() }),
   z.object({ kind: z.literal('awning'), id: z.string().min(1), wall: wallSideSchema,
     align: alignModeSchema, offset: z.number().nullable(), width: z.number(), depth: z.number() }),
   z.object({ kind: z.literal('outrigger'), id: z.string().min(1), wall: wallSideSchema,
@@ -648,6 +649,7 @@ const tolerantOptionSchema = z.discriminatedUnion('kind', [
     width: z.coerce.number().catch(3000),
     depth: z.coerce.number().catch(3000),
     level: z.coerce.number().catch(2400),
+    floorLoad: z.coerce.number().optional().catch(undefined),
   }),
   z.object({
     kind: z.literal('awning'),

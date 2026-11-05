@@ -62,6 +62,7 @@ export function CategoryDock() {
   const addOpening = useShedStore((state) => state.addOpening);
   const addOption = useShedStore((state) => state.addOption);
   const addMiscOption = useShedStore((state) => state.addMiscOption);
+  const addMezzanine = useShedStore((state) => state.addMezzanine);
   const addCharge = useShedStore((state) => state.addCharge);
   const removeAllOpenings = useShedStore((state) => state.removeAllOpenings);
   const removeAllOptions = useShedStore((state) => state.removeAllOptions);
@@ -80,6 +81,7 @@ export function CategoryDock() {
   const [prepOnly, setPrepOnly] = useState(false);
   const [miscName, setMiscName] = useState('');
   const [miscQty, setMiscQty] = useState(1);
+  const [floorLoad, setFloorLoad] = useState<1.5 | 3 | 5 | 7.5>(1.5);
 
   const slidingDoors = config.openings.filter((opening) => opening.type === 'sliding_door');
 
@@ -209,6 +211,29 @@ export function CategoryDock() {
                 Add item
               </Button>
             </div>
+          </div>
+        );
+      }
+
+      if (category.option === 'mezzanine') {
+        return (
+          <div className="flex flex-wrap items-end gap-sq-2">
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro text-sq-ink">Floor load</span>
+              <select
+                value={floorLoad}
+                onChange={(event) => setFloorLoad(Number(event.target.value) as 1.5 | 3 | 5 | 7.5)}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value={1.5}>1.5 kPa — storage</option>
+                <option value={3}>3.0 kPa</option>
+                <option value={5}>5.0 kPa</option>
+                <option value={7.5}>7.5 kPa — heavy</option>
+              </select>
+            </label>
+            <Button variant="primary" onClick={() => addMezzanine(floorLoad)}>
+              Add {category.label}
+            </Button>
           </div>
         );
       }
