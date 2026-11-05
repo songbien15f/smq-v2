@@ -20,6 +20,16 @@ import { recordUsage } from '../lib/usage.js';
 import { newId } from '@sq/db';
 import { QUOTE_STATUSES, type QuoteStatus } from '@sq/contracts';
 
+/**
+ * What the email is for.
+ *
+ * The desktop's four send intents, each with its own counter on the quote: a quote goes to the
+ * customer, engineering and manufacturing each get their own order. `both` increments the two
+ * factory counters, because it is one action that serves both.
+ */
+const SEND_MODES = ['quote', 'engineering', 'manufacturing', 'both'] as const;
+type SendMode = (typeof SEND_MODES)[number];
+
 /** Ask for a quote to be emailed. */
 const sendRequest = z.object({
   revisionId: z.string().uuid(),
@@ -31,7 +41,23 @@ const sendRequest = z.object({
   acknowledgeIndicative: z.boolean().default(false),
   /** One key per intent: a double-click is one email. */
   idempotencyKey: z.string().min(8).max(128),
+  /** What the mail is for; the default keeps every existing caller working. */
+  mode: z.enum(SEND_MODES).default('quote'),
 });
+
+/** The counter columns a mode increments. */
+function countersFor(mode: SendMode): string[] {
+  switch (mode) {
+    case 'quote':
+      return ['quote_send_count'];
+    case 'engineering':
+      return ['engineering_send_count'];
+    case 'manufacturing':
+      return ['manufacturing_send_count'];
+    case 'both':
+      return ['engineering_send_count', 'manufacturing_send_count'];
+  }
+}
 
 /** Move a quote to a status a person is allowed to set. */
 const statusRequest = z.object({
@@ -88,6 +114,20 @@ export function registerSend(app: FastifyInstance, db: Db): void {
     // An idempotent replay: the first send already happened, and it is the one that counts.
     if (job.state !== 'queued') {
       return sendOk(reply, { jobId: job.id, state: job.state, replayed: true });
+    }
+
+    /*
+     * Count the intent, once the queue accepted it.
+     *
+     * The column name comes from `countersFor`'s closed set, never from the request. Counting
+     * after the insert means a replay (handled above) cannot double-count, and a failed insert
+     * cannot claim a request that was never queued.
+     */
+    for (const column of countersFor(body.mode)) {
+      await db.run(`UPDATE quotes SET ${column} = ${column} + 1 WHERE id = ? AND tenant_id = ?`, [
+        request.params.quoteId,
+        tenantId,
+      ]);
     }
 
     const dispatch = await dispatchNextJob(

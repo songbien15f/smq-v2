@@ -59,6 +59,7 @@ export function SendDialog({
     `Hello ${customerName},\n\nPlease find your quotation attached.\n\nThe price and the payment stages are also shown on the document.\n\nKind regards,\n${companyName}`,
   );
   const [acknowledged, setAcknowledged] = useState(false);
+  const [mode, setMode] = useState<'quote' | 'engineering' | 'manufacturing' | 'both'>('quote');
   const [idempotency] = useState(() => newIdempotencyKey());
 
   const send = async (): Promise<void> => {
@@ -75,6 +76,7 @@ export function SendDialog({
           body,
           acknowledgeIndicative: acknowledged,
           idempotencyKey: idempotency,
+          mode,
         },
       },
     );
@@ -133,6 +135,26 @@ export function SendDialog({
           </div>
         ) : (
           <div className="mt-sq-3 flex flex-col gap-sq-3">
+            {/*
+              The desktop's four send intents. Each keeps its own counter on the quote, so an
+              operator can see whether engineering or the factory has been asked. `both` is one
+              action that counts for the two factory intents.
+            */}
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro font-medium text-sq-ink">This email is for</span>
+              <select
+                value={mode}
+                onChange={(event) =>
+                  setMode(event.target.value as 'quote' | 'engineering' | 'manufacturing' | 'both')
+                }
+                className="min-h-[38px] cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value="quote">The quote (to the customer)</option>
+                <option value="engineering">Engineering request</option>
+                <option value="manufacturing">Manufacturing order</option>
+                <option value="both">Engineering and manufacturing</option>
+              </select>
+            </label>
             <Field
               id="send-to"
               label="To"
