@@ -37,6 +37,26 @@ interface SettingsForm {
   email: string | null;
   logoText: string | null;
   terms: string[];
+  /**
+   * The company's own rates, in cents. `null` until written.
+   *
+   * Additions uses the labour rates to turn hours into money; the default costs fill the fee
+   * lines. Entered in dollars on this screen, stored in cents like every other money figure.
+   */
+  rates: {
+    labour: { concreter: number; electrician: number; labourer1: number; labourer2: number };
+    defaultCosts: { council: number; engineering: number; rubbish: number; delivery: number; concrete: number };
+  } | null;
+}
+
+/** The rates, with zeros where nothing has been stored yet. */
+function ratesOrZero(form: SettingsForm): NonNullable<SettingsForm['rates']> {
+  return (
+    form.rates ?? {
+      labour: { concreter: 0, electrician: 0, labourer1: 0, labourer2: 0 },
+      defaultCosts: { council: 0, engineering: 0, rubbish: 0, delivery: 0, concrete: 0 },
+    }
+  );
 }
 
 const EMPTY: SettingsForm = {
@@ -53,6 +73,7 @@ const EMPTY: SettingsForm = {
   email: null,
   logoText: null,
   terms: [],
+  rates: null,
 };
 
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; version: number } | { kind: 'failed'; message: string };
@@ -80,8 +101,14 @@ export function SettingsPage() {
     };
   }, []);
 
-  const save = async (): Promise<void> => {
-    setState({ kind: 'saving' });
+  /** Set one rate: entered in dollars, stored in cents. */
+  const setRate = (group: 'labour' | 'defaultCosts', key: string, dollars: number): void => {
+    const base = ratesOrZero(form);
+    const next = { ...base, [group]: { ...base[group], [key]: Math.round(dollars * 100) } };
+    setForm({ ...form, rates: next as SettingsForm['rates'] });
+  };
+
+  const save = async (): Promise<void> => {    setState({ kind: 'saving' });
     const result = await api<{ version: number }>('settings', {
       method: 'PATCH',
       body: form,
@@ -220,6 +247,69 @@ export function SettingsPage() {
             Changes the quantities every new quote is built from. Saved revisions keep the method they
             were priced under.
           </p>
+        </div>
+      </Panel>
+
+      <Panel
+        title="Rates"
+        description="Used by Additions to turn hours and fees into money. Entered per hour, in dollars."
+      >
+        <div className="grid gap-sq-3 sm:grid-cols-2">
+          <fieldset className="flex flex-col gap-sq-2">
+            <legend className="text-sq-micro font-medium text-sq-ink">Labour</legend>
+            {(
+              [
+                ['concreter', 'Concreter'],
+                ['electrician', 'Electrician'],
+                ['labourer1', 'Labourer 1'],
+                ['labourer2', 'Labourer 2'],
+              ] as const
+            ).map(([key, label]) => {
+              const rates = ratesOrZero(form);
+              return (
+                <label key={key} className="flex items-center justify-between gap-sq-2 text-sq-body">
+                  <span>{label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={rates.labour[key] / 100}
+                    onChange={(e) => setRate('labour', key, Number(e.target.value))}
+                    aria-label={`${label} rate per hour`}
+                    className="min-h-9 w-28 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-right text-sq-body"
+                  />
+                </label>
+              );
+            })}
+          </fieldset>
+          <fieldset className="flex flex-col gap-sq-2">
+            <legend className="text-sq-micro font-medium text-sq-ink">Default job costs</legend>
+            {(
+              [
+                ['council', 'Council fee'],
+                ['engineering', 'Engineering'],
+                ['rubbish', 'Rubbish removal'],
+                ['delivery', 'Delivery fee'],
+                ['concrete', 'Concrete footings'],
+              ] as const
+            ).map(([key, label]) => {
+              const rates = ratesOrZero(form);
+              return (
+                <label key={key} className="flex items-center justify-between gap-sq-2 text-sq-body">
+                  <span>{label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={rates.defaultCosts[key] / 100}
+                    onChange={(e) => setRate('defaultCosts', key, Number(e.target.value))}
+                    aria-label={`${label} default cost`}
+                    className="min-h-9 w-28 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-right text-sq-body"
+                  />
+                </label>
+              );
+            })}
+          </fieldset>
         </div>
       </Panel>
 
