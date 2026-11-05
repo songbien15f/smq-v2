@@ -92,7 +92,41 @@ export function registerBomExport(app: FastifyInstance, db: Db): void {
         return;
       }
 
-      const workbook = await buildBomSheet(toBomResult(revision.bom_json), {
+      const bom = toBomResult(revision.bom_json);
+
+      /*
+       * CSV is the desktop's "BOM to CSV". It carries the same frozen figures as the
+       * workbook — the sheet is a view of one BOM, not a second calculation.
+       */
+      const format = (request.query as { format?: string }).format;
+      if (format === 'csv') {
+        const rows: string[] = ['Group,Code,Description,Unit,Quantity,Unit cost,Mass (kg)'];
+        for (const group of bom.groups) {
+          for (const line of group.lines) {
+            rows.push(
+              [group.label, line.code, line.description, line.unit, line.quantity, (line.unitCost / 100).toFixed(2), line.massKg]
+                .map(csvCell)
+                .join(','),
+            );
+          }
+        }
+        rows.push(
+          ['', '', 'Total', '', '', (bom.totalCost / 100).toFixed(2), bom.totalMassKg]
+            .map(csvCell)
+            .join(','),
+        );
+
+        return reply
+          .status(200)
+          .header('content-type', 'text/csv; charset=utf-8')
+          .header(
+            'content-disposition',
+            `attachment; filename="bom-${frozen.quoteNumber}-r${frozen.revision}.csv"`,
+          )
+          .send(rows.join('\r\n'));
+      }
+
+      const workbook = await buildBomSheet(bom, {
         quoteNumber: frozen.quoteNumber,
         revision: frozen.revision,
         issuedAt: frozen.createdAt,
@@ -114,3 +148,15 @@ export function registerBomExport(app: FastifyInstance, db: Db): void {
 
 /** Re-exported so a caller has one place to look for a missing revision. */
 export { RevisionNotFound };
+
+/**
+ * One CSV cell.
+ *
+ * Quoted when it contains a comma, a quote or a line break, with embedded quotes doubled — a
+ * description such as `Downpipe, 90 mm` is the common case and would otherwise shift every
+ * column after it.
+ */
+function csvCell(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
