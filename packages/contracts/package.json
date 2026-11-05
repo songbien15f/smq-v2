@@ -19,7 +19,8 @@
     "dev": "tsup --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "clean": "rimraf dist .turbo"
+    "clean": "rimraf dist .turbo",
+    "build:inc": "tsup"
   },
   "dependencies": {
     "@sq/core": "workspace:*",

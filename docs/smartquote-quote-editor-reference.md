@@ -434,3 +434,18 @@ Ghi chú khi port:
 | `@sq/client-app` | 8 (form + category dock) |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
+
+## 15. Dev workflow — đừng xoá `dist` khi dev server đang chạy
+
+Script `build` của `@sq/core` và `@sq/contracts` là `rimraf dist && tsup`. Chạy nó trong lúc
+`next dev` / API `tsx watch` đang sống sẽ **xoá `dist`** mà hai process đã import từ đó:
+client trả 500, API chết (`ECONNREFUSED` ở client vì API đã tắt).
+
+Dùng **`pnpm build:inc`** (tsup không `rimraf`) khi cần rebuild trong lúc dev. Nó ghi đè file,
+không xoá thư mục, và đã kiểm: sau khi chạy, client 200 / API 200.
+
+Scripts:
+
+- `pnpm dev` — turbo chạy cả API và client (`dependsOn: ^build` một lần đầu).
+- `pnpm build:inc` — core + contracts, không xoá `dist`.
+- `pnpm build` — bản sạch, dùng cho CI/release, **đừng chạy khi dev đang mở**.

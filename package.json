@@ -16,7 +16,8 @@
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "install:company": "pnpm --filter @sq/api install:company",
     "publish-book": "pnpm --filter @sq/api publish-book",
-    "seats:release": "pnpm --filter @sq/api seats:release"
+    "seats:release": "pnpm --filter @sq/api seats:release",
+    "build:inc": "pnpm --filter @sq/core build:inc && pnpm --filter @sq/contracts build:inc"
   },
   "devDependencies": {
     "@types/node": "26.6.4",
