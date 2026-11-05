@@ -327,15 +327,21 @@ export function buildBomWithEvidence(
     }
   }
 
-  // A door is priced from the catalogue, but the accessories around it — tracks,
-  // mullions, jamb flashing — are not separately modelled, so the catalogue price
-  // is doing work it may not cover.
+  /*
+   * A door is priced from the catalogue, but the parts around it that are **not** steel —
+   * its tracks, its jamb flashing and the seal — are not separately modelled, so the
+   * catalogue price is doing work it may not cover.
+   *
+   * **Mullions are no longer in this sentence.** A roller door's header and posts are
+   * steel, the book states their sections (`DH`/`DM`), and `frameLines` now prices them.
+   * Leaving the word here would tell a reader the frame is assumed when it is real.
+   */
   if (shed.openings.some((opening) => opening.type !== 'opening')) {
     issues.push({
       code: 'DOOR_ACCESSORIES_ASSUMED',
       severity: 'assumption',
       message:
-        'Doors and windows are priced from the catalogue; door tracks, mullions and jamb flashing are assumed to be included in that price.',
+        'Doors and windows are priced from the catalogue; their tracks, jamb flashing and seals are assumed to be included in that price. A roller door’s structural frame — its header and mullion posts — is priced separately from the price book’s own sections.',
     });
   }
   // The Charges tab is **not** material. A crane hire or a council permit is a

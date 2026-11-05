@@ -187,6 +187,19 @@ export interface FrameSchedule {
    * tell "the book says none" from "this build does not know".
    */
   infill: { count: number; section: string | null } | null;
+  /**
+   * The section of a **roller door's mullion** (the side post) and **header** (the beam
+   * across the top), from the book's `DM` and `DH` columns.
+   *
+   * A roller door is a hole in a wall, and a hole needs a frame: two posts and a beam.
+   * The book states both sections in the same structure row as C1/R1, so they belong to
+   * the schedule for the same reason the infills do — one row describes the whole frame.
+   *
+   * `null` when the book names none, which is different from "this build does not know":
+   * a design with no roller door has no mullion to state.
+   */
+  doorMullion: string | null;
+  doorHeader: string | null;
 }
 
 /** Everything the BOM asks of the price book. */

@@ -298,5 +298,29 @@ export function buildPunchingPages(
     }
   }
 
+  /*
+   * The door mullion (`DM`) and door header (`DH`), on their own sheets.
+   *
+   * The desktop punches a door column with one hole near each end and a header the same
+   * way, at 45 mm from each end (`PunchingDetailForm.cs:216-252`: `topHoles.Add(45);
+   * bottomHoles.Add(45)` for `DM`, and 35/35 for `DH`). Those figures are the desktop's
+   * own and they differ between the two members, which is why they are stated separately
+   * rather than as one constant.
+   */
+  const doorColumn = memberOf(members, 'door_column');
+  const doorHeader = memberOf(members, 'door_header');
+  if (doorColumn !== undefined || doorHeader !== undefined) {
+    pages.push({
+      left:
+        doorColumn === undefined
+          ? null
+          : (punchColumn(doorColumn, 'DM', 'Top', 'Bottom', [45], [45]) ?? null),
+      right:
+        doorHeader === undefined
+          ? null
+          : (punchColumn(doorHeader, 'DH', 'Top', 'Bottom', [35], [35]) ?? null),
+    });
+  }
+
   return pages.filter((page) => page.left !== null || page.right !== null);
 }

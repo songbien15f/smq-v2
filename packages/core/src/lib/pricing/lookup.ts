@@ -303,7 +303,7 @@ export function createLookup(db: DatabaseSync): PriceLookup {
    * book that has the table but not the view should still price a frame.
    */
   const scheduleStatement = prepare(
-    `SELECT C1, C2, R1, R2, KB, embedment, "no_M_EW", M1, M2
+    `SELECT C1, C2, R1, R2, KB, embedment, "no_M_EW", M1, M2, DM, DH
      FROM view_system_lookup_data
      WHERE structure_code = ? AND wind_region = ? AND terrain_category = ?
        AND importance_level = ? AND internal_pressure = ?
@@ -731,6 +731,11 @@ export function createLookup(db: DatabaseSync): PriceLookup {
         // positive value is a length below the floor.
         embedment: Number.isFinite(embedment) && embedment > 0 ? embedment : null,
         infill: infillColumns(row),
+        // The roller door's frame: two posts (`DM`) and the beam across the top (`DH`).
+        // Same rule as the knee brace — an empty cell is `null`, not an empty section,
+        // because a section that resolves to no price would look like a real member.
+        doorMullion: str(row.DM).trim() === '' ? null : str(row.DM).trim(),
+        doorHeader: str(row.DH).trim() === '' ? null : str(row.DH).trim(),
       };
     },
 

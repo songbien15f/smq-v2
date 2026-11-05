@@ -21,6 +21,7 @@ import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { buildInfillColumns, type InfillColumns } from '../infill';
+import { buildDoorFrameMembers, type DoorFrameMember } from '../doorFrames';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -34,6 +35,9 @@ const MEMBER = {
   endWallRafter: 'End wall rafter',
   kneeBrace: 'Knee brace',
   infillColumn: 'Infill column',
+  doorHeader: 'Roller door header',
+  doorColumn: 'Roller door column',
+  doorDropper: 'Roller door dropper',
 } as const;
 
 /**
@@ -270,7 +274,53 @@ export function frameLines(
           lookup,
           infillSection,
         )),
+    /*
+     * The roller doors' frames. One line per member kind, with the openings' steel summed:
+     * two 3 m doors on one wall are two headers and four posts, and a reader wants those as
+     * two lines, not as four.
+     *
+     * Before this, the frame group priced no door steel at all and an assumption said the
+     * mullions were included in the door's catalogue price — which they are not.
+     */
+    ...doorFrameLines(shed, frame, lookup, rules),
   ];
+}
+
+/** One priced line per kind of door-frame member the building has. */
+function doorFrameLines(
+  shed: ShedConfig,
+  frame: OptimisedFrame,
+  lookup: PriceLookup,
+  rules: BomRules,
+): BomLine[] {
+  const members = buildingDoorFrames(shed, frame, lookup, rules);
+  const lines: BomLine[] = [];
+
+  for (const item of ['door_header', 'door_column', 'door_dropper'] as const) {
+    const group = members.filter((member) => member.item === item);
+    if (group.length === 0) continue;
+    const first = group[0]!;
+    const quantity = group.reduce((sum, member) => sum + member.quantity, 0);
+    const metres = group.reduce((sum, member) => sum + (member.lengthMm / 1000) * member.quantity, 0);
+    const label =
+      item === 'door_header'
+        ? MEMBER.doorHeader
+        : item === 'door_column'
+          ? MEMBER.doorColumn
+          : MEMBER.doorDropper;
+    lines.push(
+      ...memberLine(
+        'frame',
+        `${label} × ${quantity}`,
+        Math.round((metres / quantity) * 1000),
+        quantity,
+        lookup,
+        first.section,
+      ),
+    );
+  }
+
+  return lines;
 }
 
 /**
@@ -307,7 +357,10 @@ export interface FrameMember {
     | 'main_rafter'
     | 'end_rafter'
     | 'knee_brace'
-    | 'infill_column';
+    | 'infill_column'
+    | 'door_header'
+    | 'door_column'
+    | 'door_dropper';
   /** What the desktop calls it. */
   label: string;
   /** The section from the book's structure table, or the fallback size. */
@@ -447,6 +500,40 @@ export function frameMemberSchedule(
     }
   }
 
+  /*
+   * The roller doors' frames, one cut-list row per kind.
+   *
+   * A header and a post pair per opening, and a dropper on a wide one. Their sections come
+   * from the book's `DH`/`DM`; without those the doors are framed by nothing, which is what
+   * this build did before.
+   */
+  for (const door of buildingDoorFrames(shed, frame, lookup, rules)) {
+    const existing = members.find(
+      (member) => member.item === door.item && member.section === door.section,
+    );
+    if (existing !== undefined) {
+      // Two doors of the same section: one row with the counts summed, because the workshop
+      // cuts them the same way.
+      const total = existing.quantity + door.quantity;
+      const weighted =
+        (existing.lengthMm * existing.quantity + door.lengthMm * door.quantity) / total;
+      existing.lengthMm = Math.round(weighted);
+      existing.quantity = total;
+      continue;
+    }
+    members.push({
+      item: door.item,
+      label: door.label,
+      section: door.section,
+      // The section came from the book's own `DH`/`DM` column, so it is a design rather
+      // than an assumption.
+      assumed: false,
+      lengthMm: door.lengthMm,
+      quantity: door.quantity,
+      ...geometry(door.section),
+    });
+  }
+
   return members.filter((member) => member.quantity > 0);
 }
 
@@ -491,6 +578,62 @@ export function buildingInfillColumns(
         postInGround: true,
       }),
     ) ?? none
+  );
+}
+
+/**
+ * The steel a building's roller doors add to the frame.
+ *
+ * One function for every caller — the priced lines, the cut list, the punch sheets — for
+ * the same reason `buildingInfillColumns` exists: three copies would let the quote and the
+ * drawing describe different door frames.
+ *
+ * Empty when the building has no roller door, or when the book names no `DM`/`DH` section
+ * for this design.
+ */
+export function buildingDoorFrames(
+  shed: ShedConfig,
+  frame: OptimisedFrame,
+  lookup: PriceLookup,
+  rules: BomRules = DEFAULT_BOM_RULES,
+): DoorFrameMember[] {
+  if (!shed.openings.some((opening) => opening.type === 'roller_door')) return [];
+
+  const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
+  // Bound to locals so the null check narrows: TypeScript cannot carry a narrowing of
+  // `schedule.doorMullion` into the arrow function below.
+  const doorHeader = schedule?.doorHeader ?? null;
+  const doorMullion = schedule?.doorMullion ?? null;
+  if (doorHeader === null || doorMullion === null) return [];
+
+  const endSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
+  const endGeometry = safeCall(() => lookup.frameGeometry?.(endSection));
+  const mullionGeometry = safeCall(() => lookup.frameGeometry?.(doorMullion));
+  // The infill columns as the **design** placed them: a door frame lands against the
+  // drawing, not against a wall that was already re-spaced around a door.
+  const infillPositionsMm = safeCall(() => buildingInfillColumns(shed, frame, lookup, rules))
+    ?.designPositionsMm ?? [];
+
+  return (
+    safeCall(() =>
+      buildDoorFrameMembers(
+        shed,
+        {
+          headerSection: doorHeader,
+          mullionSection: doorMullion,
+          mullionDepth: mullionGeometry?.depth ?? null,
+          endColumnDepth: endGeometry?.depth ?? null,
+          girtDepth: safeCall(() => lookup.purlinDepth(frame.girtMaterial)) || null,
+          centreMm: (endGeometry?.web ?? 15) === 10 ? 60 : 90,
+          kneeEdgeCode: safeCall(() => lookup.kneeEdge?.(shed.roofPitchDeg))?.kneeEdgeCode ?? null,
+          endRafterDepth: endGeometry?.depth ?? null,
+          footingAllowanceMm: rules.footingAllowance,
+          // The standing footing assumption, the same one the column length makes.
+          postInGround: true,
+        },
+        infillPositionsMm,
+      ),
+    ) ?? []
   );
 }
 

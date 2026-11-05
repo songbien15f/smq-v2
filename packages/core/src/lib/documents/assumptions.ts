@@ -41,8 +41,17 @@ export const DEFAULT_ASSUMPTIONS: AssumptionNote[] = [
     body: 'Gutter runs the full length of each eave, with brackets, stop ends and a downpipe at each corner. Ridge capping, barge flashing, eave capping and corner flashing are included, finished in the colours selected on this quote.',
   },
   {
+    /*
+     * The customer-facing sentence, and it has to match what the quote actually prices.
+     *
+     * A roller door's header and mullion posts are **steel**, named in the price book's own
+     * structure table, and they appear on the frame lines. Saying they are "included with
+     * the door" would tell the customer something the materials list contradicts — which is
+     * the sort of sentence a customer reads back when they think they have been charged
+     * twice for a beam.
+     */
     title: 'Doors, windows and openings',
-    body: 'Doors and windows are priced from the supplier’s catalogue at the nearest standard size that fits the opening. Door tracks, mullions and jamb flashing are included with the door.',
+    body: 'Doors and windows are priced from the supplier’s catalogue at the nearest standard size that fits the opening. Their tracks, jamb flashing and seals are included with the door. A roller door’s structural frame — the header beam across the opening and the posts either side — is carried in the steelwork.',
   },
   {
     title: 'Fixings',

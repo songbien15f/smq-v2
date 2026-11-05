@@ -35,6 +35,8 @@ change a number and need the operator's signature before a customer sees a quote
 
 | 17 | **A mezzanine whose slab cuts through a door is a *warning*** (`AddMezzamineRule:200`, `WarningBlockedMezznine`); the operator could place it and see what it blocked. | **Refused**, with the culprit named | A slab through a door cannot be built — somebody has to move one — and a warning is what a person clicks past. The desktop's own sentence naming the option is kept; only the severity changes. | None. A quote that would have carried an unbuildable mezzanine is now refused at placement. |
 
+| 18 | **A roller door's header and mullion posts were not priced at all.** The desktop prices them from `DH`/`DM` in the structure row (`OptionQuote.cs:471,492`); this build emitted `DOOR_ACCESSORIES_ASSUMED` saying mullions were "included with the door", which is false — the catalogue price is the curtain and drum, not the steel framing the opening. | **Fixed** — `doorFrames.ts` ports the three desktop formulas, and `frameLines` prices the header, posts and dropper from the book's own sections | A hole needs a frame; a quote without the header is a beam somebody has to buy. Same class of omission as the infill columns (row 13). | Frame cost **rises** on every shed with a roller door. |
+
 **Operational consequence of row 10:** changing the platform logo means adding a **new file** and
 pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
 revisions that referenced the old bytes simply print the text logo from then on. See

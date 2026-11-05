@@ -178,7 +178,10 @@ export interface FrameMemberView {
     | 'main_rafter'
     | 'end_rafter'
     | 'knee_brace'
-    | 'infill_column';
+    | 'infill_column'
+    | 'door_header'
+    | 'door_column'
+    | 'door_dropper';
   label: string;
   section: string;
   /** True when the book has no structure table and every member takes one assumed section. */

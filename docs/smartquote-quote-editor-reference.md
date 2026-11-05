@@ -465,7 +465,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 | # | Còn gì | Vì sao |
 |---|---|---|
-| 1 | Phiếu punchings cho **roller-door column/header** | Cần model mullion/header của `RDoor` — chưa có trong v2 |
+| 1 | ~~Phiếu punchings cho roller-door column/header~~ | **ĐÃ XONG** — §12.5 |
 | 2 | **R6 nửa còn lại: track bị chiếm thì từ chối** | Cần model **track như một đối tượng** có vị trí riêng; v2 có `opening.track` là thuộc tính của cửa, nên "cửa khác đè lên track" không diễn đạt được |
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
@@ -747,10 +747,68 @@ Hai cột một tờ, như desktop. **Độ sâu tiết diện quyết định �
 **giữa** (`[2]`), từ 145 mm trở lên đục **hai đường ngoài** (`[1, 3]`) — tấm thép phải lách qua
 cánh thép. Hai lỗ mỗi cột, cách đầu 100/100 mm (tiết diện sâu) hoặc 35/45 mm (nông).
 
-### Chưa làm — vì model chưa có
+### Phiếu DM / DH — ĐÃ CÓ
 
-Phiếu cho **roller-door column** và **roller-door header** (hai nhánh cuối của `PunchingDetailForm`)
-cần model `RDoor` có mullion/header như desktop. Xem R5 ở §6.
+`PunchingDetailForm.cs:216-252` đục `DM` (cột mullion) với lỗ cách mỗi đầu **45 mm**, và `DH`
+(dầm đầu) với **35 mm** — hai con số khác nhau, nên là hai hằng số riêng. Cả hai nay in trên một tờ,
+đúng như desktop ghép cặp.
+
+## 12.5 Khung cửa cuốn — dầm đầu và cột mullion
+
+**Đây là lỗi thiếu thép thứ hai, cùng loại với cột infill.** Mỗi cửa cuốn là một lỗ trên tường, và
+lỗ cần khung: hai cột hai bên và một dầm ngang trên. Sách giá ghi tiết diện ở cột `DM` và `DH` của
+bảng structure (2752 dòng, không dòng nào trống).
+
+v2 trước đây **không đọc hai cột đó**, và thay vào đó ghi:
+
+> `DOOR_ACCESSORIES_ASSUMED` — "door tracks, **mullions** and jamb flashing assumed included"
+
+Câu đó sai. Giá catalogue của cửa cuốn là tấm rèm và tang cuốn, không phải thép khung.
+
+### Ba công thức port từ `OptionQuote.cs`
+
+| Hàm | Nguồn | Việc |
+|---|---|---|
+| `rollerDoorColumnCount` | `checkRDoorColumnQuantity` (`BOMQuoteUtil.cs:766`) | 0, 1 hay 2 cột |
+| `headerLengthMm` | `computeLengthRDoorHeaderBetween2Infill` (`:305`) + nhánh `:444` | Dầm dài bao nhiêu |
+| `mullionLengthMm` | `computeLengthRDoorColumn_INFILL` (`:312`) + nhánh thường | Cột dài bao nhiêu |
+| `doorFrameSetback` | `infillDecreamentDevided` | Lùi vào bao nhiêu |
+
+`series` của cửa chính là `Style` của desktop, và nó đổi **đúng hai số**:
+
+| Series | Số dầm | Cột cao hơn đầu cửa |
+|---|---|---|
+| `A` | 1 | 150 mm |
+| `AA` | **2** | 150 mm |
+| `B` | 1 | **290 mm** |
+
+Cửa B có tang sâu hơn nên cột phải cao hơn 140 mm trước khi dầm đặt lên. Sai chỗ này là dầm thấp
+140 mm — cửa không mở được.
+
+**Cửa ≥ 5100 mm** cần thêm một đoạn `C15012` dài 1000 mm (`OptionQuote.cs:388`).
+
+### Hai nhánh của cột mullion
+
+- **Đứng dưới cột infill**: cột chạy từ móng lên mái theo độ dốc, trừ nửa chiều sâu rafter chia
+  `cos(pitch)` — càng xa sống càng thấp.
+- **Đứng tự do**: cột chỉ cao bằng cửa + packer + móng, dừng ở dầm.
+
+### Phạm vi có chủ ý
+
+Chỉ port **thanh thép**. Bu lông, bản mã, vít và flashing quanh miệng cửa vẫn nằm trong giả định —
+`DOOR_ACCESSORIES_ASSUMED` nay đã bỏ chữ "mullions" và nói rõ phần khung là thép thật.
+
+### Kiểm chứng
+
+Sách giá thật, nhà 12 × 16 m, bay 4000, vùng B, cửa 3760 × 2400 series AA:
+
+```
+Roller door header   C15015   3.92 m   × 2
+Roller door column   Z15024   5.25 m   × 2
+→ khối lượng 5841 → 6018 kg  (+177 kg thép khung cửa)
+```
+
+Và trong trình duyệt: bảng cắt hiện cả hai dòng; phiếu punchings có mark `DM` và `DH`.
 
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
@@ -790,7 +848,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 886 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine headroom) |
+| `@sq/core` | 905 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
