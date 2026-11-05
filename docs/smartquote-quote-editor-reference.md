@@ -377,8 +377,10 @@ defaultCosts:  council · engineering · rubbish · delivery · concrete
 - Test: *"stores the company rate table"* (PATCH → GET round-trip).
 - **UI đã có**: Settings → **Rates** (4 ô labour per hour + 5 ô default job costs; nhập bằng
   đô-la, lưu bằng cents).
-- **Chưa nối vào Additions**: dòng lao động vẫn gõ tay `hours × rate`; bước tiếp theo là đọc
-  `settings.rates` trong Cost panel.
+- **`GET /settings/rates`** (quyền `quote:write`): chỉ trả bảng rate, để estimator đọc được
+  mà không cần `settings:manage`; `GET /settings` vẫn 403 với role đó (có test).
+- **Đã nối vào Additions**: `CostPanel` đọc rate và **chỉ điền vào ô đơn giá đang bằng 0** —
+  không bao giờ ghi đè con số người dùng đã gõ.
 
 **Plan drawing** — `GET /quotes/:id/revisions/:rev/plan` trả một trang **A4 landscape** chỉ có
 hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".

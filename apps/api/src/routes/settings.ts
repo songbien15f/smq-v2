@@ -110,6 +110,22 @@ export function registerSettings(
     return sendOk(reply, settings);
   });
 
+  /**
+   * The rate table alone, for anyone who may price a quote.
+   *
+   * `GET /settings` needs `settings:manage`, which an estimator does not hold — but an estimator
+   * is exactly who types the hours in Additions and needs the rate to multiply them by. This
+   * returns only the rates, so a wider door does not expose the company's terms, assumptions or
+   * payment details.
+   */
+  app.get('/settings/rates', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:write');
+    if (session === null) return;
+
+    const settings = await loadSettings(db, session.tenantId as string);
+    return sendOk(reply, { rates: settings.rates });
+  });
+
   app.patch('/settings', async (request, reply) => {
     const session = requireCompanyCapability(request, reply, 'settings:manage');
     if (session === null) return;

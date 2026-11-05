@@ -33,6 +33,11 @@ const ALLOWED_PREFIXES = [
   'quotes',
   'settings',
   /*
+   * The company's rate table. A separate path from `/settings` because an estimator may read the
+   * rates without holding `settings:manage`.
+   */
+  'settings/rates',
+  /*
    * The people in the company.
    *
    * This list said `members` — a route the API does not have — and not `team`, which it does. So

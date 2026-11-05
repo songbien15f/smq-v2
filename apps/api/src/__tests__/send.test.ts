@@ -278,6 +278,34 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
     expect(read.json().data.rates).toEqual(rates);
   });
 
+  it('lets an estimator read the rate table without manage rights', async () => {
+    await seedCompany(ctx.db, {
+      name: 'Rate Readers',
+      slug: 'rate-readers',
+      email: 'est@rate.test',
+      password: 'a-long-enough-password',
+      role: 'estimator',
+    });
+    const estimatorCookie = await signIn(ctx.app, 'est@rate.test', 'a-long-enough-password');
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/rates',
+      headers: { cookie: estimatorCookie },
+    });
+    // `settings:manage` would have refused this; `quote:write` is what pricing needs.
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveProperty('rates');
+
+    // The full settings screen stays closed to that role.
+    const settings = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings',
+      headers: { cookie: estimatorCookie },
+    });
+    expect(settings.statusCode).toBe(403);
+  });
+
   it('refuses a margin outside the allowed range', async () => {
     const before = await ctx.app.inject({ method: 'GET', url: '/api/v1/settings', headers: { cookie } });
     const response = await ctx.app.inject({

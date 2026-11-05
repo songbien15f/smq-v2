@@ -22,7 +22,7 @@
  * the read-only field here is the screen agreeing with the server rather than a separate rule.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PriceView } from '@sq/contracts';
 import { chargesSubtotalCents, chargeAmountCents } from '@sq/core/domain';
 import { DEFAULT_ADDITION_LINES, additionsTotalCents } from '@sq/core/domain';
@@ -30,6 +30,7 @@ import type { AdditionLine } from '@sq/core/domain';
 import { Button, money, percent, Panel, StatusPill } from '@sq/ui';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
+import { useCompanyRates } from '@/hooks/useCompanyRates';
 import { MoneyField } from './MoneyField';
 import { deriveStages } from './stages';
 
@@ -74,6 +75,36 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
     const next = additionLines.map((line) => (line.id === id ? { ...line, ...patch } : line));
     setPricing({ additionLines: next, additionsCents: additionsTotalCents(next) });
   };
+
+  /*
+   * Fill the labour rates from the company's table.
+   *
+   * The desktop multiplied hours by an Administration rate; here the line's unit price starts at
+   * zero, and a rate the company has set is used instead of asking the operator to remember it.
+   * Only zero prices are touched, so a figure the operator typed is never overwritten.
+   */
+  const rates = useCompanyRates();
+  useEffect(() => {
+    if (rates === null) return;
+    const byId: Record<string, number> = {
+      concreter: rates.labour.concreter,
+      electrician: rates.labour.electrician,
+      labourer1: rates.labour.labourer1,
+      labourer2: rates.labour.labourer2,
+    };
+    const fillable = additionLines.some(
+      (line) => byId[line.id] !== undefined && byId[line.id] > 0 && line.unitPriceCents === 0,
+    );
+    if (!fillable) return;
+
+    const next = additionLines.map((line) => {
+      const rate = byId[line.id];
+      return rate !== undefined && rate > 0 && line.unitPriceCents === 0
+        ? { ...line, unitPriceCents: rate }
+        : line;
+    });
+    setPricing({ additionLines: next, additionsCents: additionsTotalCents(next) });
+  }, [rates, additionLines, setPricing]);
 
   if (price === null) {
     return (
