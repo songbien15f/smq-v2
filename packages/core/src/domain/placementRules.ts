@@ -32,6 +32,26 @@ const CARRY_BEAM_MAX_RUN = 15000;
 /** A sliding door's track segment, mm. The desktop's R11 bound. */
 const TRACK_MIN_WIDTH = 1000;
 const TRACK_MAX_WIDTH = 6000;
+/**
+ * The widest gable whose infill columns a door may displace, mm.
+ *
+ * The desktop's `AddingRuleDoor.AllowOverrideInfill` — `Wall.Plan.Width <= 4000`. On a
+ * wider gable the infill columns are carrying the sheeting, and a door may not simply
+ * take one out: the factory re-spaces them instead, which is a rule this build cannot
+ * apply (see `infill.ts`). So the door is refused with that sentence rather than placed
+ * over a column the quote still charges for.
+ */
+const INFILL_OVERRIDE_MAX_SPAN = 4000;
+/**
+ * The gap a door keeps from a neighbour, mm — the desktop's `SpaceBetween2OtherDoor`.
+ *
+ * That figure is `2 × (infillColumnWidth + sideRoomOtherDoor)` rounded up to 50, so it
+ * varies with the section; 250 mm is the shipped book's value for the common case
+ * (a 65 mm infill and a 60 mm side room). It is used here only to decide whether a
+ * column counts as **displaced** — a jamb 100 mm from a column is not really clear of
+ * it — so being a little generous is the safe direction: it refuses rather than places.
+ */
+const DOOR_SPACING_MM = 250;
 
 /** One suggestion that would make the placement legal. */
 export interface OpeningProposal {
@@ -88,7 +108,20 @@ function overlaps(a: [number, number], b: [number, number]): boolean {
  * Order is deliberate: a size the catalogue cannot supply is answered before a
  * position, because resizing changes whether the position is even legal.
  */
-export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlacement {
+export function placeOpening(
+  request: Opening,
+  shed: ShedConfig,
+  options: {
+    /**
+     * Where the gable's infill columns stand, mm along the span.
+     *
+     * Supplied by the caller that can read the price book. Omitted means R3 is not
+     * applied — which is right for a caller with no book, and wrong for one that has
+     * it: a door over a column is not a door the factory builds.
+     */
+    infillPositionsMm?: readonly number[];
+  } = {},
+): OpeningPlacement {
   const run = wallRun(shed, request.wall);
 
   // R10 — a roller door has a catalogue minimum. Offer the smallest legal size.
@@ -133,6 +166,22 @@ export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlaceme
         ],
       };
     }
+  }
+
+  // R3 — a gable-end door may only displace an infill column on a narrow building.
+  // Checked before the position rules, because a position the door fits at is still a
+  // position the factory will not build. The positions come from the price book, so a
+  // caller that cannot read one (`placeOpening` on its own) passes none and R3 does
+  // not apply; `addOpening` in the store, which does have them, passes them through.
+  if (options.infillPositionsMm !== undefined) {
+    const infillRefusal = infillOverrideRefusal(
+      shed,
+      request.wall,
+      options.infillPositionsMm,
+      offsetFor(request, run),
+      request.width,
+    );
+    if (infillRefusal !== null) return { ok: false, reason: infillRefusal };
   }
 
   const u = offsetFor(request, run);
@@ -247,6 +296,45 @@ export function carryBeamRefusal(shed: ShedConfig): string | null {
     return `A carry beam is not available on a building wider than ${CARRY_BEAM_MAX_RUN} mm (this one is ${shed.span} mm).`;
   }
   return null;
+}
+
+/**
+ * R3 — may this opening displace an infill column in a gable end?
+ *
+ * An infill column stands in the gable to carry the sheeting, and a door placed over
+ * one either takes it out or makes the factory re-space the run. The desktop allows
+ * that only on a gable up to 4 m wide (`AddingRuleDoor.AllowOverrideInfill`); wider
+ * than that the columns are doing real work and the door is refused.
+ *
+ * **`positionsMm` is required, and that is the point of the signature.** The desktop's
+ * check is not "is this a gable" — it is `OverrideAnyInfillColumn`: does the door's
+ * rectangle, widened by half the required spacing, contain a column? A door on a 12 m
+ * gable that sits between two columns is perfectly legal, so a rule that refuses by
+ * wall alone would ban ordinary gable doors. The positions come from the price book
+ * (`no_M/EW` and `M1` in the structure table) via `infillPositions`, so they are not
+ * available to this module — the caller supplies them.
+ *
+ * `null` means the placement is allowed. A sentence explains a refusal.
+ */
+export function infillOverrideRefusal(
+  shed: ShedConfig,
+  wall: WallSide,
+  positionsMm: readonly number[],
+  openingLeftMm: number,
+  openingWidthMm: number,
+): string | null {
+  // Only a gable end has infill columns; a long wall has none.
+  if (wall !== 'front' && wall !== 'back') return null;
+  if (positionsMm.length === 0) return null;
+  // The desktop widens the door by half the spacing it wants between two doors, so a
+  // column that would end up hard against the jamb counts as displaced.
+  const clearance = DOOR_SPACING_MM / 2;
+  const from = openingLeftMm - clearance;
+  const to = openingLeftMm + openingWidthMm + clearance;
+  const displaced = positionsMm.some((position) => position > from && position < to);
+  if (!displaced) return null;
+  if (shed.span <= INFILL_OVERRIDE_MAX_SPAN) return null;
+  return `This door would displace an infill column in the gable end, and that is only allowed on a building up to ${INFILL_OVERRIDE_MAX_SPAN} mm wide. This one is ${shed.span} mm, so the column has to stay where the design put it.`;
 }
 
 /**

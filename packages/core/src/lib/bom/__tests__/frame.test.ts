@@ -291,4 +291,57 @@ describe('frame schedule', () => {
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((line) => line.description.includes('100 x 100 x 2.0 SHS'))).toBe(true);
   });
+
+  it('prices the infill columns the book names, which it used to omit entirely', () => {
+    /*
+     * A 12 m gable takes two infill columns per end wall. The frame group priced the
+     * end-wall columns and nothing between them, so the quote was four columns short
+     * and the gable sheeting it charged for had nothing to hang on.
+     */
+    const withInfill = {
+      ...(lookup as object),
+      structureId: () => 1,
+      frameSchedule: () => ({
+        ...sections,
+        embedment: 450,
+        infill: { count: 2, section: 'C20024' },
+      }),
+      frameGeometry: () => ({ web: 15, depth: 152 }),
+      purlinDepth: () => 64,
+      kneeEdge: () => ({ kneeEdgeCode: 92, apex: 35, haunch: 35 }),
+    } as never;
+
+    const lines = frameLines(shed({ span: 12000 }), frame(), withInfill);
+    const infill = lines.find((line) => line.description.startsWith('Infill column'));
+    expect(infill).toBeDefined();
+    // Two per end wall, on two end walls.
+    expect(infill?.description).toContain('× 4');
+    expect(infill?.unit).toBe('m');
+    // Each column is ~4.5 m of steel, so four of them are well over 15 m.
+    expect(infill?.quantity).toBeGreaterThan(15);
+  });
+
+  it('adds no infill line when the design names none', () => {
+    const none = {
+      ...(lookup as object),
+      structureId: () => 1,
+      frameSchedule: () => ({ ...sections, embedment: 450, infill: null }),
+    } as never;
+    const lines = frameLines(shed({ span: 12000 }), frame(), none);
+    expect(lines.some((line) => line.description.startsWith('Infill column'))).toBe(false);
+  });
+
+  it('adds no infill line on a gable too narrow to need one', () => {
+    const narrow = {
+      ...(lookup as object),
+      structureId: () => 1,
+      frameSchedule: () => ({ ...sections, embedment: 450, infill: { count: 2, section: 'C20024' } }),
+      frameGeometry: () => ({ web: 15, depth: 152 }),
+      purlinDepth: () => 64,
+      kneeEdge: () => ({ kneeEdgeCode: 92, apex: 35, haunch: 35 }),
+    } as never;
+    // Under 3 000 mm the corner columns carry the gable — the desktop's own guard.
+    const lines = frameLines(shed({ span: 2800 }), frame(), narrow);
+    expect(lines.some((line) => line.description.startsWith('Infill column'))).toBe(false);
+  });
 });

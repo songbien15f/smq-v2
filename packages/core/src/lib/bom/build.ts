@@ -26,8 +26,15 @@
 import type { ShedConfig } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { optimise } from './optimise';
-import { frameLines, frameMemberSchedule, type FrameMember } from './groups/frame';
+import {
+  buildingInfillColumns,
+  frameLines,
+  frameMemberSchedule,
+  type FrameMember,
+} from './groups/frame';
 import { buildPunchingPages, type PunchPage, type PunchSource } from './punchings';
+import { infillOverrideRefusal } from '@/domain/placementRules';
+import { resolveOpeningPlacement } from '@/domain/placement';
 import { purlinLines } from './groups/purlin';
 import { flashingLines, gutterLines } from './groups/gutter';
 import { sheetingGroup, isOpenStructure } from './groups/sheeting';
@@ -409,6 +416,35 @@ export function buildBomWithEvidence(
   // order: a punch sheet names a member's section, so it cannot be drawn for a
   // member the cut list does not have.
   const members = frameMemberSchedule(shed, frame, lookup, rules);
+
+  /*
+   * R3 — a gable-end door standing where an infill column has to be.
+   *
+   * This is the one placement rule that needs the price book, so it lives here rather
+   * than in the domain: the columns' positions come from the structure row, and the
+   * domain module has no book to read. It is reported as an **assumption**, not a
+   * blocker: the quote is still worth producing, but the gable's steel no longer
+   * matches the wall it was designed for, and the reader has to know.
+   */
+  const columns = buildingInfillColumns(shed, frame, lookup, rules);
+  if (columns.length > 0) {
+    for (const opening of shed.openings) {
+      const refusal = infillOverrideRefusal(
+        shed,
+        opening.wall,
+        columns.map((column) => column.positionMm),
+        safeCall(() => resolveOpeningPlacement(opening, shed).u) ?? 0,
+        opening.width,
+      );
+      if (refusal !== null) {
+        issues.push({
+          code: 'DOOR_DISPLACES_INFILL_COLUMN',
+          severity: 'assumption',
+          message: refusal,
+        });
+      }
+    }
+  }
   const punchSource: PunchSource = {
     kneeEdge: (pitch) => safeCall(() => lookup.kneeEdge?.(pitch)),
     apex: (web, pitch) => safeCall(() => lookup.apex?.(web, pitch)),

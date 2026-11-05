@@ -177,4 +177,62 @@ describe('buildPunchingPages', () => {
     const withoutBrace = members.filter((member) => member.item !== 'knee_brace');
     expect(buildPunchingPages(withoutBrace, source, 10)).toHaveLength(2);
   });
+
+  it('punches the infill columns, two to a sheet', () => {
+    // The desktop's third and fourth sheets (`PunchingDetailForm.cs:167`). Without
+    // them the columns come back undrilled and cannot be bolted to the gable.
+    const withInfill: FrameMember[] = [
+      ...members,
+      {
+        item: 'infill_column',
+        label: 'Infill column',
+        section: 'C20024',
+        assumed: false,
+        lengthMm: 4800,
+        quantity: 4,
+        web: 20,
+        depth: 203,
+      },
+    ];
+    const pages = buildPunchingPages(withInfill, source, 10);
+    // Two frame sheets plus two infill sheets (four columns, two per sheet).
+    expect(pages).toHaveLength(4);
+    expect(pages[2].left?.mark).toBe('M');
+    expect(pages[2].right?.mark).toBe('M');
+    expect(pages[3].left?.mark).toBe('M');
+    expect(pages[3].right?.mark).toBe('M');
+  });
+
+  it('punches a deep infill column on the outer screw lines and a shallow one in the middle', () => {
+    // The desktop's `depth < 145` test is a fit question: a plate through the middle
+    // of a shallow C clears the flanges, and one in a deep C must straddle them.
+    const infill = (depth: number): FrameMember[] => [
+      ...members,
+      {
+        item: 'infill_column',
+        label: 'Infill column',
+        section: 'C15012',
+        assumed: false,
+        lengthMm: 4800,
+        quantity: 2,
+        web: 15,
+        depth,
+      },
+    ];
+
+    const deep = buildPunchingPages(infill(203), source, 10)[2].left!;
+    expect(deep.top[0]?.screwLines).toEqual([1, 3]);
+    // A deep section is punched 100 mm in from each end.
+    expect(deep.top[0]?.spacingMm).toBe(100);
+    expect(deep.bottom[0]?.spacingMm).toBe(100);
+
+    const shallow = buildPunchingPages(infill(100), source, 10)[2].left!;
+    expect(shallow.top[0]?.screwLines).toEqual([2]);
+    expect(shallow.top[0]?.spacingMm).toBe(35);
+    expect(shallow.bottom[0]?.spacingMm).toBe(45);
+  });
+
+  it('adds no infill sheet when the frame has no infill columns', () => {
+    expect(buildPunchingPages(members, source, 10)).toHaveLength(2);
+  });
 });

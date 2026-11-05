@@ -3,6 +3,7 @@ import { DEFAULT_SHED } from '../defaults';
 import type { Opening, ShedConfig } from '../types';
 import {
   carryBeamRefusal,
+  infillOverrideRefusal,
   placeOpening,
   removeOpeningWithCascade,
   removeOptionWithCascade,
@@ -124,5 +125,60 @@ describe('wipe', () => {
     expect(shouldWipeOptions(withOption, { ...withOption, span: 13000 })).toBe(true);
     expect(shouldWipeOptions(withOption, { ...withOption, stateCode: 'NSW' })).toBe(false);
     expect(shouldWipeOptions(DEFAULT_SHED, { ...DEFAULT_SHED, span: 13000 })).toBe(false);
+  });
+});
+
+/**
+ * R3 — a gable-end door may displace an infill column only on a narrow building.
+ *
+ * The desktop's `AddingRuleDoor.AllowOverrideInfill` is `Wall.Plan.Width <= 4000`, and
+ * the check before it is `OverrideAnyInfillColumn`: the door's rectangle, widened by the
+ * door spacing, must actually contain a column. Both halves matter — refusing by wall
+ * alone would ban every door in a wide gable, including the ones that fit between the
+ * columns, which is the ordinary case.
+ */
+describe('infillOverrideRefusal (R3)', () => {
+  /** Two infill columns, as the book places them on a 12 m gable. */
+  const columns = [4017, 7983];
+
+  it('allows a door between two columns, however wide the building', () => {
+    // Centred on a 12 m gable: 4 500 .. 7 500, clear of both columns by more than the
+    // 125 mm half-spacing.
+    expect(infillOverrideRefusal(DEFAULT_SHED, 'front', columns, 4500, 3000)).toBeNull();
+  });
+
+  it('refuses a door that lands on a column in a wide gable', () => {
+    // 3 800 .. 6 800 contains the 4 017 column.
+    const refusal = infillOverrideRefusal(DEFAULT_SHED, 'front', columns, 3800, 3000);
+    expect(refusal).toMatch(/infill column/);
+    expect(refusal).toMatch(/4000/);
+  });
+
+  it('allows the same door on a narrow gable, where the factory re-spaces the run', () => {
+    const narrow: ShedConfig = { ...DEFAULT_SHED, span: 3900 };
+    expect(infillOverrideRefusal(narrow, 'front', [1300, 2600], 1200, 1200)).toBeNull();
+  });
+
+  it('never applies to a long wall, which has no infill columns', () => {
+    expect(infillOverrideRefusal(DEFAULT_SHED, 'left', columns, 3800, 3000)).toBeNull();
+    expect(infillOverrideRefusal(DEFAULT_SHED, 'right', columns, 3800, 3000)).toBeNull();
+  });
+
+  it('allows anything when the design has no infill columns', () => {
+    expect(infillOverrideRefusal(DEFAULT_SHED, 'front', [], 3800, 3000)).toBeNull();
+  });
+
+  it('counts a column near the jamb as displaced', () => {
+    // The desktop widens the door by half the spacing: a column 50 mm outside the door
+    // is still too close to leave standing.
+    expect(infillOverrideRefusal(DEFAULT_SHED, 'front', [4550], 4500, 3000)).not.toBeNull();
+  });
+
+  it('lets placeOpening skip R3 when it has no column positions', () => {
+    // `placeOpening` on its own cannot read a price book, so it passes no positions and
+    // R3 does not apply — the store, which has them, calls it with them.
+    const door = opening({ type: 'roller_door', width: 3000, height: 2400, wall: 'front', offset: 3800 });
+    expect(placeOpening(door, DEFAULT_SHED).ok).toBe(true);
+    expect(placeOpening(door, DEFAULT_SHED, { infillPositionsMm: columns }).ok).toBe(false);
   });
 });

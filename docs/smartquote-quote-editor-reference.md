@@ -181,11 +181,29 @@ thay vì thấy cửa "tự nhiên nhảy" sang chỗ khác.
 **Add mode giữ nguyên sau mỗi lần đặt** — thêm hai cửa sổ cùng tường không phải bật lại.
 `DoorGhost` nằm trên một `Layer listening={false}`, nên ghost không nuốt cú bấm tiếp theo.
 
+### R3 — cửa đầu hồi đè lên cột infill (ĐÃ CÓ)
+
+`infillOverrideRefusal()` trong `placementRules.ts`. Hai nửa của rule desktop
+(`AddingRuleDoor.AllowOverrideInfill` + `OverrideAnyInfillColumn`):
+
+1. **Có đè lên cột không?** Hình chữ nhật của cửa, nới thêm nửa khoảng cách cửa
+   (`SpaceBetween2OtherDoor / 2`, mặc định 250 mm), có chứa vị trí cột nào không.
+2. **Nhà có hẹp không?** Chỉ cho đè khi `span ≤ 4000 mm`.
+
+**Chỉ theo tường là sai.** Refuse mọi cửa trên đầu hồi rộng sẽ cấm cả những cửa nằm
+gọn giữa hai cột — tức trường hợp bình thường. Test `allows a door between two columns`
+khoá điều này; đó là test đầu tiên bắt lỗi khi tôi viết rule quá rộng.
+
+Vị trí cột đến từ sách giá nên `placeOpening` **không tự có**: nó nhận qua option
+`infillPositionsMm`. `placeOpening` gọi trần thì R3 không áp dụng (không có book);
+`buildBomWithEvidence` — nơi có book — truyền vị trí thật và ghi issue
+`DOOR_DISPLACES_INFILL_COLUMN` (severity `assumption`) cho từng cửa vi phạm.
+
 ### Chưa có — vì model chưa có (không đoán)
 
 | Rule | Thiếu gì |
 |---|---|
-| R3/R5 | Cột infill và dọn cột 750/450 — v2 không có model cột |
+| R5 | Dọn/đặt lại cột khi thêm cửa đầu hồi (infill ±250). Cần model `RDoor` có `Style` + `RelativeLocation` như desktop (`computeInfillPosition`) — v2 có opening theo tường, không có hai thuộc tính đó. Hiện **giữ nguyên cột và cảnh báo**, không tự dời |
 | R9 | "2 tường bên trống" — chính docs desktop nói wording mơ hồ |
 | R11 | Track dài 1000–6000 — track là thuộc tính cửa, không phải chiều dài |
 | R12 | Snap theo tấm mái — không có lưới tấm |
@@ -517,9 +535,34 @@ của nó; revision mới dùng engine 2. Mọi revision skillion do engine 1 đ
 **Gate `cost:read`, không phải `cost:margin`:** tiết diện là thiết kế của nhà máy, không phải giá.
 Người xem báo giá không cần nó; người đặt thép thì cần.
 
+### Cột infill — thứ đã bị bỏ sót hoàn toàn
+
+**Đây là lỗi thiếu thép, không phải thiếu tính năng.** Trước 2026-11-05, `frameLines` chỉ tính
+`End wall column` từ `endMemberCount()`. Nhưng tường đầu hồi rộng cần **cột infill** đứng giữa để
+mang tấm vách — sách giá nói rõ số lượng và tiết diện ở `no_M/EW`, `M1`, `M2` của bảng structure.
+Một nhà 12 m thiếu **4 cột** (2 mỗi đầu hồi) và **21,71 m thép**.
+
+`infillPositions()` port `arrayInfillPosition` của desktop:
+
+```
+step = (span − 2 × decrement) / (count + 1)
+```
+
+Cột xếp đối xứng qua sống nhà; khi cặp gặp nhau ở giữa thì **một cột** đứng trên sống chứ không
+hai cột chồng nhau. `span < 3000` → không có cột nào (đúng guard của desktop, và trùng ngưỡng R3).
+
+`infillLength()` là công thức desktop: cột chạy từ eave lên mái, nên cột càng xa góc càng **thấp**.
+
+`buildingInfillColumns()` là **một** hàm cho ba nơi dùng (dòng giá, bảng cắt, kiểm R3) — ba bản sao
+sẽ cho phép một cửa bị từ chối vì đè lên cột mà bảng cắt không có.
+
+**Bị giữ lại khi đầu hồi có cửa.** `computeInfillPosition` + `checkRDoorColumnQuantity` của desktop
+dời/bỏ cột quanh cửa cuốn, và chúng đọc `RDoor.Style` + `RelativeLocation` — v2 không có hai thuộc
+tính đó. Nên đầu hồi có cửa thì **không có cột infill**, và `InfillColumns.withheld` nói lý do.
+
 ### Cái nó KHÔNG làm
 
-Không có **vị trí lỗ đục** — phần đó ở §12.4.
+Không có **vị trí lỗ đục** cho C1/R1/C2/R2 — phần đó ở §12.4.
 
 ## 12.4 Punching detail — vị trí lỗ đục
 
@@ -575,11 +618,16 @@ công trình chưa đục ở mối chịu lực nặng nhất. Trả rỗng là
 Đóng băng ở `quote_revisions.punchings_json` và `evaluations.punchings_json` (migration `013`,
 trigger append-only tạo lại trong cả hai dialect).
 
+### Phiếu cho cột infill (ĐÃ CÓ)
+
+Hai cột một tờ, như desktop. **Độ sâu tiết diện quyết định đường vít:** dưới 145 mm đục đường
+**giữa** (`[2]`), từ 145 mm trở lên đục **hai đường ngoài** (`[1, 3]`) — tấm thép phải lách qua
+cánh thép. Hai lỗ mỗi cột, cách đầu 100/100 mm (tiết diện sâu) hoặc 35/45 mm (nông).
+
 ### Chưa làm — vì model chưa có
 
-Phiếu cho **infill column**, **roller-door column** và **roller-door header** (ba nhánh còn lại của
-`PunchingDetailForm`) cần **model cột infill** — cùng lỗ hổng với R3/R5 ở §6. Bốn thanh C1/R1/C2/R2
-thì đã đủ.
+Phiếu cho **roller-door column** và **roller-door header** (hai nhánh cuối của `PunchingDetailForm`)
+cần model `RDoor` có mullion/header như desktop. Xem R5 ở §6.
 
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
@@ -619,7 +667,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 820 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings) |
+| `@sq/core` | 851 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

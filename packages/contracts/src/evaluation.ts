@@ -172,7 +172,13 @@ export interface PriceView {
 
 /** One row of the steelwork schedule: a member, its section, its cut length and its count. */
 export interface FrameMemberView {
-  item: 'main_column' | 'end_column' | 'main_rafter' | 'end_rafter' | 'knee_brace';
+  item:
+    | 'main_column'
+    | 'end_column'
+    | 'main_rafter'
+    | 'end_rafter'
+    | 'knee_brace'
+    | 'infill_column';
   label: string;
   section: string;
   /** True when the book has no structure table and every member takes one assumed section. */

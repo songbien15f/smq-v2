@@ -116,6 +116,30 @@ function priceRow(
  * same item, which is correct: they are different books, and a price set against
  * one is not a price set against the other.
  */
+/**
+ * The infill columns a structure row describes.
+ *
+ * `no_M/EW` is the count **per end wall** and `M1`/`M2` are their sections, in the
+ * same row as C1/R1 — one row of the book describes the whole frame, infills
+ * included. The column name is not a legal identifier (it has a slash), so it is
+ * quoted in the query and read here by that exact name.
+ *
+ * `M2` is the second section, for a design that uses two. This build prices both
+ * from `M1` when only one is named, which is what the book's own designs do: the
+ * shipped table has `M2` null on every row that names an `M1`.
+ *
+ * A count of 0 — or a missing section — is reported as `null`, not as
+ * `{ count: 0 }`: "the book says this gable needs no infill" and "this build could
+ * not read the row" are different answers, and only the first is safe to quote.
+ */
+function infillColumns(row: Record<string, unknown>): { count: number; section: string } | null {
+  const count = num(row['no_M_EW']);
+  if (!Number.isFinite(count) || count <= 0) return null;
+  const section = str(row.M1).trim();
+  if (section === '') return null;
+  return { count: Math.round(count), section };
+}
+
 function keyFor(source: string, row: Record<string, unknown>): string {
   const declared = SOURCE_BY_NAME[source];
   if (declared === undefined) return rowKeyOf(source, row);
@@ -279,7 +303,7 @@ export function createLookup(db: DatabaseSync): PriceLookup {
    * book that has the table but not the view should still price a frame.
    */
   const scheduleStatement = prepare(
-    `SELECT C1, C2, R1, R2, KB, embedment
+    `SELECT C1, C2, R1, R2, KB, embedment, "no_M_EW", M1, M2
      FROM view_system_lookup_data
      WHERE structure_code = ? AND wind_region = ? AND terrain_category = ?
        AND importance_level = ? AND internal_pressure = ?
@@ -706,6 +730,7 @@ export function createLookup(db: DatabaseSync): PriceLookup {
         // the slab" (`footing_parameters: -12` for a pinned base), so only a
         // positive value is a length below the floor.
         embedment: Number.isFinite(embedment) && embedment > 0 ? embedment : null,
+        infill: infillColumns(row),
       };
     },
 

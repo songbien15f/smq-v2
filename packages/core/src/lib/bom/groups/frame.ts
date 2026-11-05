@@ -20,6 +20,7 @@ import type { Opening, ShedConfig, ShedOption, WallSide } from '@/domain/types';
 import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
+import { buildInfillColumns, type InfillColumn } from '../infill';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -32,6 +33,7 @@ const MEMBER = {
   mainRafter: 'Main rafter',
   endWallRafter: 'End wall rafter',
   kneeBrace: 'Knee brace',
+  infillColumn: 'Infill column',
 } as const;
 
 /**
@@ -219,6 +221,19 @@ export function frameLines(
 
   const column = columnLength(shed, schedule?.embedment ?? null, rules);
 
+  /*
+   * The infill columns, priced.
+   *
+   * The same `buildInfillColumns` the cut list reads, called with the same inputs, so
+   * the metres ordered and the members cut cannot disagree. Each column is its own
+   * length — an outer one is shorter than an inner one — so they are summed rather
+   * than multiplied by a quantity, and the description carries the count so a reader
+   * can see the line is four columns and not one long one.
+   */
+  const infillColumns = buildingInfillColumns(shed, frame, lookup, rules);
+  const infillMetres = infillColumns.reduce((sum, column) => sum + column.lengthMm / 1000, 0);
+  const infillSection = schedule?.infill?.section ?? null;
+
   return [
     ...memberLine('frame', MEMBER.mainColumn, column, main, lookup, section),
     ...memberLine('frame', MEMBER.endWallColumn, column, end, lookup, endSection),
@@ -241,6 +256,19 @@ export function frameLines(
           main * 2,
           lookup,
           braceSection,
+        )),
+    // The infill columns: one line, total metres, count in the description.
+    ...(infillColumns.length === 0 || infillSection === null
+      ? []
+      : memberLine(
+          'frame',
+          `${MEMBER.infillColumn} × ${infillColumns.length}`,
+          // `memberLine` multiplies length by count, so hand it the average and the
+          // count — the product is the total metres either way.
+          Math.round((infillMetres / infillColumns.length) * 1000),
+          infillColumns.length,
+          lookup,
+          infillSection,
         )),
   ];
 }
@@ -273,7 +301,13 @@ function scheduleFor(
  */
 export interface FrameMember {
   /** Stable name for the UI and for a saved snapshot. */
-  item: 'main_column' | 'end_column' | 'main_rafter' | 'end_rafter' | 'knee_brace';
+  item:
+    | 'main_column'
+    | 'end_column'
+    | 'main_rafter'
+    | 'end_rafter'
+    | 'knee_brace'
+    | 'infill_column';
   /** What the desktop calls it. */
   label: string;
   /** The section from the book's structure table, or the fallback size. */
@@ -382,7 +416,81 @@ export function frameMemberSchedule(
     });
   }
 
+  /*
+   * The infill columns, from the book's `no_M/EW` and `M1`.
+   *
+   * These were **not priced at all**, which is four columns missing on a 12 m gable:
+   * two per end wall. The steel is what carries the gable sheeting the quote already
+   * charges for, so the omission understated the frame and would have produced a
+   * building the factory could not erect.
+   *
+   * Their positions and lengths come from `infill.ts`, and a gable end holding a door
+   * is withheld there rather than guessed. One line covers both ends because every
+   * infill column on a symmetric gable is the same length — the pairs are mirrored
+   * about the ridge — so a per-end breakdown would repeat one number.
+   */
+  const infillSection = schedule?.infill?.section ?? null;
+  if (infillSection !== null) {
+    const columns = buildingInfillColumns(shed, frame, lookup, rules);
+    if (columns.length > 0) {
+      members.push({
+        item: 'infill_column',
+        label: MEMBER.infillColumn,
+        section: infillSection,
+        assumed: false,
+        // Every infill on a symmetric gable is the same length: the pairs are mirrored
+        // about the ridge. The first one speaks for them all.
+        lengthMm: columns[0]?.lengthMm ?? 0,
+        quantity: columns.length,
+        ...geometry(infillSection),
+      });
+    }
+  }
+
   return members.filter((member) => member.quantity > 0);
+}
+
+/**
+ * The infill columns this building's design calls for, with their positions.
+ *
+ * One function for the three callers — the priced lines, the cut list and the R3
+ * check in `build.ts` — because each of them must agree about **where a column
+ * stands**. Three copies would let a door be refused for sitting on a column the cut
+ * list does not have.
+ *
+ * Empty for a design the book says needs none, for a gable under 3 m, for an open
+ * gable end, and for a gable end holding a door (see `infill.ts` for why that last
+ * case is withheld rather than guessed).
+ */
+export function buildingInfillColumns(
+  shed: ShedConfig,
+  frame: OptimisedFrame,
+  lookup: PriceLookup,
+  rules: BomRules = DEFAULT_BOM_RULES,
+): InfillColumn[] {
+  const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
+  const infill = schedule?.infill;
+  if (infill == null || infill.section === null) return [];
+
+  const endSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
+  const endGeometry = safeCall(() => lookup.frameGeometry?.(endSection));
+  return (
+    safeCall(() =>
+      buildInfillColumns(shed, {
+        count: infill.count,
+        section: infill.section,
+        endColumnDepth: endGeometry?.depth ?? null,
+        purlinDepth: safeCall(() => lookup.purlinDepth(frame.purlinMaterial)) || null,
+        centreMm: (endGeometry?.web ?? 15) === 10 ? 60 : 90,
+        kneeEdgeCode: safeCall(() => lookup.kneeEdge?.(shed.roofPitchDeg))?.kneeEdgeCode ?? null,
+        footingAllowanceMm: rules.footingAllowance,
+        // The desktop adds the footing only for a `POST_IN_GROUND` column, and the
+        // config has no footing field yet — so the standing assumption applies, the
+        // same one the column length already makes.
+        postInGround: true,
+      }),
+    )?.columns ?? []
+  );
 }
 
 /**

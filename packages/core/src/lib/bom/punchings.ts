@@ -157,10 +157,11 @@ function punchColumn(
   titleBottom: string,
   topOffsets: number[],
   bottomOffsets: number[],
+  screwLines: number[] = PORTAL_SCREW_LINES,
 ): PunchColumn | undefined {
   if (member === undefined) return undefined;
-  const top = holesFor(topOffsets, 'top', member.lengthMm);
-  const bottom = holesFor(bottomOffsets, 'bottom', member.lengthMm);
+  const top = holesFor(topOffsets, 'top', member.lengthMm, screwLines);
+  const bottom = holesFor(bottomOffsets, 'bottom', member.lengthMm, screwLines);
   const used = [...top, ...bottom].reduce((sum, hole) => sum + hole.spacingMm, 0);
   return {
     mark,
@@ -264,5 +265,38 @@ export function buildPunchingPages(
     right: punchColumn(mainRafter, 'R1', 'Eaves', 'Apex', mainTopRafter, mainBottomRafter) ?? null,
   };
 
-  return [endPage, portalPage].filter((page) => page.left !== null || page.right !== null);
+  const pages: PunchPage[] = [endPage, portalPage];
+
+  /*
+   * The infill columns, two to a sheet.
+   *
+   * The desktop punches them in pairs on one page (`PunchingDetailForm.cs:167-208`),
+   * one per side, and the section's **depth** decides which screw line is used: under
+   * 145 mm deep is punched on the middle line, at or over it on the outer two. That
+   * 145 is the desktop's own threshold and it is a fit question — a plate that goes
+   * through the middle of a shallow C clears the flanges, and one that does not has
+   * to straddle them.
+   *
+   * Their holes are two: one near the top and one near the bottom, with the offsets
+   * chosen the same way by depth. Every infill column on a symmetric gable is the
+   * same member, so one `FrameMember` with a quantity covers them all.
+   */
+  const infill = memberOf(members, 'infill_column');
+  if (infill !== undefined) {
+    const deep = (infill.depth ?? 0) >= 145;
+    const topOffset = deep ? 100 : 35;
+    const bottomOffset = deep ? 100 : 45;
+    const screwLines = deep ? PORTAL_SCREW_LINES : [2];
+    const sheet = (): PunchColumn | undefined =>
+      punchColumn(infill, 'M', 'Top', 'Bottom', [topOffset], [bottomOffset], screwLines);
+
+    for (let index = 0; index < infill.quantity; index += 2) {
+      pages.push({
+        left: sheet() ?? null,
+        right: index + 1 < infill.quantity ? (sheet() ?? null) : null,
+      });
+    }
+  }
+
+  return pages.filter((page) => page.left !== null || page.right !== null);
 }

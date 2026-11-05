@@ -172,6 +172,21 @@ export interface FrameSchedule {
    * replaces this build's flat 600 mm allowance when a schedule is found.
    */
   embedment: number | null;
+  /**
+   * The **infill columns** on each gable end: how many, and in what section.
+   *
+   * An infill column stands between the gable-end columns, carrying the wall
+   * sheeting where the span is too wide for two columns to hold the girt. The book
+   * names them `no_M/EW` (how many per end wall), `M1` and `M2` (their sections) in
+   * the structure table — which is why they are part of the schedule rather than a
+   * separate lookup: one row of the book describes the whole frame, infills
+   * included.
+   *
+   * `count` is **0** for a design with none — a narrow gable needs no infill — and
+   * `section` is `null` then. Both are stated rather than omitted so a caller can
+   * tell "the book says none" from "this build does not know".
+   */
+  infill: { count: number; section: string | null } | null;
 }
 
 /** Everything the BOM asks of the price book. */
