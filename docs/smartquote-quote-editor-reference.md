@@ -303,17 +303,53 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Add-mode overlay** xanh/cam trên canvas (hiện Add tự áp dụng đề xuất + notice).
+1. **Bản vẽ**: `elevations` và `plan view` xuất riêng (plan đã có trong tài liệu; mặt đứng chưa).
+2. **Punchings Details** — report lỗ đột của desktop.
+3. **Nhóm 4**: Settings rates (labour / equipment / demolition / distributor), min fee to
+   distributor & carrier, backup/restore, salesmen.
+4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
+   `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
+5. Field hiển thị: outrigger height/direction, SKU picker cho cửa.
 
-Đã xong: golden harness (§10), lọc margin ở server (§9), Fax (§11 D13), và **6d pin trước
-khi lưu**:
+### Đã xong (ghi để khỏi làm lại)
 
-- `POST /site-checks/pin` — pin khi chưa có quote, lưu theo `tenant_id`.
-- `POST /site-checks/:checkId/import` — import rating cho check chưa gắn quote.
-- `POST /quotes` nhận `siteCheckId`; server kiểm tra check thuộc đúng công ty rồi gắn
-  `quotes.site_check_id` (check của công ty khác bị bỏ qua, không làm mất lần lưu).
-- Client: `SiteCheckPanel` pin/import được khi chưa lưu; id giữ trong draft store và gửi
-  kèm lần lưu đầu. Test: *"links a site check that was pinned before the quote was saved"*.
+- Slice 1–8c của spec: domain, catalogue, BOM misc, rule engine, layout, Step 1, CategoryDock.
+- Step 2 depth: Alignment/Distance/FFL; Series + Windlocks + Opening Only; **Track segments +
+  R11**; **Mezzanine floor load 4 mức** (sửa bug $0); **Skylight Corro/TL-5** (sửa giá);
+  **Awning scope + pitch**.
+- Additions: 13 dòng + **dòng tự do** (equipment/distributor), GST đúng, override.
+- **Copy / Delete (status) / Rename revision** — API + UI; Delete giữ revision để audit.
+- **Cost Default / Reset**.
+- **BOM CSV** (`?format=csv`) và **`.vqu`** (xem §13) — cả hai có test.
+- **4 chế độ gửi** với counter riêng (§12.1).
+- **5 loại bản in** với `PrintKind`; bản supplier **không có giá khách** (§12.1).
+- Pin trước khi lưu (`POST /site-checks/pin`, `POST /site-checks/:id/import`).
+- `cost:margin` enforce ở server; Fax; golden price-chain harness (§10).
+
+---
+
+## 12.1 Gửi mail và bản in
+
+**4 chế độ gửi** (`POST /quotes/:id/send`, trường `mode`):
+
+| mode | Counter tăng |
+|---|---|
+| `quote` (mặc định) | `quote_send_count` |
+| `engineering` | `engineering_send_count` |
+| `manufacturing` | `manufacturing_send_count` |
+| `both` | cả hai counter nhà máy |
+
+Counter tăng **sau khi queue nhận job**, nên replay không đếm hai lần. Migration `011_send_modes`.
+Tên cột lấy từ `countersFor` (tập đóng), không từ request.
+
+**Bản in** (`?kind=` trên `/html` và `/pdf`): `quotation` · `contract` · `order` ·
+`supplier-quotation` · `supplier-contract`.
+
+- 3 loại supplier **bỏ khối Price + Payment** — đây là bug desktop đã sửa: bản gửi nhà cung
+  cấp in giá khách, tức lộ margin.
+- Mỗi loại có `<h1>` riêng.
+- `kind` nằm trong **cache key PDF**, để bản supplier không bị phục vụ PDF của bản khách.
+- `kind` lạ → **422**, không âm thầm rơi về bản khách.
 
 ---
 
@@ -355,8 +391,8 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 754+ (domain, BOM, giá, tài liệu, catalogue, placement) |
-| `@sq/api` | 162 (auth, quote, evaluate, catalogue route, site-check) |
+| `@sq/core` | 787 (domain, BOM, giá, tài liệu, catalogue, placement, vqu) |
+| `@sq/api` | 20 trong `pricing.test.ts` + toàn bộ suite API (auth, quote, evaluate, catalogue, site-check, send modes) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 
