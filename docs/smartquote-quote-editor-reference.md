@@ -317,8 +317,42 @@ khi lưu**:
 
 ---
 
-## 13. Kiểm thử hiện tại
+## 13. `.vqu` — định dạng cho BOM tool ngoài
 
+Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
+
+File text, encoding **ISO-8859-1**, cấu trúc INI, ghi theo thứ tự:
+
+```
+[QUOTE DETAILS]
+QuoteNumber, PostCode, SiteStreet, SiteState, SiteSuburb, SitePostCode, Name
+
+[SHED DETAILS]
+TypeOfStructure, WindRegion, TerrainCategory, BaseType, BaySize, NumofBays,
+Footings, WallSheet, RoofSheet, DownpipeStyle, WidthSpan, Height, RoofPitch,
+WallColour, DoorColour, RoofColour, DownpipeColour, TrimColour, GutterColour,
+SLDoorColour, WindowColour, DivwallColour, PADoorColour, ForceOpenDesign,
+OpenBaySide1, OpenBaySide2, OpenBayEnd1, OpenBayEnd2
+
+[OPTIONS]
+SLDoorEndCount_1, SLDoorEndCount_2
+
+NumMiscOptions = <n>  (+ danh sách misc)
+```
+
+Ghi chú khi port:
+
+- **Tên màu**, không phải hex: `WallColour` phải là `Shale Grey`. v2 lưu hex, nên phải tra tên qua sách giá (`lookup.colourName`) trước khi ghi.
+- **Mã footing** được đổi sang nhãn: `CAST_IN_STRAP → Cast-in Strap`, `CHEMSET → Chemset`, `HD_BOLTS/HD_BOLT → HD Bolts`, `DYNABOLT`, `POST_IN_GROUND`, `RIGID_BRACKET`.
+- **OpenBaySide1/2** đúng khi *tất cả* các bay của tường bên đều mở (`count == bays - 1`) — không phải "có ít nhất một bay mở".
+- **SLDoorEndCount** = `width / doorWidth` cho cửa trượt ở đầu trái/phải.
+- `ForceOpenDesign` = `HousePlan.OpenDesign`, tức `Internal Pressures`.
+
+**Chưa port**: cần một file `.vqu` thật của desktop để đối chiếu từng dòng trước khi viết exporter — một file sai cho BOM tool ngoài còn tệ hơn không có file.
+
+---
+
+## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 754+ (domain, BOM, giá, tài liệu, catalogue, placement) |
