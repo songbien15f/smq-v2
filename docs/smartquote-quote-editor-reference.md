@@ -307,10 +307,14 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
    `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
-5. Field hiển thị: hướng outrigger (left/right), SKU picker cho cửa.
+5. Field hiển thị: hướng outrigger (left/right).
 
 **Outrigger height: đã có** — `height` (mm), mặc định 2000, không vượt chiều cao tường; bracket
 được vẽ đúng cao độ gắn chứ không phải ở eave.
+
+**SKU picker cho cửa: đã có** — catalogue có thêm `doorSizes` cho window / PA / roller / sliding
+(mỗi bảng một cách đặt tên cột, chuẩn hoá về `{code,label,width,height,series?}`); dock có dropdown
+"Catalogue size" điền width/height và series.
 
 ### Nhóm 4 — kết luận
 
@@ -473,3 +477,7 @@ Scripts:
 - `pnpm dev` — turbo chạy cả API và client (`dependsOn: ^build` một lần đầu).
 - `pnpm build:inc` — core + contracts, không xoá `dist`.
 - `pnpm build` — bản sạch, dùng cho CI/release, **đừng chạy khi dev đang mở**.
+
+**Vẫn còn một race nhỏ:** `tsup` ghi đè entry của contracts; nếu API `tsx watch` restart đúng lúc
+file đang được ghi, nó log `ERR_MODULE_NOT_FOUND … @sq/contracts/dist/index.js` và đứng chờ thay
+đổi. Cách xử: **restart API sau `build:inc`**, hoặc chạy `build:inc` **trước** khi bật dev.

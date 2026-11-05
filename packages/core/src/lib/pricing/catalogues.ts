@@ -77,6 +77,16 @@ export interface DeliveryScope {
   stateValues: Record<string, number> | null;
 }
 
+/** One catalogue size a door or window can be ordered in. */
+export interface DoorSize {
+  code: string;
+  label: string;
+  width: number;
+  height: number;
+  /** Roller doors only: the series the size belongs to. */
+  series?: string;
+}
+
 /** Everything the editor's Step 1 and Step 2 dropdowns need. */
 export interface Catalogue {
   colours: ColourOption[];
@@ -94,6 +104,19 @@ export interface Catalogue {
   heightHints: number[];
   roofPitchHints: number[];
   bayHints: number[];
+  /**
+   * The catalogue sizes per opening type.
+   *
+   * The desktop's Size/Type dropdown was this table: an operator picked a size the factory sells
+   * rather than typing one. The four tables spell their columns differently, so each is mapped
+   * to the same shape here.
+   */
+  doorSizes: {
+    window: DoorSize[];
+    paDoor: DoorSize[];
+    rollerDoor: DoorSize[];
+    slidingDoor: DoorSize[];
+  };
 }
 
 /**
@@ -287,6 +310,49 @@ export function createSqliteCatalogueSource(db: DatabaseSync): EditorCatalogueSo
         heightHints: hints(db, 'shed_hint_height'),
         roofPitchHints: hints(db, 'shed_hint_roof_pitch'),
         bayHints: hints(db, 'shed_hint_bay'),
+        doorSizes: {
+          window: rows(
+            db,
+            `SELECT code, description, width, height FROM material_window
+             WHERE is_active = 1 ORDER BY index_sort`,
+          ).map((row) => ({
+            code: str(row.code),
+            label: str(row.description),
+            width: num(row.width),
+            height: num(row.height),
+          })),
+          paDoor: rows(
+            db,
+            `SELECT padoor_product_code AS code, padoor_name AS label, width, height FROM padoor
+             WHERE isActive = 1 ORDER BY indexSort`,
+          ).map((row) => ({
+            code: str(row.code),
+            label: str(row.label),
+            width: num(row.width),
+            height: num(row.height),
+          })),
+          rollerDoor: rows(
+            db,
+            `SELECT rdoor_code AS code, rdoor_name AS label, width, height, rdoor_type AS series
+             FROM roller_door WHERE isActive = 1 ORDER BY indexSort`,
+          ).map((row) => ({
+            code: str(row.code),
+            label: str(row.label),
+            width: num(row.width),
+            height: num(row.height),
+            series: str(row.series),
+          })),
+          slidingDoor: rows(
+            db,
+            `SELECT sld_code AS code, sld_size AS label, sld_width AS width, sld_height AS height
+             FROM sliding_door ORDER BY sld_id`,
+          ).map((row) => ({
+            code: str(row.code),
+            label: str(row.label),
+            width: num(row.width),
+            height: num(row.height),
+          })),
+        },
       };
     },
   };

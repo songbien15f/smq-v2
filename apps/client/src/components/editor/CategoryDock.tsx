@@ -82,6 +82,7 @@ export function CategoryDock() {
   const [series, setSeries] = useState<'A' | 'AA' | 'B'>('B');
   const [windlock, setWindlock] = useState(false);
   const [prepOnly, setPrepOnly] = useState(false);
+  const [sku, setSku] = useState('');
   const [miscName, setMiscName] = useState('');
   const [miscQty, setMiscQty] = useState(1);
   const [floorLoad, setFloorLoad] = useState<1.5 | 3 | 5 | 7.5>(1.5);
@@ -94,8 +95,45 @@ export function CategoryDock() {
 
   const body = (category: DockCategory) => {
     if (category.kind === 'opening') {
+      const sizes =
+        category.opening === 'window'
+          ? (catalogue?.doorSizes.window ?? [])
+          : category.opening === 'pa_door'
+            ? (catalogue?.doorSizes.paDoor ?? [])
+            : category.opening === 'roller_door'
+              ? (catalogue?.doorSizes.rollerDoor ?? [])
+              : category.opening === 'sliding_door'
+                ? (catalogue?.doorSizes.slidingDoor ?? [])
+                : [];
       return (
         <div className="flex flex-col gap-sq-2">
+          {sizes.length > 0 && (
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro text-sq-ink">Catalogue size</span>
+              <select
+                value={sku}
+                onChange={(event) => {
+                  const chosen = sizes.find((size) => size.code === event.target.value);
+                  setSku(event.target.value);
+                  if (chosen === undefined) return;
+                  setWidth(chosen.width);
+                  setHeight(chosen.height);
+                  const chosenSeries = (chosen as { series?: string }).series;
+                  if (chosenSeries === 'A' || chosenSeries === 'AA' || chosenSeries === 'B') {
+                    setSeries(chosenSeries);
+                  }
+                }}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value="">Custom size</option>
+                {sizes.map((size) => (
+                  <option key={size.code} value={size.code}>
+                    {size.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="flex flex-wrap items-end gap-sq-2">
             <NumberField id={`add-${category.id}-width`} label="Width (mm)" value={width} min={300} max={12000} step={100} onChange={setWidth} />
             <NumberField id={`add-${category.id}-height`} label="Height (mm)" value={height} min={300} max={6000} step={100} onChange={setHeight} />
@@ -165,6 +203,7 @@ export function CategoryDock() {
                   series: category.opening === 'roller_door' ? series : null,
                   windlock: category.opening === 'roller_door' ? windlock : false,
                   prepOnly,
+                  sku: sku === '' ? null : sku,
                 })
               }
             >
