@@ -25,6 +25,7 @@ import { registerDocuments } from './routes/documents.js';
 import { registerShares } from './routes/shares.js';
 import { registerSend } from './routes/send.js';
 import { registerBomExport } from './routes/bomExport.js';
+import { registerVquExport } from './routes/vquExport.js';
 import { registerPriceImport } from './routes/priceImport.js';
 import { registerPriceOverrides } from './routes/priceOverrides.js';
 import { registerQuoteFile } from './routes/quoteFile.js';
@@ -129,6 +130,7 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       // The client app is where the operator creates it, and the two are different hosts.
       registerSend(scope, db);
       registerBomExport(scope, db);
+      registerVquExport(scope, db);
       registerPriceImport(scope, db);
       registerPriceOverrides(scope, db);
       registerQuoteFile(scope, db);

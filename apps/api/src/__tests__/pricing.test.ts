@@ -724,6 +724,47 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(Number(revisions?.n)).toBe(1);
   });
 
+  it('exports the desktop .vqu with colour names, not hex', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-vqu-export',
+        expectedRev: 0,
+        customer: { firstName: 'Vee', lastName: 'Queue', email: 'vq@example.com', address: 'x' },
+        site: { address: '1 Site St', suburb: 'Brisbane', state: 'QLD', postcode: '4000', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const vqu = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/export/vqu`,
+      headers: { cookie },
+    });
+    expect(vqu.statusCode).toBe(200);
+    expect(vqu.headers['content-type']).toMatch(/iso-8859-1/);
+
+    const text = vqu.body;
+    for (const section of ['[QUOTE DETAILS]', '[SHED DETAILS]', '[OPTIONS]']) {
+      expect(text).toContain(section);
+    }
+    // The tool matches a colour by name; a hex would match nothing.
+    expect(text).toMatch(/WallColour=[^#\r\n]+/);
+    expect(text).not.toMatch(/WallColour=#/);
+    expect(text).toMatch(/NumMiscOptions=\d+/);
+  });
+
   it('exports the frozen BOM as CSV, with a header and a total', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',
