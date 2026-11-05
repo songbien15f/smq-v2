@@ -20,6 +20,7 @@
  */
 
 import type { Opening, ShedConfig, WallSide } from './types';
+import { nearestWall, planPointToWallU } from './placement';
 
 /** Clearance from either end of a wall, mm. The desktop's own figure. */
 const WALL_MARGIN = 100;
@@ -167,6 +168,38 @@ export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlaceme
   }
 
   return { ok: true, opening: atOffset(request, u) };
+}
+
+/** Where a pointer on the plan would put an opening, and whether that works there. */
+export interface OpeningAtPoint {
+  wall: WallSide;
+  outcome: OpeningPlacement;
+}
+
+/**
+ * The placement a click at `point` would produce.
+ *
+ * This is the whole of the add-mode overlay's decision, kept pure so it can be tested
+ * without a canvas: the nearest wall wins, the pointer becomes the centre of the
+ * opening, and the ordinary rules decide whether that lands and what to suggest instead.
+ * The renderer only has to colour the answer; it makes no decision of its own.
+ */
+export function openingAtPoint(
+  shed: ShedConfig,
+  request: Omit<Opening, 'id' | 'wall' | 'align' | 'offset'>,
+  point: { x: number; y: number },
+): OpeningAtPoint {
+  const wall = nearestWall(shed, point);
+  const u = planPointToWallU(shed, wall, point);
+  const candidate: Opening = {
+    ...request,
+    id: 'preview',
+    wall,
+    align: 'custom',
+    // Centre the opening on the pointer, in wall-local millimetres.
+    offset: Math.round(u - request.width / 2),
+  };
+  return { wall, outcome: placeOpening(candidate, shed) };
 }
 
 /** R7 — a carry beam is not offered above this span. */
