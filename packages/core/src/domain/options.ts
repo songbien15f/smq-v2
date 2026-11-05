@@ -350,6 +350,7 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
         ...option,
         bay: clamp(option.bay, 0, Math.max(0, shed.bays - 1)),
         length: clamp(option.length, OUTRIGGER_MIN, OUTRIGGER_MAX),
+        height: clamp(option.height ?? 2000, 0, shed.height),
       };
     case 'dividing_wall': {
       const run = option.axis === 'x' ? shed.length : shed.span;
@@ -502,8 +503,8 @@ export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOpt
         id: normalised.id,
         kind: normalised.kind,
         rect: wallStrip(shed, normalised.wall, u, half * 2, normalised.length),
-        zLow: shed.height,
-        zHigh: shed.height,
+        zLow: normalised.height ?? 2000,
+        zHigh: normalised.height ?? 2000,
       };
     }
 

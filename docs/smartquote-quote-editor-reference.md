@@ -307,7 +307,10 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
    `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
-5. Field hiển thị: outrigger height/direction, SKU picker cho cửa.
+5. Field hiển thị: hướng outrigger (left/right), SKU picker cho cửa.
+
+**Outrigger height: đã có** — `height` (mm), mặc định 2000, không vượt chiều cao tường; bracket
+được vẽ đúng cao độ gắn chứ không phải ở eave.
 
 ### Nhóm 4 — kết luận
 

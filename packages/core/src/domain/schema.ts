@@ -184,7 +184,7 @@ const completeOptionSchema = z.discriminatedUnion('kind', [
     align: alignModeSchema, offset: z.number().nullable(), width: z.number(), depth: z.number(),
     pitchDeg: z.number().min(0).max(45).optional() }),
   z.object({ kind: z.literal('outrigger'), id: z.string().min(1), wall: wallSideSchema,
-    bay: z.number().int(), length: z.number() }),
+    bay: z.number().int(), length: z.number(), height: z.number().optional() }),
   z.object({ kind: z.literal('dividing_wall'), id: z.string().min(1), axis: z.enum(['x', 'y']),
     at: z.number(), height: z.number() }),
   z.object({ kind: z.literal('gable_infill'), id: z.string().min(1), end: z.enum(['front', 'back']) }),
@@ -670,6 +670,7 @@ const tolerantOptionSchema = z.discriminatedUnion('kind', [
     wall: wallSideSchema.catch('front'),
     bay: z.coerce.number().catch(0),
     length: z.coerce.number().catch(1900),
+    height: z.coerce.number().optional().catch(undefined),
   }),
   z.object({
     kind: z.literal('dividing_wall'),

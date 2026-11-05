@@ -207,6 +207,8 @@ export interface ShedState {
   addMezzanine(floorLoad: 1.5 | 3 | 5 | 7.5): void;
   /** Add a skylight glazed with the chosen sheet. */
   addSkylight(skylightType: 'Corro' | 'TL-5'): void;
+  /** Add an outrigger at a chosen mounting height. */
+  addOutrigger(height: number): void;
   /** Add one awning, or two for a front-and-rear run, at a chosen pitch. */
   addAwning(scope: 'front' | 'rear' | 'both', pitchDeg: number): void;
   /** Remove every opening of one type. */
@@ -475,6 +477,15 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     const base = defaultOptionsFor('skylight', config)[0];
     if (base === undefined) return;
     const option = normaliseOption({ ...base, skylightType } as ShedOption, config);
+    get().applyPartial({ options: [...config.options, option] });
+    get().select({ kind: 'option', id: option.id });
+  },
+
+  addOutrigger(height) {
+    const { config } = get();
+    const base = defaultOptionsFor('outrigger', config)[0];
+    if (base === undefined) return;
+    const option = normaliseOption({ ...base, height } as ShedOption, config);
     get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
   },

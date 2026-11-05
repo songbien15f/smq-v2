@@ -65,6 +65,7 @@ export function CategoryDock() {
   const addMezzanine = useShedStore((state) => state.addMezzanine);
   const addSkylight = useShedStore((state) => state.addSkylight);
   const addAwning = useShedStore((state) => state.addAwning);
+  const addOutrigger = useShedStore((state) => state.addOutrigger);
   const addCharge = useShedStore((state) => state.addCharge);
   const removeAllOpenings = useShedStore((state) => state.removeAllOpenings);
   const removeAllOptions = useShedStore((state) => state.removeAllOptions);
@@ -87,6 +88,7 @@ export function CategoryDock() {
   const [skylightType, setSkylightType] = useState<'Corro' | 'TL-5'>('Corro');
   const [awningScope, setAwningScope] = useState<'front' | 'rear' | 'both'>('front');
   const [awningPitch, setAwningPitch] = useState(5);
+  const [outriggerHeight, setOutriggerHeight] = useState(2000);
 
   const slidingDoors = config.openings.filter((opening) => opening.type === 'sliding_door');
 
@@ -216,6 +218,25 @@ export function CategoryDock() {
                 Add item
               </Button>
             </div>
+          </div>
+        );
+      }
+
+      if (category.option === 'outrigger') {
+        return (
+          <div className="flex flex-wrap items-end gap-sq-2">
+            <NumberField
+              id="add-outrigger-height"
+              label="Height (mm)"
+              value={outriggerHeight}
+              min={0}
+              max={12000}
+              step={50}
+              onChange={setOutriggerHeight}
+            />
+            <Button variant="primary" onClick={() => addOutrigger(outriggerHeight)}>
+              Add {category.label}
+            </Button>
           </div>
         );
       }

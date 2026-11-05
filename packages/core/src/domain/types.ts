@@ -178,6 +178,8 @@ export interface OutriggerOption extends OptionBase {
   wall: WallSide;
   bay: number; // 0-based index of the column line it hangs from
   length: number; // mm, projection outward
+  /** Mounting height above the floor, mm. Defaults to 2000 and never exceeds the wall. */
+  height?: number;
 }
 
 /** An internal partition wall. */
