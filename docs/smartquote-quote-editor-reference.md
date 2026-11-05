@@ -314,7 +314,7 @@ segment, nên rule áp được.
 | R3 cửa đè cột infill | ✅ | `infillOverrideRefusal` — §6 |
 | R4 đề xuất `GO WITH …` | ✅ | `placeOpening` |
 | R5 dời cột quanh cửa cuốn | ✅ | `respaceAroundDoors` — §6 |
-| R6 track/sliding/carry beam xung đột | ⚠️ **một phần** | Xoá cửa gỡ `carry_beam.openingId` (`removeOpeningWithCascade`); rule "track bị chiếm thì từ chối" **chưa có** — cần model track như một đối tượng, v2 có `opening.track` là thuộc tính. Xem §12 |
+| R6 track/sliding/carry beam xung đột | ✅ (phần có nghĩa) | Xoá cửa gỡ `carry_beam.openingId`. Nửa "track bị chiếm" **cố ý không port** — xem §12.6 |
 | R7 carry beam > 15 m | ✅ | `carryBeamRefusal` |
 | R8 cửa cao hơn sàn mezzanine | ✅ | `optionsUnderMezzanine` — §6 |
 | R9 (cùng R8 — xem ghi chú §6.3) | ✅ | `optionsUnderMezzanine` |
@@ -322,7 +322,7 @@ segment, nên rule áp được.
 | R11 track 1000–6000 | ✅ | `placeOpening` |
 | R12 snap theo tấm mái | ✅ | `skylightSnap.ts` — §6.2 |
 
-**R6 là rule duy nhất còn một nửa**, và nửa còn lại cần model track như đối tượng — xem §12.
+**R6 là rule duy nhất còn một nửa, và nửa đó cố ý không port** — xem §12.6.
 
 ---
 
@@ -466,7 +466,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | # | Còn gì | Vì sao |
 |---|---|---|
 | 1 | ~~Phiếu punchings cho roller-door column/header~~ | **ĐÃ XONG** — §12.5 |
-| 2 | **R6 nửa còn lại: track bị chiếm thì từ chối** | Cần model **track như một đối tượng** có vị trí riêng; v2 có `opening.track` là thuộc tính của cửa, nên "cửa khác đè lên track" không diễn đạt được |
+| 2 | ~~R6 nửa còn lại: track bị chiếm~~ | **CỐ Ý KHÔNG PORT** — track không có giá trong desktop (§12.6) |
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
 | 5 | Hướng outrigger (left/right) | Chỉ là field hiển thị; `wall` đã bao trùm ngữ nghĩa |
@@ -810,6 +810,49 @@ Roller door column   Z15024   5.25 m   × 2
 
 Và trong trình duyệt: bảng cắt hiện cả hai dòng; phiếu punchings có mark `DM` và `DH`.
 
+## 12.6 Cửa trượt — dầm đầu, flashing; và vì sao KHÔNG port track
+
+### Cái đã thiếu và đã bổ sung
+
+Cửa trượt treo trên track, track treo trên **dầm** bắc ngang miệng cửa, và trên dầm có **flashing**.
+Desktop cắt dầm từ `C15024` (`SLDQuote.cs:58`) và đặt flashing lên trên (`:66`). v2 **không tính
+gì** — cửa trượt chỉ có cánh cửa, dầm phía trên miễn phí và nước chảy ra sau dầm.
+
+`slidingDoors.ts`:
+
+| Hàm | Việc |
+|---|---|
+| `splitRun(length, 6000)` | Chia đều thành các đoạn bằng nhau, không phải "một dài + một mẩu" |
+| `headFlashingType(opening)` | Track đơn → `SLD_SINGLE_HEAD_FLASHING`; track đôi → `SLD_HEAD_FLASHING` |
+| `slidingDoorMembers` | Dầm + flashing, flashing dài hơn dầm 200 mm mỗi đầu |
+
+**Hai loại flashing là hai sản phẩm khác giá** — kiểm trên sách giá thật: 7,39 so với 8,44 đô/m.
+Track đôi đứng xa tường hơn nên flashing sâu hơn. Chọn nhầm là báo giá sai sản phẩm.
+
+`splitRun` chia **đều**: một đoạn 13 m thành 3 × 4 333 mm, không phải 6 000 + 6 000 + 1 000. Mẩu
+1 m là phí liệu, và mối nối hai đoạn lệch nhau cần bản mã mà không ai tính.
+
+**Một lỗi tôi tự tạo ra và tự bắt:** dầm đã vào dòng giá nhưng **không vào bảng cắt** — hai view
+mô tả hai cây nhà khác nhau. Phát hiện khi kiểm chứng trong trình duyệt: khối lượng tăng 12 kg mà
+bảng cắt không có dòng nào. Nay có test `puts a sliding door's head beam on the cut list, not only
+on the price` khoá bất biến: **thứ gì nhóm frame tính tiền thì phải cắt được**.
+
+### Vì sao KHÔNG port "track bị chiếm thì từ chối" (nửa sau R6)
+
+**Track không có giá trong desktop.** Kiểm chứng:
+
+- `SLDQuote.cs:552, 581, 612, 632` — mọi dòng `DOOR_TRACK` đều **bị comment out**;
+- `computeSLDTrackTQ3` (`:866`) là chỗ duy nhất còn dựng dòng `DOOR_TRACK`, và **chỗ gọi nó duy
+  nhất** (`:781`) cũng bị comment;
+- `TRACK_JOINER`, `TRACK_END_TOP`, `TRACK_SUPPORT_BRACKET` — tất cả đều bị comment.
+
+Nên port rule đó nghĩa là **tự phát minh** một tính năng: nó bảo vệ một thứ bản gốc không tính
+tiền, và model "track là đối tượng có vị trí" chỉ tồn tại để phục vụ nó. Ghi ở KNOWN-DEVIATIONS
+dòng 20.
+
+**Đây là lần thứ tư** một mục trong danh sách "còn thiếu" hoá ra không phải việc cần làm — sau
+Punchings, R12, R9.
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -848,7 +891,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 905 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames) |
+| `@sq/core` | 919 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

@@ -19,6 +19,7 @@ import type { OptimisedFrame } from '../types';
 import { safeCall } from '../safe';
 import { isOpenStructure } from './sheeting';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
+import { buildingSlidingDoors, headFlashingType } from '../slidingDoors';
 
 /* The bracket spacing is a **factory rule** and arrives with the rule set. */
 /** One downpipe per corner of a rectangular shed. */
@@ -162,6 +163,28 @@ export function flashingLines(
   // omits a per-metre material the roofer cannot finish the roof without.
   const ridgeMetres = fallsAlongLength ? 0 : shed.length / 1000;
 
+  /*
+   * A sliding door's head flashing, one line per profile the building needs.
+   *
+   * The beam over a sliding door needs a flashing over it, and the book carries two: a
+   * shallow one for a single track and a deeper one for a double track, because the double
+   * stands further off the wall. This build priced neither, so a sliding door was the leaf
+   * alone and the water ran behind its beam.
+   *
+   * Grouped by profile rather than per door: two doors on one wall are one run in metres,
+   * and a reader wants that as one line. A building with both track types gets two lines,
+   * because they are different products at different prices.
+   */
+  const slidingFlashingMetres = new Map<string, number>();
+  for (const member of safeCall(() => buildingSlidingDoors(shed)) ?? []) {
+    if (member.item !== 'sld_head_flashing') continue;
+    const opening = shed.openings.find((candidate) => candidate.id === member.openingId);
+    if (opening === undefined) continue;
+    const type = headFlashingType(opening);
+    const metres = (member.lengthMm / 1000) * member.quantity;
+    slidingFlashingMetres.set(type, (slidingFlashingMetres.get(type) ?? 0) + metres);
+  }
+
   return [
     ...lengthLine('flashing', 'Ridge capping', ridgeMetres, flashing('ROLLTOP_RIDGE_CAPPING')),
     ...lengthLine('flashing', 'Barge flashing', bargeMetres, flashing('GABLE_BARGE')),
@@ -172,6 +195,16 @@ export function flashingLines(
       `Corner flashing, ${shed.height} mm`,
       (shed.height / 1000) * CORNERS,
       flashing('CORNER_FLASHING'),
+    ),
+    ...[...slidingFlashingMetres.entries()].flatMap(([type, metres]) =>
+      lengthLine(
+        'flashing',
+        type === 'SLD_HEAD_FLASHING'
+          ? 'Sliding door head flashing, double track'
+          : 'Sliding door head flashing, single track',
+        metres,
+        flashing(type),
+      ),
     ),
   ];
 }

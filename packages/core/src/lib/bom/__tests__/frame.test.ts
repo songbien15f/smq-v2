@@ -331,6 +331,48 @@ describe('frame schedule', () => {
     expect(lines.some((line) => line.description.startsWith('Infill column'))).toBe(false);
   });
 
+  it('puts a sliding door’s head beam on the cut list, not only on the price', () => {
+    /*
+     * The beam was priced and missing from the schedule — the two described different
+     * buildings. This is the invariant: anything the frame group prices has to be cuttable.
+     *
+     * Found in the browser, not by a test: the mass rose 12 kg and the steelwork panel showed
+     * no row for it. A quantity that appears in one view and not the other is exactly what a
+     * schedule is supposed to prevent.
+     */
+    const withSliding = {
+      ...(lookup as object),
+      structureId: () => 1,
+      frameSchedule: () => ({ ...sections, embedment: 450, infill: null }),
+    } as never;
+    const building = shed({
+      span: 12000,
+      openings: [
+        {
+          id: 's1',
+          type: 'sliding_door',
+          width: 3600,
+          height: 2100,
+          sill: 0,
+          wall: 'front',
+          align: 'center',
+          offset: null,
+          swing: null,
+          track: 'single',
+        },
+      ],
+    });
+
+    const lines = frameLines(building, frame(), withSliding);
+    expect(lines.some((line) => line.description.startsWith('Sliding door header'))).toBe(true);
+
+    const schedule = frameMemberSchedule(building, frame(), withSliding);
+    const header = schedule.find((member) => member.label === 'Sliding door header');
+    expect(header).toBeDefined();
+    expect(header?.section).toBe('C15024');
+    expect(header?.quantity).toBe(1);
+  });
+
   it('adds no infill line on a gable too narrow to need one', () => {
     const narrow = {
       ...(lookup as object),

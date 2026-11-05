@@ -13,6 +13,8 @@ export * from "./optimise";
 export * from "./options";
 export * from "./profiles";
 export * from "./punchings";
+export * from "./doorFrames";
 export * from "./rules";
 export * from "./safe";
+export * from "./slidingDoors";
 export * from "./types";

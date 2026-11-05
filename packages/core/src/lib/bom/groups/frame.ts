@@ -22,12 +22,16 @@ import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { buildInfillColumns, type InfillColumns } from '../infill';
 import { buildDoorFrameMembers, type DoorFrameMember } from '../doorFrames';
+import { buildingSlidingDoors } from '../slidingDoors';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
 import { safeCall } from '../safe';
 
 /** How the desktop names the frame members, so the quote reads like its own. */
+/** The section the desktop cuts a sliding door header from (`SLDQuote.cs:58`). */
+const SLIDING_HEADER_SECTION = 'C15024';
+
 const MEMBER = {
   mainColumn: 'Main column',
   endWallColumn: 'End wall column',
@@ -283,7 +287,41 @@ export function frameLines(
      * mullions were included in the door's catalogue price — which they are not.
      */
     ...doorFrameLines(shed, frame, lookup, rules),
+    ...slidingDoorHeaderLines(shed, lookup),
   ];
+}
+
+/**
+ * The head beam over each sliding door, priced in the frame group.
+ *
+ * A sliding door hangs on a track, the track hangs from a beam, and the beam is steel cut
+ * from `C15024`. The desktop cuts it there (`SLDQuote.cs:58`) and this build priced nothing
+ * — a sliding door was the leaf alone, with no beam over it.
+ *
+ * **The track itself is deliberately absent.** Every `DOOR_TRACK` line in the desktop is
+ * commented out, and the only live producer, `computeSLDTrackTQ3`, has its single call site
+ * commented out too (`SLDQuote.cs:781`). Charging for track here would invent a line the
+ * original never had.
+ */
+function slidingDoorHeaderLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
+  const headers = (safeCall(() => buildingSlidingDoors(shed)) ?? []).filter(
+    (member) => member.item === 'sld_header',
+  );
+  if (headers.length === 0) return [];
+
+  const quantity = headers.reduce((sum, header) => sum + header.quantity, 0);
+  const metres = headers.reduce(
+    (sum, header) => sum + (header.lengthMm / 1000) * header.quantity,
+    0,
+  );
+  return memberLine(
+    'frame',
+    `Sliding door header × ${quantity}`,
+    Math.round((metres / quantity) * 1000),
+    quantity,
+    lookup,
+    SLIDING_HEADER_SECTION,
+  );
 }
 
 /** One priced line per kind of door-frame member the building has. */
@@ -507,6 +545,29 @@ export function frameMemberSchedule(
    * from the book's `DH`/`DM`; without those the doors are framed by nothing, which is what
    * this build did before.
    */
+  /*
+   * The sliding doors' head beams. A beam is steel on a cut list like any other member, and
+   * it was missing from the schedule even after it entered the priced lines — the two have
+   * to describe the same building.
+   */
+  for (const header of safeCall(() => buildingSlidingDoors(shed)) ?? []) {
+    if (header.item !== 'sld_header') continue;
+    const existing = members.find(
+      (member) => member.item === 'door_header' && member.section === SLIDING_HEADER_SECTION,
+    );
+    if (existing === undefined) {
+      members.push({
+        item: 'door_header',
+        label: 'Sliding door header',
+        section: SLIDING_HEADER_SECTION,
+        assumed: false,
+        lengthMm: header.lengthMm,
+        quantity: header.quantity,
+        ...geometry(SLIDING_HEADER_SECTION),
+      });
+    }
+  }
+
   for (const door of buildingDoorFrames(shed, frame, lookup, rules)) {
     const existing = members.find(
       (member) => member.item === door.item && member.section === door.section,
