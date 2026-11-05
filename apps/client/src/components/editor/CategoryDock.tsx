@@ -75,6 +75,9 @@ export function CategoryDock() {
   const [align, setAlign] = useState<AlignMode>('center');
   const [offset, setOffset] = useState(0);
   const [sill, setSill] = useState(1200);
+  const [series, setSeries] = useState<'A' | 'AA' | 'B'>('B');
+  const [windlock, setWindlock] = useState(false);
+  const [prepOnly, setPrepOnly] = useState(false);
   const [miscName, setMiscName] = useState('');
   const [miscQty, setMiscQty] = useState(1);
 
@@ -106,6 +109,40 @@ export function CategoryDock() {
             {align === 'custom' && (
               <NumberField id={`add-${category.id}-offset`} label="Distance (mm)" value={offset} min={0} max={50000} step={50} onChange={setOffset} />
             )}
+            {category.opening === 'roller_door' && (
+              <>
+                <label className="flex flex-col gap-sq-1">
+                  <span className="text-sq-micro text-sq-ink">Series</span>
+                  <select
+                    value={series}
+                    onChange={(event) => setSeries(event.target.value as 'A' | 'AA' | 'B')}
+                    className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+                  >
+                    <option value="A">A</option>
+                    <option value="AA">AA</option>
+                    <option value="B">B</option>
+                  </select>
+                </label>
+                <label className="flex min-h-[38px] cursor-pointer items-center gap-sq-2 text-sq-body">
+                  <input
+                    type="checkbox"
+                    checked={windlock}
+                    onChange={(event) => setWindlock(event.target.checked)}
+                    className="h-4 w-4 accent-[var(--color-sq-brand)]"
+                  />
+                  Windlocks
+                </label>
+              </>
+            )}
+            <label className="flex min-h-[38px] cursor-pointer items-center gap-sq-2 text-sq-body">
+              <input
+                type="checkbox"
+                checked={prepOnly}
+                onChange={(event) => setPrepOnly(event.target.checked)}
+                className="h-4 w-4 accent-[var(--color-sq-brand)]"
+              />
+              Opening Only
+            </label>
             <Button
               variant="primary"
               onClick={() =>
@@ -116,6 +153,9 @@ export function CategoryDock() {
                   sill: category.opening === 'window' ? sill : 0,
                   align,
                   offset: align === 'custom' ? offset : null,
+                  series: category.opening === 'roller_door' ? series : null,
+                  windlock: category.opening === 'roller_door' ? windlock : false,
+                  prepOnly,
                 })
               }
             >
@@ -123,8 +163,8 @@ export function CategoryDock() {
             </Button>
           </div>
           <p className="text-sq-micro text-sq-ink-muted">
-            Opening Only (frame prepared, no door fitted) is not modelled yet; the placement
-            rules still apply to whatever is added here.
+            Windlocks default on in wind regions C and D. Placement rules (100 mm margin,
+            overlap, roller minimum) still apply to whatever is added here.
           </p>
         </div>
       );

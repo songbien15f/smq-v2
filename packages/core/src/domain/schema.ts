@@ -157,6 +157,10 @@ const openingSchema = z.object({
   align: alignModeSchema,
   offset: offsetSchema,
   swing: swingSchema,
+  sku: z.string().nullable().default(null),
+  prepOnly: z.boolean().default(false),
+  series: z.enum(['A', 'AA', 'B']).nullable().default(null),
+  windlock: z.boolean().default(false),
 });
 
 /** The fields the model is asked to extract. */
@@ -602,6 +606,11 @@ const tolerantOpeningSchema = z.object({
   offset: offsetSchema.catch(null),
   swing: swingSchema.catch(null),
   track: trackSchema.catch(null),
+  sku: z.string().nullable().catch(null),
+  prepOnly: z.boolean().catch(false),
+  series: z.enum(['A', 'AA', 'B']).nullable().catch(null),
+  // Left undefined when absent so the wind-region default can be applied later.
+  windlock: z.boolean().optional().catch(undefined),
 });
 
 /** True for a non-null, non-array object (a "plain" record). */
@@ -900,6 +909,15 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
       sill: Math.round(opening.sill),
       offset: opening.offset === null ? null : Math.round(opening.offset),
       track: opening.type === 'sliding_door' ? (opening.track ?? 'none') : null,
+      // Only a roller door has a series and windlocks. The desktop turns windlocks on by
+      // default in wind regions C and D, where a door without them lifts in a gust.
+      series: opening.type === 'roller_door' ? (opening.series ?? null) : null,
+      windlock:
+        opening.type === 'roller_door'
+          ? (opening.windlock ?? (parsed.windRegion === 'C' || parsed.windRegion === 'D'))
+          : false,
+      prepOnly: opening.prepOnly ?? false,
+      sku: opening.sku ?? null,
     };
   });
 

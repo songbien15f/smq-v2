@@ -71,6 +71,21 @@ export interface Opening {
   swing: SwingDirection; // meaningful for pa_door / sliding_door only
   /** How the door runs; `null` for every type except a sliding door. */
   track: OpeningTrack | null;
+  /**
+   * The catalogue row the operator chose, or `null` for a typed size.
+   *
+   * Informational today: the door BOM matches a size ladder by width and height, so the
+   * SKU does not change the price. It is stored because the desktop form starts from a
+   * catalogue item and the operator expects to see the one they picked when they reopen
+   * the quote.
+   */
+  sku?: string | null;
+  /** "Opening Only": the frame is prepared and no door is fitted. */
+  prepOnly?: boolean;
+  /** Roller door series; the book prices width/height bands per series. */
+  series?: 'A' | 'AA' | 'B' | null;
+  /** Roller door windlocks. The desktop defaults them on in wind regions C and D. */
+  windlock?: boolean;
 }
 
 /** Hex colours applied to 3D materials and to the 2D door/roof panels. */
