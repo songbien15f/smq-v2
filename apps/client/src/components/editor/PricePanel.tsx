@@ -142,8 +142,11 @@ export function PricePanel({
             {blockers.length === 1 ? 'One thing blocks this quote' : `${blockers.length} things block this quote`}
           </h3>
           <ul className="mt-sq-1 flex list-disc flex-col gap-1 pl-sq-3 text-sq-micro text-sq-ink">
-            {blockers.map((issue) => (
-              <li key={issue.code}>{issue.message}</li>
+            {blockers.map((issue, index) => (
+              // `issue.code` is NOT unique: one blocked material produces one issue per
+              // line, all sharing `UNIT_ASSUMED_BRACKET`. React needs a key that is
+              // unique among siblings, so the position is part of it.
+              <li key={`${issue.code}-${index}`}>{issue.message}</li>
             ))}
           </ul>
         </div>
@@ -169,8 +172,8 @@ export function PricePanel({
             in the quote.
           </p>
           <ul className="mt-sq-2 flex flex-col gap-2 text-sq-micro text-sq-ink">
-            {assumptions.map((issue) => (
-              <li key={issue.code} className="flex flex-col gap-0.5">
+            {assumptions.map((issue, index) => (
+              <li key={`${issue.code}-${index}`} className="flex flex-col gap-0.5">
                 <span>{issue.message}</span>
                 <code className="text-sq-micro text-sq-ink-muted">{issue.code}</code>
               </li>
