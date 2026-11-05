@@ -50,6 +50,8 @@ export interface StoredEvaluation {
    * if the factory profile changed mid-edit.
    */
   membersJson: string;
+  /** The punch sheets, frozen with the members they describe. */
+  punchingsJson: string;
   issuesJson: string;
   expiresAt: string;
   consumedAt: string | null;
@@ -89,6 +91,8 @@ export async function storeEvaluation(
     lines: unknown;
     /** The frame cut list that goes with those lines. */
     members: unknown;
+    /** The punch sheets that go with those members. */
+    punchings: unknown;
     issues: unknown;
   },
 ): Promise<{ id: string; expiresAt: string }> {
@@ -105,9 +109,9 @@ export async function storeEvaluation(
   await db.run(
     `INSERT INTO evaluations (
        id, tenant_id, config_hash, result_hash, price_book_hash, override_version, settings_version,
-       engine_version, status, price_json, lines_json, members_json, issues_json, created_by, created_at,
-       expires_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       engine_version, status, price_json, lines_json, members_json, punchings_json, issues_json,
+       created_by, created_at, expires_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.tenantId,
@@ -121,6 +125,7 @@ export async function storeEvaluation(
       JSON.stringify(input.price),
       JSON.stringify(input.lines),
       JSON.stringify(input.members ?? []),
+      JSON.stringify(input.punchings ?? []),
       JSON.stringify(input.issues),
       input.userId,
       now(),
@@ -158,6 +163,7 @@ export async function loadEvaluationForSave(
     price_json: string;
     lines_json: string;
     members_json: string;
+    punchings_json: string;
     issues_json: string;
     expires_at: string;
     consumed_at: string | null;
@@ -165,8 +171,8 @@ export async function loadEvaluationForSave(
     tenant_id: string;
   }>(
     `SELECT id, config_hash, result_hash, price_book_hash, override_version, engine_version,
-            status, price_json, lines_json, members_json, issues_json, expires_at, consumed_at,
-            created_by, tenant_id
+            status, price_json, lines_json, members_json, punchings_json, issues_json, expires_at,
+            consumed_at, created_by, tenant_id
        FROM evaluations WHERE id = ?`,
     [input.evaluationId],
   );
@@ -209,6 +215,7 @@ export async function loadEvaluationForSave(
     priceJson: row.price_json,
     linesJson: row.lines_json,
     membersJson: row.members_json,
+    punchingsJson: row.punchings_json,
     issuesJson: row.issues_json,
     expiresAt: row.expires_at,
     consumedAt: row.consumed_at,

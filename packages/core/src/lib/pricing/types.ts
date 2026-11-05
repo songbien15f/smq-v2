@@ -246,6 +246,31 @@ export interface PriceLookup {
    * can still quote from, using one fixed section and saying so.
    */
   frameSchedule(query: FrameScheduleQuery): FrameSchedule | undefined;
+  /**
+   * A frame section's cross-section: web and depth, mm.
+   *
+   * The connector tables are keyed by **web** rather than by section name
+   * (`HP20-10` is the haunch for a 20 mm web at a 10° pitch), so a punching sheet
+   * has to resolve a section to its web before it can ask for a connector.
+   * Optional, because a book with no `cost_frame` row for a section cannot answer
+   * and a sheet that says "I do not know" beats one that guesses.
+   */
+  frameGeometry?(section: string): { web: number; depth: number } | undefined;
+  /** The knee-edge row for a pitch: eave hole offset plus the apex/haunch allowances. */
+  kneeEdge?(pitchDeg: number): { kneeEdgeCode: number; apex: number; haunch: number } | undefined;
+  /**
+   * An apex connector's hole offsets for a rafter web at a pitch.
+   *
+   * `r1`/`r2` are the book's `d1`/`d2` columns, already millimetres. A zero means
+   * that hole is not punched — which is why they are two numbers, not one.
+   */
+  apex?(web: number, pitchDeg: number): { r1: number; r2: number } | undefined;
+  /**
+   * A haunch connector's hole offsets for a column web at a pitch.
+   *
+   * `e1`/`e2`/`e3` are the book's `d1`/`d2`/`d3`. A zero means no hole there.
+   */
+  haunch?(web: number, pitchDeg: number): { e1: number; e2: number; e3: number } | undefined;
   /** Purlin/girt span rows for a wind code and standard bay. */
   devided(code: string, standardSpan: number, openDesign?: boolean): DevidedRow[];
   /** Site wind speed in m/s for a wind region; `0` when unknown. */

@@ -416,6 +416,40 @@ export function createLookup(db: DatabaseSync): PriceLookup {
   const purlinDepthByCode = prepare(
     'SELECT depth FROM cost_purlin WHERE description = ? LIMIT 1',
   );
+  /**
+   * A frame section's cross-section, for the punching sheet.
+   *
+   * `web` is what the connector tables are keyed by — `cost_haunch` carries
+   * `HP20-10` for a 20 mm web at 10° — and `depth` is what the desktop uses to
+   * decide whether an infill column is deep enough to take a girt. Both come from
+   * the same row as the price, so the cut list and the punch sheet describe one
+   * section.
+   */
+  const frameGeometryBySize = prepare(
+    'SELECT web, depth FROM cost_frame WHERE description = ? LIMIT 1',
+  );
+  /**
+   * The knee-edge row: the hole offset above the eave, by pitch.
+   *
+   * The desktop's `KneeedgeDataAccess.FindByPitch` matches the pitch exactly and
+   * builds an all-zero `MKneeedge` when it finds nothing — and a zero edge code
+   * would punch a hole at the very top of the member. This returns `undefined`
+   * instead, and the sheet is withheld rather than printed wrong.
+   */
+  const kneeEdgeByPitch = prepare(
+    'SELECT haunch, apex, knee_edge_code FROM kneeedge WHERE pitch = ? LIMIT 1',
+  );
+  /**
+   * An apex connector by rafter web and pitch: `AP20-10`.
+   *
+   * The desktop builds the name (`BOMQuoteUtil.getApex`: `'AP' + web + '-' + pitch`,
+   * or `'HAP…'` at 30°). Asked by **name** rather than by a numeric pattern,
+   * because the name is the identity — a pattern would confuse `AP15-10` with
+   * `AP15-10-1.5`, which is a different plate.
+   */
+  const apexByName = prepare('SELECT d1, d2 FROM cost_apex WHERE description = ? LIMIT 1');
+  /** A haunch connector by column web and pitch: `HP20-10`. */
+  const haunchByName = prepare('SELECT d1, d2, d3 FROM cost_haunch WHERE description = ? LIMIT 1');
   // Frame plates are named for the purlin they fit, not sized by a number:
   // `EPHB15-TH64` is an eave bracket for a TH64 purlin where `15` is a size class.
   // The purlin family suffix is what selects the right row.
@@ -782,6 +816,49 @@ export function createLookup(db: DatabaseSync): PriceLookup {
       if (purlinDepthByCode === null) return 0;
       const row = purlinDepthByCode.get(code) as { depth: number } | undefined;
       return row === undefined ? 0 : num(row.depth);
+    },
+
+    frameGeometry(section) {
+      if (frameGeometryBySize === null) return undefined;
+      const row = frameGeometryBySize.get(section) as
+        | { web: number; depth: number }
+        | undefined;
+      // A zero web is not a section — it is a row the dump could not read — so it
+      // is reported as unknown rather than passed on to a connector lookup.
+      if (row === undefined) return undefined;
+      const web = num(row.web);
+      if (web <= 0) return undefined;
+      return { web, depth: num(row.depth) };
+    },
+
+    kneeEdge(pitchDeg) {
+      if (kneeEdgeByPitch === null) return undefined;
+      const row = kneeEdgeByPitch.get(pitchDeg) as
+        | { haunch: number; apex: number; knee_edge_code: number }
+        | undefined;
+      if (row === undefined) return undefined;
+      const code = num(row.knee_edge_code);
+      // A missing edge code would punch a hole at the member's very end. Refusing
+      // the row is the only answer that cannot be cut wrong.
+      if (code <= 0) return undefined;
+      return { kneeEdgeCode: code, apex: num(row.apex), haunch: num(row.haunch) };
+    },
+
+    apex(web, pitchDeg) {
+      if (apexByName === null) return undefined;
+      // The desktop's name: `AP<web>-<pitch>`, and `HAP…` at a 30° pitch.
+      const name = `${pitchDeg === 30 ? 'HAP' : 'AP'}${web}-${pitchDeg}`;
+      const row = apexByName.get(name) as { d1: number; d2: number } | undefined;
+      if (row === undefined) return undefined;
+      return { r1: num(row.d1), r2: num(row.d2) };
+    },
+
+    haunch(web, pitchDeg) {
+      if (haunchByName === null) return undefined;
+      const name = `${pitchDeg === 30 ? 'HAP' : 'HP'}${web}-${pitchDeg}`;
+      const row = haunchByName.get(name) as { d1: number; d2: number; d3: number } | undefined;
+      if (row === undefined) return undefined;
+      return { e1: num(row.d1), e2: num(row.d2), e3: num(row.d3) };
     },
 
     bracketExact(name) {

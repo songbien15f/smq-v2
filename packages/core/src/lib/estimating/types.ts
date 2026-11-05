@@ -24,6 +24,7 @@
 import type { ShedConfig } from '@/domain/types';
 import type { BomResult } from '@/lib/bom/types';
 import type { FrameMember } from '@/lib/bom/groups/frame';
+import type { PunchPage } from '@/lib/bom/punchings';
 import type { PriceLookup } from '@/lib/pricing/types';
 import type { QuotePrice } from '@/lib/pricing/price';
 import type { BomPolicy } from '@/lib/bom/rules';
@@ -131,4 +132,12 @@ export interface Evaluation {
    * profile would disagree with the order it sits beside.
    */
   members: FrameMember[];
+  /**
+   * The punching sheets, frozen with the revision.
+   *
+   * Where each frame member's holes go, read from the book's connector tables. A
+   * later price-book revision could move a connector offset, and a sheet that
+   * followed it would disagree with the steel that was ordered.
+   */
+  punchings: PunchPage[];
 }

@@ -181,6 +181,38 @@ export interface FrameMemberView {
   quantity: number;
 }
 
+/** One punched hole, in the terms a workshop reads it. */
+export interface PunchHoleView {
+  /** Distance from the member's near end (bottom hole) or far end (top hole), mm. */
+  positionMm: number;
+  /** Distance from the previous hole in the same group, mm. */
+  spacingMm: number;
+  /** Which of the three screw lines this hole is punched on. */
+  screwLines: number[];
+}
+
+/** One member on a punch sheet. */
+export interface PunchColumnView {
+  /** `C1`, `R1`, `C2`, `R2` — the desktop's mark for the member. */
+  mark: string;
+  titleTop: string;
+  titleBottom: string;
+  section: string;
+  quantity: number;
+  lengthMm: number;
+  holeSize: string;
+  centreMm: number;
+  top: PunchHoleView[];
+  bottom: PunchHoleView[];
+  remainingMm: number;
+}
+
+/** One sheet: the two members that meet at a connection. */
+export interface PunchPageView {
+  left: PunchColumnView | null;
+  right: PunchColumnView | null;
+}
+
 /** The answer to a preview request. */
 export interface EvaluationView {
   evaluationId: string;
@@ -205,6 +237,14 @@ export interface EvaluationView {
    * way, so the workshop can still build what was sold.
    */
   members: FrameMemberView[];
+  /**
+   * The punching sheets, when the caller may see the factory's design.
+   *
+   * Empty for a role without `cost:read`, and also empty when the price book cannot
+   * name the connectors for this building's sections — a sheet that is not printed
+   * rather than one with guessed hole positions.
+   */
+  punchings: PunchPageView[];
   issues: IssueView[];
   /** Content hash of the price book used. A republish invalidates the preview. */
   priceBookHash: string;

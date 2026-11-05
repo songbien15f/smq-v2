@@ -940,6 +940,121 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(items).toContain('main_rafter');
   });
 
+  it('freezes the punching detail with the revision', async () => {
+    /*
+     * The book lists structure rows for bays of 3 000, 3 500 and 4 000 mm, so this
+     * configuration — a 4 000 mm nominal bay — takes its sections from the structure
+     * table and its connectors from the apex/haunch tables. A 6 000 mm bay has no
+     * row, which is the `assumed` path tested below; both are real states of a quote.
+     */
+    const scheduled = () => ({
+      ...config(),
+      // Terrain 2, not the fixture's 2.5: this book lists no 9 000 × 4 000 row for
+      // 2.5 in region A, and a missing row is the `assumed` path tested separately.
+      terrainCategory: 2,
+      nomBaySpacing: 4000,
+      bays: 4,
+      length: 16000,
+    });
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: scheduled(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-punchings',
+        expectedRev: 0,
+        customer: { firstName: 'Punch', lastName: 'Detail', email: 'pd@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: scheduled(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const punchings = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/punchings`,
+      headers: { cookie },
+    });
+    expect(punchings.statusCode).toBe(200);
+    const pages = punchings.json().data.pages as {
+      left: {
+        mark: string;
+        section: string;
+        holeSize: string;
+        centreMm: number;
+        remainingMm: number;
+        top: { positionMm: number; spacingMm: number }[];
+        bottom: { positionMm: number }[];
+      } | null;
+      right: { mark: string } | null;
+    }[];
+
+    // Two sheets: the gable end (C2 meets R2) then the portal (C1 meets R1).
+    expect(pages.length).toBe(2);
+    expect(pages[0].left?.mark).toBe('C2');
+    expect(pages[1].left?.mark).toBe('C1');
+    expect(pages[1].right?.mark).toBe('R1');
+    expect(pages[1].left?.holeSize).toBe('18x22');
+
+    const portal = pages[1].left!;
+    // The book's `kneeedge` at 22.5° is 73, then `HP20-22.5` contributes d1 = 73 and
+    // d2 = 266 — and d3 = 0, so there is no fourth hole. A sheet with only the knee
+    // hole would read as complete and be bolted with two holes missing.
+    expect(portal.top.map((hole) => hole.spacingMm)).toEqual([73, 73, 266]);
+    expect(portal.top[0]?.spacingMm).toBe(73);
+    for (const hole of portal.top) {
+      expect(hole.positionMm).toBeGreaterThan(0);
+      expect(hole.positionMm).toBeLessThan(portal.remainingMm + hole.positionMm + 1);
+    }
+  });
+
+  it('withholds the punching sheet when the book cannot name the connectors', async () => {
+    /*
+     * The default 6 000 mm bay has no structure row in this book, so every member is
+     * priced from one assumed 100 × 100 SHS. There is no `HP100-22.5` plate, so no
+     * sheet can be drawn — and an empty sheet is the right answer: showing only the
+     * knee hole would tell a workshop a two-hole member is complete.
+     */
+    const assumed = () => ({ ...config(), nomBaySpacing: 6000, bays: 3, length: 18000 });
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: assumed(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-punchings-assumed',
+        expectedRev: 0,
+        customer: { firstName: 'No', lastName: 'Plate', email: 'np@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: assumed(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const punchings = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/punchings`,
+      headers: { cookie },
+    });
+    expect(punchings.statusCode).toBe(200);
+    expect(punchings.json().data.pages).toEqual([]);
+  });
+
   it('copies a quote into an independent quote with its own number', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',

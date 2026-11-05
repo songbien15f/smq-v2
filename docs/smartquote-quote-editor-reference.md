@@ -327,7 +327,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Punchings Details** — còn thiếu **bảng offset lỗ**; model member đã có (§12.3).
+1. ~~Punchings Details~~ — **đã xong** (§12.4); chỉ còn nhánh infill/roller-door cần model cột infill.
 3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
 4. **R12 skylight snap — bị chặn bởi model.** Desktop snap skylight theo **lưới tấm mái theo
    phương span** (`GetSheetingPos() * RoofSheetingSize`, trục từ eave tới ridge). v2 neo skylight
@@ -359,17 +359,16 @@ building (`ShedsafeData`), không có form desktop. v2 đã gửi client/referen
 bộ của nó; v2 chạy Postgres và `pg_dump` là công cụ đúng — một nút trong app sẽ tạo cảm giác an
 toàn giả (không kiểm soát được lịch, nơi lưu, hay khôi phục).
 
-### Vì sao Punchings Details chưa làm được
+### Punchings Details — ĐÃ XONG (§12.4)
 
-`PunchingDetailForm` dựng báo cáo từ `itemsFrame` — danh sách **MaterialItem của từng thanh
-khung** (`ItemName` như `MAIN_RAFTER_R1`, `INFILL_COLUMN`, `ROOLER_DOOR_COLUMN/HEADER`) cùng
-`FrameSpec.Depth`, `BasicData.DoorMullion/DoorHeader`, và offset lỗ từ `KneeEdge`/`Haunch`/`Apex`.
+> **Ghi chú sửa sai.** Trước 2026-11-05 tôi viết ở đây rằng Punchings bị chặn vì "chưa có bảng vị
+> trí lỗ". **Sai.** Ba bảng cần thiết — `kneeedge`, `cost_apex`, `cost_haunch` — đã có sẵn trong
+> sách giá đang dùng (8 / 61 / 108 dòng), và `cost_frame` có cột `web` để chọn đúng connector.
+> Tôi chỉ chưa tra. Từ đó: dựng §12.4 và không còn mục nào bị chặn.
 
-**Model member size nay ĐÃ CÓ** (§12.3): `frameMemberSchedule()` sinh `itemsFrame` với tiết diện,
-chiều dài cắt và số lượng, và nó được đóng băng theo revision. Cái **vẫn còn thiếu là offset lỗ**:
-`KneeEdge`/`Haunch`/`Apex` trong v2 mới dùng để **cộng dài rafter**, chưa có bảng vị trí lỗ đục.
-Vì vậy **Steelwork Schedule đã xong**, còn **Punchings Details vẫn bị chặn ở phần offset lỗ** —
-đưa ra xưởng một danh sách lỗ tự nghĩ còn tệ hơn không có báo cáo.
+**Còn một phần chưa làm của form gốc:** `PunchingDetailForm` cũng in phiếu cho **infill column**,
+**roller-door column** và **roller-door header**. Ba loại này cần model cột infill (R3/R5) — xem
+bảng "Chưa có" ở §6. Phiếu cho **C1/R1/C2/R2** thì đã đủ, và đó là 4 thanh của mọi khung.
 
 ### Đã xong (ghi để khỏi làm lại)
 
@@ -520,8 +519,67 @@ Người xem báo giá không cần nó; người đặt thép thì cần.
 
 ### Cái nó KHÔNG làm
 
-Không có **vị trí lỗ đục**. `KneeEdge`/`Haunch`/`Apex` chỉ được cộng vào chiều dài rafter. Muốn
-Punchings Details thì phải import bảng offset lỗ từ desktop trước.
+Không có **vị trí lỗ đục** — phần đó ở §12.4.
+
+## 12.4 Punching detail — vị trí lỗ đục
+
+Tương đương `PunchingDetailForm` của desktop: mỗi thanh khung, lỗ nào ở đâu, tính bằng mm từ **mỗi
+đầu**, cộng cỡ lỗ và tâm chày.
+
+### Nguồn số — không có công thức nào
+
+| Cần gì | Bảng sách giá | Cột |
+|---|---|---|
+| Lỗ ở eave, dưới đỉnh cột | `kneeedge` | `knee_edge_code` |
+| Dung sai rafter tại knee / apex | `kneeedge` | `haunch` / `apex` |
+| Lỗ connector apex | `cost_apex` | `d1`, `d2` → `r1`, `r2` |
+| Lỗ connector haunch | `cost_haunch` | `d1`, `d2`, `d3` → `e1`, `e2`, `e3` |
+| Chọn connector nào | `cost_frame` | `web` |
+
+Connector chọn **theo web và pitch**: `HP20-22.5` là haunch cho web 20 mm ở pitch 22,5°. Đó là lý
+do `FrameMember` mang thêm `web` / `depth` — không có web thì không gọi tên được tấm nối.
+
+### Hai nhóm lỗ — chiều đo khác nhau
+
+`createColumn` của desktop cộng dồn **top** từ đầu xa xuống và **bottom** từ đầu gần lên. Đọc
+ngược lại thì mọi mối haunch rơi xuống chân cột. `remainingMm` là đoạn còn lại giữa hai nhóm — đoạn
+thợ cắt đi qua, và là số đầu tiên người thợ kiểm.
+
+### Một chỗ desktop làm khó hiểu, và v2 giữ nguyên
+
+**C2 dùng haunch của cột chính, không phải haunch của chính nó.** Desktop đọc **một** `haunch` từ
+`basicData.InternalColumn` rồi dùng cho cả C1 và C2 (`PunchingDetailForm.cs:100,139`), trong khi
+apex thì tra riêng cho từng rafter (`apex1` cho R1, `apex2` cho R2, dòng 105 và 108). Tấm haunch
+bắc qua knee của portal nên một tấm phục vụ cả hai thanh nó bắt vít; apex là tấm khác vì R1 và R2
+khác tiết diện. Test `takes the portal haunch for the end wall` khoá lại.
+
+### Khi nào KHÔNG in phiếu
+
+Ba connector phải có **đủ cả ba**, thiếu một là **trả về rỗng**:
+
+- sách không có `kneeedge` / `cost_apex` / `cost_haunch`, hoặc
+- tiết diện là **assumed** (một `100 x 100 x 2.0 SHS` không có `HP100-22.5`), hoặc
+- pitch không có trong bảng connector.
+
+In phiếu thiếu lỗ haunch nguy hiểm hơn không in: xưởng đọc "hai lỗ" là **đủ**, và thanh về tới
+công trình chưa đục ở mối chịu lực nặng nhất. Trả rỗng là đẩy người ta đi tra sách giá.
+
+### API và UI
+
+| Chỗ | Nội dung |
+|---|---|
+| `POST /evaluate` | trả `punchings: PunchPageView[]` — rỗng nếu role không có `cost:read` |
+| `GET /quotes/:id/revisions/:rev/punchings` | phiếu đã đóng băng; gate `cost:read` |
+| `PunchingPanel` | Step 3 (Cost), dưới Steelwork schedule |
+
+Đóng băng ở `quote_revisions.punchings_json` và `evaluations.punchings_json` (migration `013`,
+trigger append-only tạo lại trong cả hai dialect).
+
+### Chưa làm — vì model chưa có
+
+Phiếu cho **infill column**, **roller-door column** và **roller-door header** (ba nhánh còn lại của
+`PunchingDetailForm`) cần **model cột infill** — cùng lỗ hổng với R3/R5 ở §6. Bốn thanh C1/R1/C2/R2
+thì đã đủ.
 
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
@@ -561,8 +619,8 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 807 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork schedule) |
-| `@sq/api` | 178 (auth, quote, evaluate, catalogue, site-check, send modes, members, pricing) |
+| `@sq/core` | 820 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings) |
+| `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

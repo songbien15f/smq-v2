@@ -27,6 +27,7 @@ import type { ShedConfig } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { optimise } from './optimise';
 import { frameLines, frameMemberSchedule, type FrameMember } from './groups/frame';
+import { buildPunchingPages, type PunchPage, type PunchSource } from './punchings';
 import { purlinLines } from './groups/purlin';
 import { flashingLines, gutterLines } from './groups/gutter';
 import { sheetingGroup, isOpenStructure } from './groups/sheeting';
@@ -124,6 +125,14 @@ export interface BomWithEvidence {
    * two describe one building.
    */
   members: FrameMember[];
+  /**
+   * The punching sheets: where each frame member's holes go.
+   *
+   * Empty when the book cannot name the connectors for this building's sections
+   * — see `buildPunchingPages`. An empty list is a sheet that is not printed; a
+   * guessed offset is a member that is cut and welded wrong.
+   */
+  punchings: PunchPage[];
 }
 
 /**
@@ -396,6 +405,16 @@ export function buildBomWithEvidence(
     });
   }
 
+  // The cut list and the punch sheets are built from the same members, in that
+  // order: a punch sheet names a member's section, so it cannot be drawn for a
+  // member the cut list does not have.
+  const members = frameMemberSchedule(shed, frame, lookup, rules);
+  const punchSource: PunchSource = {
+    kneeEdge: (pitch) => safeCall(() => lookup.kneeEdge?.(pitch)),
+    apex: (web, pitch) => safeCall(() => lookup.apex?.(web, pitch)),
+    haunch: (web, pitch) => safeCall(() => lookup.haunch?.(web, pitch)),
+  };
+
   return {
     bom: {
       groups,
@@ -407,6 +426,7 @@ export function buildBomWithEvidence(
     issues,
     materials,
     status: classifyEstimate(issues),
-    members: frameMemberSchedule(shed, frame, lookup, rules),
+    members,
+    punchings: buildPunchingPages(members, punchSource, shed.roofPitchDeg),
   };
 }

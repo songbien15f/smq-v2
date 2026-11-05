@@ -288,6 +288,7 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
       config_json: string;
       bom_json: string;
       members_json: string;
+      punchings_json: string;
       price_json: string;
       issues_json: string;
       customer_json: string;
@@ -339,11 +340,11 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
       await tx.run(
         `INSERT INTO quote_revisions (
            id, quote_id, tenant_id, revision, name, description,
-           config_json, bom_json, members_json, price_json, issues_json, customer_json, company_json, provenance_json,
-           config_hash, result_hash, bom_hash, price_book_hash, override_version, settings_version,
-           engine_version, contract_cents, total_cost_cents, total_mass_kg, mocked_lines,
-           idempotency_key, created_by, created_by_email, created_at
-         ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           config_json, bom_json, members_json, punchings_json, price_json, issues_json, customer_json,
+           company_json, provenance_json, config_hash, result_hash, bom_hash, price_book_hash,
+           override_version, settings_version, engine_version, contract_cents, total_cost_cents,
+           total_mass_kg, mocked_lines, idempotency_key, created_by, created_by_email, created_at
+         ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           revisionId,
           quoteId,
@@ -353,6 +354,7 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
           revision.config_json,
           revision.bom_json,
           revision.members_json,
+          revision.punchings_json,
           revision.price_json,
           revision.issues_json,
           revision.customer_json,

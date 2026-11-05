@@ -337,6 +337,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       price,
       lines,
       members: evaluation.members,
+      punchings: evaluation.punchings,
       issues: toIssueViews(evaluation),
     });
 
@@ -372,6 +373,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
             quantity: member.quantity,
           }))
         : [],
+      // Same capability as the members: hole positions are the factory's workshop data,
+      // and a viewer reads the quote, not how it is fabricated.
+      punchings: canSeeDesign ? evaluation.punchings : [],
       issues: toIssueViews(evaluation),
       priceBookHash: hash,
       overrideVersion: overrides.version,
@@ -581,11 +585,11 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
         await tx.run(
           `INSERT INTO quote_revisions (
              id, quote_id, tenant_id, revision, name, description,
-             config_json, bom_json, members_json, price_json, issues_json, customer_json, company_json,
-             provenance_json, config_hash, result_hash, bom_hash, price_book_hash, override_version,
-             settings_version, engine_version, contract_cents, total_cost_cents, total_mass_kg,
-             mocked_lines, idempotency_key, created_by, created_by_email, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             config_json, bom_json, members_json, punchings_json, price_json, issues_json, customer_json,
+             company_json, provenance_json, config_hash, result_hash, bom_hash, price_book_hash,
+             override_version, settings_version, engine_version, contract_cents, total_cost_cents,
+             total_mass_kg, mocked_lines, idempotency_key, created_by, created_by_email, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             revisionId,
             quoteId,
@@ -599,6 +603,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
             // The cut list, frozen beside the BOM it prices. A workshop builds from it, so it must
             // be the steel this revision was quoted on, not what a later profile would choose.
             evaluation.membersJson,
+            // The punch sheet, frozen beside the members it punches. A later book revision could
+            // move a connector; a sheet that followed it would not match the member already cut.
+            evaluation.punchingsJson,
             evaluation.priceJson,
             evaluation.issuesJson,
             JSON.stringify(body.customer),

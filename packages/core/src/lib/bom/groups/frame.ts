@@ -284,6 +284,16 @@ export interface FrameMember {
   lengthMm: number;
   /** How many the building has. */
   quantity: number;
+  /**
+   * The section's web, mm, or `null` when the book has no row for it.
+   *
+   * The connector tables are keyed by web (`HP20-10` is the haunch for a 20 mm web
+   * at a 10° pitch), so a punching sheet cannot be built without it. `null` rather
+   * than `0`: a zero web would silently ask for a connector that does not exist.
+   */
+  web: number | null;
+  /** The section's depth, mm, or `null` when the book has no row for it. */
+  depth: number | null;
 }
 
 /**
@@ -307,38 +317,53 @@ export function frameMemberSchedule(
   const column = columnLength(shed, schedule?.embedment ?? null, rules);
   const rafter = rafterLength(shed, rules);
 
+  /** The section's cross-section, so the connector tables can be asked for it. */
+  const geometry = (section: string): { web: number | null; depth: number | null } => {
+    const row = safeCall(() => lookup.frameGeometry?.(section));
+    return { web: row?.web ?? null, depth: row?.depth ?? null };
+  };
+
+  const mainColumnSection = schedule?.mainColumn ?? FALLBACK_SIZE;
+  const mainRafterSection = schedule?.mainRafter ?? FALLBACK_SIZE;
+  const endColumnSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
+  const endRafterSection = schedule?.endWallRafter ?? FALLBACK_SIZE;
+
   const members: FrameMember[] = [
     {
       item: 'main_column',
       label: MEMBER.mainColumn,
-      section: schedule?.mainColumn ?? FALLBACK_SIZE,
+      section: mainColumnSection,
       assumed,
       lengthMm: column,
       quantity: main,
+      ...geometry(mainColumnSection),
     },
     {
       item: 'main_rafter',
       label: MEMBER.mainRafter,
-      section: schedule?.mainRafter ?? FALLBACK_SIZE,
+      section: mainRafterSection,
       assumed,
       lengthMm: rafter,
       quantity: main,
+      ...geometry(mainRafterSection),
     },
     {
       item: 'end_column',
       label: MEMBER.endWallColumn,
-      section: schedule?.endWallColumn ?? FALLBACK_SIZE,
+      section: endColumnSection,
       assumed,
       lengthMm: column,
       quantity: end,
+      ...geometry(endColumnSection),
     },
     {
       item: 'end_rafter',
       label: MEMBER.endWallRafter,
-      section: schedule?.endWallRafter ?? FALLBACK_SIZE,
+      section: endRafterSection,
       assumed,
       lengthMm: rafter,
       quantity: end,
+      ...geometry(endRafterSection),
     },
   ];
 
@@ -353,6 +378,7 @@ export function frameMemberSchedule(
       assumed,
       lengthMm: rules.kneeBraceLength,
       quantity: Math.max(0, main * 2),
+      ...geometry(braceSection),
     });
   }
 

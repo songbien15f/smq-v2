@@ -40,6 +40,7 @@ import { PlanPanel } from './PlanPanel';
 import { PlanView } from './PlanView';
 import { CostPanel } from './CostPanel';
 import { SteelworkPanel } from './SteelworkPanel';
+import { PunchingPanel } from './PunchingPanel';
 import { SiteCheckPanel } from './SiteCheckPanel';
 import { PricePanel } from './PricePanel';
 import { ErrorSummary, focusErrorSummary } from './ErrorSummary';
@@ -518,6 +519,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                 canSeeMargin={session.capabilities.includes('cost:margin')}
               />
               <SteelworkPanel members={evaluation === null ? [] : evaluation.members} />
+              <PunchingPanel pages={evaluation === null ? [] : evaluation.punchings} />
             </>
           )}
 

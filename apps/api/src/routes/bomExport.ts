@@ -67,6 +67,46 @@ function toBomResult(linesJson: string): BomResult {
  * is frozen. A newer price book or factory profile must not change the steel a sent quote was
  * built from.
  */
+/**
+ * The punching detail for a revision.
+ *
+ * The desktop's `PunchingDetailForm`: for each frame member, where the knee, haunch and apex holes
+ * sit, the hole size and the punch centre. A workshop document, so `cost:read` with the BOM and the
+ * steelwork schedule — hole positions are the factory's data, not the customer's.
+ *
+ * Read from `punchings_json`, never recomputed: the offsets come from the book's connector tables,
+ * and a book revision must not change the sheet a member was already cut from. An empty list is a
+ * sheet that is not printed — it means the book could not name the connectors — not a sheet with
+ * guessed holes.
+ */
+function registerPunchings(app: FastifyInstance, db: Db): void {
+  app.get<{ Params: { quoteId: string; rev: string } }>(
+    '/quotes/:quoteId/revisions/:rev/punchings',
+    async (request, reply) => {
+      const session = requireCompanyCapability(request, reply, 'cost:read');
+      if (session === null) return;
+
+      const revisionNumber = Number(request.params.rev);
+      if (!Number.isInteger(revisionNumber) || revisionNumber < 1) {
+        sendFail(reply, 'validation_failed', 'The revision number must be a positive whole number.');
+        return;
+      }
+
+      const row = await db.get<{ punchings_json: string }>(
+        `SELECT punchings_json FROM quote_revisions
+          WHERE quote_id = ? AND tenant_id = ? AND revision = ?`,
+        [request.params.quoteId, session.tenantId, revisionNumber],
+      );
+      if (row === null) {
+        sendFail(reply, 'not_found', 'Not found.');
+        return;
+      }
+
+      return sendOk(reply, { pages: JSON.parse(row.punchings_json || '[]') as unknown[] });
+    },
+  );
+}
+
 function registerMembers(app: FastifyInstance, db: Db): void {
   app.get<{ Params: { quoteId: string; rev: string } }>(
     '/quotes/:quoteId/revisions/:rev/members',
@@ -97,6 +137,7 @@ function registerMembers(app: FastifyInstance, db: Db): void {
 
 export function registerBomExport(app: FastifyInstance, db: Db): void {
   registerMembers(app, db);
+  registerPunchings(app, db);
 
   app.get<{ Params: { quoteId: string; rev: string } }>(
     '/quotes/:quoteId/revisions/:rev/bom',

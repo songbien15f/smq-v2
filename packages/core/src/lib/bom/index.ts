@@ -12,6 +12,7 @@ export * from "./openings";
 export * from "./optimise";
 export * from "./options";
 export * from "./profiles";
+export * from "./punchings";
 export * from "./rules";
 export * from "./safe";
 export * from "./types";
