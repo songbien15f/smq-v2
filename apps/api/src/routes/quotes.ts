@@ -9,8 +9,10 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
+import { newId, now } from '@sq/db';
 import { pageQuery, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
+import { nextQuoteNumber } from '../lib/evaluations.js';
 import type { QuoteListItem, QuoteStatus } from '@sq/contracts';
 import { revisionMetadataRequest } from '@sq/contracts';
 
@@ -221,6 +223,132 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
       return sendOk(reply, { revision });
     },
   );
+
+  /**
+   * Copy a quote, as the desktop's "Copy All".
+   *
+   * The copy is an **independent quote**: its own number, its own revision 1, its own
+   * idempotency key. Revisions are never shared between quotes — a later edit to one must not
+   * move the other, and two quotes pointing at one frozen revision would make the second
+   * unamendable.
+   *
+   * The current revision's content (config, price, BOM, customer, site) is copied verbatim,
+   * including the frozen figures: a copy is a snapshot of what was quoted, not a re-price.
+   */
+  app.post<{ Params: { quoteId: string } }>('/quotes/:quoteId/copy', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:write');
+    if (session === null) return;
+
+    const tenantId = session.tenantId as string;
+    const source = await db.get<{
+      id: string;
+      number: string;
+      current_revision: number;
+      customer_id: string | null;
+      contract_cents: number;
+      incomplete: number;
+      site_json: string;
+    }>(
+      `SELECT id, number, current_revision, customer_id, contract_cents, incomplete, site_json
+         FROM quotes WHERE id = ? AND tenant_id = ?`,
+      [request.params.quoteId, tenantId],
+    );
+    if (source === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    const revision = await db.get<{
+      description: string;
+      config_json: string;
+      bom_json: string;
+      price_json: string;
+      issues_json: string;
+      customer_json: string;
+      company_json: string;
+      provenance_json: string;
+      config_hash: string;
+      result_hash: string;
+      bom_hash: string;
+      price_book_hash: string;
+      override_version: number;
+      settings_version: number;
+      engine_version: number;
+      contract_cents: number;
+      total_cost_cents: number;
+      total_mass_kg: number;
+      mocked_lines: number;
+    }>(
+      'SELECT * FROM quote_revisions WHERE quote_id = ? AND revision = ? AND tenant_id = ?',
+      [source.id, source.current_revision, tenantId],
+    );
+    if (revision === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    const quoteId = newId();
+    const revisionId = newId();
+    const at = now();
+    let createdNumber = '';
+
+    await db.transaction(async (tx) => {
+      const number = await nextQuoteNumber(tx, tenantId);
+      createdNumber = number;
+      await tx.run(
+        `INSERT INTO quotes (id, tenant_id, number, customer_id, status, current_revision,
+                             contract_cents, incomplete, site_json, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?, ?, ?)`,
+        [
+          quoteId,
+          tenantId,
+          number,
+          source.customer_id,
+          source.contract_cents,
+          source.incomplete,
+          source.site_json,
+          session.userId,
+          at,
+          at,
+        ],
+      );
+
+      await tx.run(
+        `INSERT INTO quote_revisions (
+           id, quote_id, tenant_id, revision, name, description,
+           config_json, bom_json, price_json, issues_json, customer_json, company_json, provenance_json,
+           config_hash, result_hash, bom_hash, price_book_hash, override_version, settings_version,
+           engine_version, contract_cents, total_cost_cents, total_mass_kg, mocked_lines,
+           idempotency_key, created_by, created_by_email, created_at
+         ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          revisionId,
+          quoteId,
+          tenantId,
+          `Copy of ${source.number}`,
+          String(revision.description),
+          revision.config_json,
+          revision.bom_json,
+          revision.price_json,
+          revision.issues_json,
+          revision.customer_json,
+          revision.company_json,
+          revision.provenance_json,
+          revision.config_hash,
+          revision.result_hash,
+          revision.bom_hash,
+          revision.price_book_hash,
+          revision.override_version,
+          revision.settings_version,
+          revision.engine_version,
+          revision.contract_cents,
+          revision.total_cost_cents,
+          revision.total_mass_kg,
+          revision.mocked_lines,
+          `copy-${revisionId}`,
+          session.userId,
+          session.email,
+          at,
+        ],
+      );
+    });
+
+    return sendOk(reply, { quoteId, quoteNumber: createdNumber, revision: 1 }, 201);
+  });
 
   // `parseBody` is imported for the save route that follows in phase 5; keeping the
   // import used here avoids a dead-import warning while the route is being written.

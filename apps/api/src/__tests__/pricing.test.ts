@@ -678,6 +678,49 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
    * The append-only trigger refused every UPDATE. `010_revision_label` narrows it to the frozen
    * columns, so a rename lands and a changed contract still aborts.
    */
+  it('copies a quote into an independent quote with its own number', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-copy-source',
+        expectedRev: 0,
+        customer: { firstName: 'Copy', lastName: 'Source', email: 'cp@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+    const source = saved.json().data;
+
+    const copied = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/quotes/${source.quoteId}/copy`,
+      headers: { cookie },
+    });
+    expect(copied.statusCode).toBe(201);
+    const copy = copied.json().data;
+
+    expect(copy.quoteId).not.toBe(source.quoteId);
+    expect(copy.quoteNumber).not.toBe(source.quoteNumber);
+    expect(copy.revision).toBe(1);
+
+    const row = await ctx.db.get<{ contract_cents: number }>(
+      'SELECT contract_cents FROM quote_revisions WHERE quote_id = ? AND revision = 1',
+      [copy.quoteId],
+    );
+    expect(row?.contract_cents).toBe(source.contractCents);
+  });
+
   it('renames a revision without touching its frozen content', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',
