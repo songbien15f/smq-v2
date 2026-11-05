@@ -109,6 +109,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   const quoteId = useDraftStore((state) => state.quoteId);
   const quoteNumber = useDraftStore((state) => state.quoteNumber);
   const expectedRev = useDraftStore((state) => state.expectedRev);
+  const siteCheckId = useDraftStore((state) => state.siteCheckId);
 
   const [step, setStep] = useState<EditorStep>('details');
   const [unit, setUnit] = useState<DisplayUnit>('mm');
@@ -350,6 +351,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       method: 'POST',
       body: {
         ...(quoteId === null ? {} : { quoteId }),
+        ...(siteCheckId === null ? {} : { siteCheckId }),
         evaluationId: evaluation.evaluationId,
         idempotencyKey: idempotency.current,
         expectedRev,

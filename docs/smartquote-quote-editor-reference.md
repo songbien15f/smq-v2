@@ -303,11 +303,17 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **6d** — PIN trước khi lưu: route `POST /site-checks/pin` (không cần quote) +
-   `POST /site-checks/:id/import`, rồi gắn `siteCheckId` vào quote khi lưu.
-2. **Add-mode overlay** xanh/cam trên canvas (hiện Add tự áp dụng đề xuất + notice).
+1. **Add-mode overlay** xanh/cam trên canvas (hiện Add tự áp dụng đề xuất + notice).
 
-Đã xong trong các đợt trước: golden harness (§10), lọc margin ở server (§9), Fax (§11 D13).
+Đã xong: golden harness (§10), lọc margin ở server (§9), Fax (§11 D13), và **6d pin trước
+khi lưu**:
+
+- `POST /site-checks/pin` — pin khi chưa có quote, lưu theo `tenant_id`.
+- `POST /site-checks/:checkId/import` — import rating cho check chưa gắn quote.
+- `POST /quotes` nhận `siteCheckId`; server kiểm tra check thuộc đúng công ty rồi gắn
+  `quotes.site_check_id` (check của công ty khác bị bỏ qua, không làm mất lần lưu).
+- Client: `SiteCheckPanel` pin/import được khi chưa lưu; id giữ trong draft store và gửi
+  kèm lần lưu đầu. Test: *"links a site check that was pinned before the quote was saved"*.
 
 ---
 

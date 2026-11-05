@@ -47,6 +47,11 @@ const ALLOWED_PREFIXES = [
    */
   'price-books',
   /*
+   * A site check pinned before the quote exists. The ShedSafe credentials stay on the
+   * API; the browser only ever talks to our route.
+   */
+  'site-checks',
+  /*
    * The price list: template download, preview and apply. The API routes live under `/admin/prices`
    * because they change every future quote's numbers, and they are gated by `price:manage` there.
    */

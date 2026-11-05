@@ -623,6 +623,56 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
   });
 
   /**
+   * A site check pinned before the quote existed is linked on the first save.
+   *
+   * The desktop pins while Step 1 is still being filled; the check therefore has no quote
+   * to belong to yet. This is the half that makes that flow work — the pin route itself is
+   * exercised against ShedSafe's own transport tests.
+   */
+  it('links a site check that was pinned before the quote was saved', async () => {
+    const tenant = await ctx.db.get<{ id: string }>("SELECT id FROM tenants WHERE slug = 'pricing-test'");
+    expect(tenant).not.toBeNull();
+
+    const checkId = 'chk-pre-save-1';
+    await ctx.db.run(
+      `INSERT INTO site_checks (id, tenant_id, reference, status, pinned_at, updated_at)
+       VALUES (?, ?, 'REF-PRE-SAVE', 'pinned', ?, ?)`,
+      [checkId, tenant!.id, new Date().toISOString(), new Date().toISOString()],
+    );
+
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    expect(evaluated.statusCode).toBe(200);
+
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-site-check-link',
+        expectedRev: 0,
+        siteCheckId: checkId,
+        customer: { firstName: 'Site', lastName: 'Check', email: 'sc@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const stored = await ctx.db.get<{ site_check_id: string | null }>(
+      'SELECT site_check_id FROM quotes WHERE id = ?',
+      [saved.json().data.quoteId],
+    );
+    expect(stored?.site_check_id).toBe(checkId);
+  });
+
+  /**
    * The internal breakdown is a capability, not a screen preference.
    *
    * `cost:read` lets an estimator quote from the sell price; the material cost, the

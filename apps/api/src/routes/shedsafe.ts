@@ -329,4 +329,143 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       return sendFail(reply, 'internal', message);
     }
   });
+
+  /**
+   * Pin a site **before the quote exists**.
+   *
+   * The desktop lets an operator pin and fetch the report while still filling Step 1;
+   * requiring a saved quote first turns a two-minute check into save-then-edit-then-save
+   * and produces a throwaway revision. The check is stored against the tenant and linked
+   * to the quote when it is first saved (`POST /quotes` with `siteCheckId`).
+   */
+  app.post('/site-checks/pin', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:write');
+    if (session === null) return;
+
+    const shedSafe = transport();
+    if (shedSafe === null) {
+      return sendFail(reply, 'not_configured', new ShedSafeNotConfigured().message);
+    }
+
+    const body = parseBody(pinRequest, request.body, reply);
+    if (body === null) return;
+
+    const tenantId = session.tenantId as string;
+    const reference = body.reference ?? newReference();
+    const at = now();
+
+    try {
+      const pinned = await shedSafe.pin({
+        reference,
+        siteAddress: body.siteAddress,
+        client: body.client,
+        height: body.heightMm / 1000,
+        span: body.spanMm / 1000,
+        length: body.lengthMm / 1000,
+        importanceLevel: body.importanceLevel,
+      });
+
+      const existing = await db.get<{ id: string }>(
+        'SELECT id FROM site_checks WHERE tenant_id = ? AND reference = ?',
+        [tenantId, reference],
+      );
+      const checkId = existing === null ? newId() : existing.id;
+
+      if (existing === null) {
+        await db.run(
+          `INSERT INTO site_checks (id, tenant_id, building_id, reference, site_link, status, pinned_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'pinned', ?, ?)`,
+          [checkId, tenantId, pinned.buildingId, reference, pinned.siteLink, at, at],
+        );
+      } else {
+        await db.run(
+          `UPDATE site_checks SET building_id = ?, site_link = ?, status = 'pinned', last_error = NULL, updated_at = ?
+            WHERE id = ?`,
+          [pinned.buildingId, pinned.siteLink, at, checkId],
+        );
+      }
+
+      const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [checkId]);
+      return sendOk(reply, { check: row === null ? null : toView(row), locked: pinned.locked }, 201);
+    } catch (error) {
+      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
+      const existing = await db.get<{ id: string }>(
+        'SELECT id FROM site_checks WHERE tenant_id = ? AND reference = ?',
+        [tenantId, reference],
+      );
+      if (existing !== null) {
+        await db.run("UPDATE site_checks SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", [
+          message,
+          at,
+          existing.id,
+        ]);
+      }
+      return sendFail(reply, 'internal', message);
+    }
+  });
+
+  /** Import the rating for a check that is not tied to a quote yet. */
+  app.post<{ Params: { checkId: string } }>('/site-checks/:checkId/import', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:write');
+    if (session === null) return;
+
+    const shedSafe = transport();
+    if (shedSafe === null) {
+      return sendFail(reply, 'not_configured', new ShedSafeNotConfigured().message);
+    }
+
+    const tenantId = session.tenantId as string;
+    const check = await db.get<SiteCheckRow>(
+      'SELECT * FROM site_checks WHERE id = ? AND tenant_id = ?',
+      [request.params.checkId, tenantId],
+    );
+    if (check === null) return sendFail(reply, 'not_found', 'Not found.');
+    if (check.building_id === null) {
+      return sendFail(reply, 'conflict', 'The site check has no ShedSafe building id yet. Pin the site again.');
+    }
+
+    const at = now();
+    try {
+      const values = await shedSafe.read(check.building_id);
+      if (values === null) {
+        const message = 'ShedSafe has not calculated this building yet. Finish the check in ShedSafe, then import again.';
+        await db.run("UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?", [
+          message,
+          at,
+          check.id,
+        ]);
+        return sendFail(reply, 'conflict', message);
+      }
+
+      await db.run(
+        `UPDATE site_checks
+            SET importance_level = ?, wind_region = ?, terrain_category = ?, building_class = ?,
+                snow_load = ?, design_wind_speed = ?, status = 'imported', last_error = NULL,
+                imported_at = ?, updated_at = ?
+          WHERE id = ?`,
+        [
+          values.importanceLevel,
+          values.windRegion,
+          values.terrainCategory,
+          values.buildingClass,
+          values.snowLoad,
+          values.designWindSpeed,
+          at,
+          at,
+          check.id,
+        ],
+      );
+
+      const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [check.id]);
+      return sendOk(reply, { check: row === null ? null : toView(row) });
+    } catch (error) {
+      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
+      await db.run("UPDATE site_checks SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", [
+        message,
+        at,
+        check.id,
+      ]);
+      return sendFail(reply, 'internal', message);
+    }
+  });
 }

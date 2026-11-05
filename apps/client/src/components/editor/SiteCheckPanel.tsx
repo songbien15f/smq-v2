@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/sq';
+import { useDraftStore } from '@/store/useDraftStore';
 
 /** The six certified fields, as ShedSafe names them. */
 interface SiteCheckValues {
@@ -81,6 +82,7 @@ export function SiteCheckPanel({
   const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
+  const setSiteCheckId = useDraftStore((state) => state.setSiteCheckId);
 
   const load = useCallback(async (): Promise<void> => {
     if (quoteId === null) return;
@@ -96,11 +98,16 @@ export function SiteCheckPanel({
   }, [load]);
 
   const pin = async (): Promise<void> => {
-    if (quoteId === null) return;
     setBusy('pinning');
     setMessage(null);
 
-    const result = await api<{ check: SiteCheck | null; locked: boolean }>(`quotes/${quoteId}/site-check/pin`, {
+    /*
+     * Before the quote exists the check is pinned against the company and linked on the
+     * first save. That is the desktop's order, and it is the only one that lets a
+     * salesperson finish Step 1 without saving a throwaway revision first.
+     */
+    const path = quoteId === null ? 'site-checks/pin' : `quotes/${quoteId}/site-check/pin`;
+    const result = await api<{ check: SiteCheck | null; locked: boolean }>(path, {
       method: 'POST',
       body: {
         siteAddress: {
@@ -120,6 +127,9 @@ export function SiteCheckPanel({
     setBusy(null);
     if (result.ok) {
       setCheck(result.data.check);
+      if (quoteId === null && result.data.check !== null) {
+        setSiteCheckId(result.data.check.id);
+      }
       setMessage({
         tone: 'ok',
         text: 'Pinned. Open ShedSafe to finish the check, then import the rating.',
@@ -130,11 +140,18 @@ export function SiteCheckPanel({
   };
 
   const importRating = async (): Promise<void> => {
-    if (quoteId === null) return;
+    const path =
+      quoteId === null
+        ? check === null
+          ? null
+          : `site-checks/${check.id}/import`
+        : `quotes/${quoteId}/site-check/import`;
+    if (path === null) return;
+
     setBusy('importing');
     setMessage(null);
 
-    const result = await api<{ check: SiteCheck }>(`quotes/${quoteId}/site-check/import`, { method: 'POST' });
+    const result = await api<{ check: SiteCheck }>(path, { method: 'POST' });
 
     setBusy(null);
     if (result.ok) {
@@ -158,12 +175,6 @@ export function SiteCheckPanel({
           <p className="text-sq-body text-sq-ink-muted">
             ShedSafe is not configured on this server, so the wind fields below are typed by hand.
             Set <code>SHEDSAFE_USERNAME</code> and <code>SHEDSAFE_PASSWORD</code> to enable the check.
-          </p>
-        )}
-
-        {quoteId === null && (
-          <p className="text-sq-body text-sq-ink-muted">
-            Save the quote first — a site check belongs to a saved quote.
           </p>
         )}
 
@@ -222,7 +233,7 @@ export function SiteCheckPanel({
           </p>
         )}
 
-        {configured && quoteId !== null && canWrite && (
+        {configured && canWrite && (
           <div className="flex flex-wrap items-center gap-sq-2">
             <Button loading={busy === 'pinning'} onClick={() => void pin()}>
               {check === null ? 'Pin the site' : 'Pin again'}

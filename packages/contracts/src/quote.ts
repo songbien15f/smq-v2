@@ -105,6 +105,13 @@ export const saveQuoteRequest = z.object({
   /** A name for this revision, e.g. "Option B — bigger door". */
   revisionName: z.string().trim().max(120).optional(),
   revisionDescription: z.string().trim().max(500).optional(),
+  /**
+   * A site check pinned **before** the quote existed.
+   *
+   * The desktop pins while Step 1 is still being filled, so the check is created without a
+   * quote. The first save links it. A check belonging to another company is ignored.
+   */
+  siteCheckId: z.string().min(1).optional(),
 });
 export type SaveQuoteRequest = z.infer<typeof saveQuoteRequest>;
 

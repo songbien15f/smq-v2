@@ -86,6 +86,15 @@ export interface DraftState {
   quoteNumber: string | null;
   /** The revision number the quote is on, so a save can name the one it appends after. */
   expectedRev: number;
+  /**
+   * A site check pinned before the quote was saved.
+   *
+   * The desktop pins while Step 1 is still open, so the check exists before the quote.
+   * The first save sends this id and the server links it.
+   */
+  siteCheckId: string | null;
+
+  setSiteCheckId: (id: string | null) => void;
 
   setCustomer: (patch: Partial<DraftCustomer>) => void;
   setSite: (patch: Partial<DraftSite>) => void;
@@ -184,6 +193,11 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
   quoteId: null,
   quoteNumber: null,
   expectedRev: 0,
+  siteCheckId: null,
+
+  setSiteCheckId(id) {
+    set({ siteCheckId: id });
+  },
 
   setCustomer(patch) {
     // A customer's name does not change what the shed costs, so the price stays current. Stated
@@ -226,6 +240,7 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
       quoteId: input.quoteId,
       quoteNumber: input.quoteNumber,
       expectedRev: input.expectedRev,
+      siteCheckId: null,
       priced: { kind: 'none' },
       snapshot: fingerprintOf(input.customer, input.site, input.pricing),
     });

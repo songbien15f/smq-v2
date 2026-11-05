@@ -533,6 +533,27 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
               at,
             ],
           );
+
+          /*
+           * Link a site check that was pinned before this quote existed.
+           *
+           * Checked against the tenant: a check id from another company is ignored rather
+           * than refused, because the link is a convenience and refusing the save would
+           * lose the operator's work over a stale tab.
+           */
+          if (body.siteCheckId !== undefined) {
+            const check = await tx.get<{ id: string }>(
+              'SELECT id FROM site_checks WHERE id = ? AND tenant_id = ?',
+              [body.siteCheckId, tenantId],
+            );
+            if (check !== null) {
+              await tx.run('UPDATE quotes SET site_check_id = ?, updated_at = ? WHERE id = ?', [
+                check.id,
+                at,
+                quoteId,
+              ]);
+            }
+          }
         } else {
           await tx.run(
             'UPDATE quotes SET current_revision = ?, contract_cents = ?, incomplete = ?, site_json = ?, updated_at = ? WHERE id = ?',
