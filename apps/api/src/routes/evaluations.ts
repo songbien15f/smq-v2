@@ -18,6 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 import {
+  companyCan,
   evaluateRequest,
   saveQuoteRequest,
   type BomLineView,
@@ -192,6 +193,22 @@ function toPriceView(evaluation: Evaluation, pricing: PricingInput): PriceView {
 }
 
 /**
+ * The price a caller without `cost:margin` may see.
+ *
+ * The four internal figures — material cost, the two totals they produce, and the kit
+ * price — are removed rather than zeroed: a zero margin reads as "no profit", which is a
+ * worse answer than "not shown".
+ */
+function withoutInternalPrice(price: PriceView): PriceView {
+  const copy: PriceView = { ...price };
+  delete copy.buildingCostCents;
+  delete copy.totalCostCents;
+  delete copy.margin;
+  delete copy.kitCents;
+  return copy;
+}
+
+/**
  * How many BOM lines carry no price at all.
  *
  * Read from the stored lines rather than inferred from the estimate status: `indicative` means an
@@ -322,13 +339,22 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       issues: toIssueViews(evaluation),
     });
 
+    /*
+     * The internal breakdown leaves the server only for `cost:margin`.
+     *
+     * The revision is stored in full (audit needs it), but the answer to this caller is
+     * filtered: an estimator holds `cost:read` because they quote from the sell price,
+     * and the material cost, margin and kit price are not theirs to see. Filtering here
+     * rather than only in the screen is what makes the capability a rule.
+     */
+    const canSeeMargin = session.role !== null && companyCan(session.role, 'cost:margin');
     const view: EvaluationView = {
       evaluationId: stored.id,
       configHash,
       resultHash,
       status: evaluation.status,
-      price,
-      lines,
+      price: canSeeMargin ? price : withoutInternalPrice(price),
+      lines: canSeeMargin ? lines : [],
       issues: toIssueViews(evaluation),
       priceBookHash: hash,
       overrideVersion: overrides.version,
@@ -573,7 +599,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
             settings.version,
             evaluation.engineVersion,
             price.contractCents,
-            price.totalCostCents,
+            // The stored evaluation always carries the full price — the filter is applied
+            // to the response, never to what was written for audit.
+            price.totalCostCents ?? 0,
             price.totalMassKg,
             mockedLines,
             body.idempotencyKey,

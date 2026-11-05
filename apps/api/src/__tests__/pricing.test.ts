@@ -621,4 +621,41 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
       payload: { bomProfileId: 'default' },
     });
   });
+
+  /**
+   * The internal breakdown is a capability, not a screen preference.
+   *
+   * `cost:read` lets an estimator quote from the sell price; the material cost, the
+   * margin and the kit price belong to `cost:margin`. Hiding the rows in the UI while
+   * the API still returned them would be a courtesy — this asserts the server removes
+   * them, and that the sell side survives.
+   */
+  it('hides the internal cost breakdown from an estimator', async () => {
+    await seedCompany(ctx.db, {
+      name: 'Estimator Sheds',
+      slug: 'estimator-test',
+      email: 'est@estimator.test',
+      password: 'a-long-enough-password',
+      role: 'estimator',
+    });
+    const estimatorCookie = await signIn(ctx.app, 'est@estimator.test', 'a-long-enough-password');
+
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie: estimatorCookie },
+      payload: { config: config(), pricing },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const view = response.json().data;
+    expect(view.price.margin).toBeUndefined();
+    expect(view.price.buildingCostCents).toBeUndefined();
+    expect(view.price.totalCostCents).toBeUndefined();
+    expect(view.price.kitCents).toBeUndefined();
+    expect(view.lines).toEqual([]);
+    // The figures an estimator quotes from are still there.
+    expect(view.price.contractCents).toBeGreaterThan(0);
+    expect(view.price.depositCents).toBeGreaterThan(0);
+  });
 });

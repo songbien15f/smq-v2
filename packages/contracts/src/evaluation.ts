@@ -129,13 +129,20 @@ export interface IssueView {
  * a quote looks cheaper than the invoice.
  */
 export interface PriceView {
-  /** Sum of the eleven material groups, excluding miscellaneous. */
-  buildingCostCents: number;
+  /**
+   * Sum of the eleven material groups, excluding miscellaneous.
+   *
+   * Present only for a caller holding `cost:margin`. The desktop showed the internal
+   * breakdown (material cost, margin, kit) to a SuperAdmin only, and an estimator can
+   * call this API directly — hiding the rows in the UI without removing them here would
+   * be a courtesy, not a rule.
+   */
+  buildingCostCents?: number;
   /** Building cost plus misc. This is what the margin is applied to. */
-  totalCostCents: number;
-  margin: number;
+  totalCostCents?: number;
+  margin?: number;
   /** Material cost × margin × (1 + GST). */
-  kitCents: number;
+  kitCents?: number;
   deliveryCents: number;
   engineeringCents: number;
   extraCents: number;

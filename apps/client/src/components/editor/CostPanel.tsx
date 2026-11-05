@@ -474,7 +474,7 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
             {[
               ['Materials, from the building', price.buildingCostCents, 'Every purlin, sheet, fixing and door, counted from the geometry.'],
               ['Total material cost', price.totalCostCents, 'Materials plus the miscellaneous items, such as the wind rating fee.'],
-              ['Margin applied', null, `${price.margin.toFixed(2)}× — this company’s own, or the price book’s.`],
+              ['Margin applied', null, `${(price.margin ?? 0).toFixed(2)}× — this company’s own, or the price book’s.`],
               ['Kit price', price.kitCents, 'Materials at the margin, plus GST.'],
               ['Delivery', price.deliveryCents, null],
               ['Engineering', price.engineeringCents, null],

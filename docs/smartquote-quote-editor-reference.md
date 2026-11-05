@@ -238,8 +238,12 @@ tạo bucket thứ tư). Các dòng được itemise và cộng ra tổng; gõ t
 | `viewer` | quote:read |
 
 `cost:margin` = phần nội bộ (Materials/BOM cost/Margin/Kit/Quote rate/Additions). Desktop
-chỉ cho SuperAdmin thấy; v2 ẩn ở Cost panel cho role thiếu capability.
-**Còn hở:** server vẫn trả `margin`/`buildingCostCents` trong `PriceView`; cần lọc response.
+chỉ cho SuperAdmin thấy.
+
+**Đã enforce ở server:** response `/evaluate` bỏ `buildingCostCents`, `totalCostCents`,
+`margin`, `kitCents` và trả `lines: []` khi caller thiếu `cost:margin`; revision vẫn lưu
+đầy đủ để audit. Test: `pricing.test.ts` → "hides the internal cost breakdown from an
+estimator".
 
 ---
 
