@@ -49,6 +49,27 @@ const settingsPatch = z
     email: z.string().max(200).nullable(),
     logoText: z.string().max(40).nullable(),
     terms: z.array(z.string().max(2000)).max(40),
+    /**
+     * The company's own rate table (cents): four labour rates and the five default job costs.
+     * Additions uses the labour rates to turn hours into money.
+     */
+    rates: z
+      .object({
+        labour: z.object({
+          concreter: z.number().int().min(0).max(1_000_000),
+          electrician: z.number().int().min(0).max(1_000_000),
+          labourer1: z.number().int().min(0).max(1_000_000),
+          labourer2: z.number().int().min(0).max(1_000_000),
+        }),
+        defaultCosts: z.object({
+          council: z.number().int().min(0).max(10_000_000),
+          engineering: z.number().int().min(0).max(10_000_000),
+          rubbish: z.number().int().min(0).max(10_000_000),
+          delivery: z.number().int().min(0).max(10_000_000),
+          concrete: z.number().int().min(0).max(10_000_000),
+        }),
+      })
+      .nullable(),
   })
   .partial()
   .strict();

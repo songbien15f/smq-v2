@@ -304,8 +304,8 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 ## 12. Việc còn lại
 
 1. **Punchings Details** — **bị chặn bởi model**, xem ghi chú dưới.
-3. **Nhóm 4**: Settings rates (labour / equipment / demolition / distributor), min fee to
-   distributor & carrier, backup/restore, salesmen.
+3. **Nhóm 4**: UI cho rate table (server đã lưu — xem §12.2), nối rate vào Additions,
+   min fee to distributor & carrier, backup/restore, salesmen.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
    `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
 5. Field hiển thị: outrigger height/direction, SKU picker cho cửa.
@@ -359,6 +359,23 @@ Tên cột lấy từ `countersFor` (tập đóng), không từ request.
 - Mỗi loại có `<h1>` riêng.
 - `kind` nằm trong **cache key PDF**, để bản supplier không bị phục vụ PDF của bản khách.
 - `kind` lạ → **422**, không âm thầm rơi về bản khách.
+
+## 12.2 Rate table của công ty
+
+`company_settings.settings_json.rates` (cents):
+
+```
+labour:        concreter · electrician · labourer1 · labourer2
+defaultCosts:  council · engineering · rubbish · delivery · concrete
+```
+
+- Đường ghi `writeSettings` serialize **tường minh** từng field — thêm field mới phải thêm ở
+  **cả ba chỗ**: `settingsPatch`, `CompanySettings` + `normaliseSettings`, và object
+  `JSON.stringify` trong write. Thiếu chỗ thứ ba thì PATCH nhận rồi **mất im lặng**.
+- `readRates` coi bảng đọc được **một phần** là `null`: 9 rate mà chỉ 7 đọc được thì giá sẽ
+  đúng cho vài giờ và sai cho vài giờ, không ai phát hiện.
+- Test: *"stores the company rate table"* (PATCH → GET round-trip).
+- **Chưa có UI** và chưa nối vào Additions.
 
 **Plan drawing** — `GET /quotes/:id/revisions/:rev/plan` trả một trang **A4 landscape** chỉ có
 hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".

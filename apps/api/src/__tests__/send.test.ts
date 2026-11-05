@@ -260,6 +260,24 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
     await ctx.db.run('DELETE FROM company_settings WHERE version = 99');
   });
 
+  it('stores the company rate table', async () => {
+    const rates = {
+      labour: { concreter: 6500, electrician: 9000, labourer1: 4500, labourer2: 4200 },
+      defaultCosts: { council: 20000, engineering: 15000, rubbish: 8000, delivery: 25000, concrete: 12000 },
+    };
+
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/settings',
+      headers: { cookie },
+      payload: { rates },
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const read = await ctx.app.inject({ method: 'GET', url: '/api/v1/settings', headers: { cookie } });
+    expect(read.json().data.rates).toEqual(rates);
+  });
+
   it('refuses a margin outside the allowed range', async () => {
     const before = await ctx.app.inject({ method: 'GET', url: '/api/v1/settings', headers: { cookie } });
     const response = await ctx.app.inject({

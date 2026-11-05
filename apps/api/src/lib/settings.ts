@@ -16,12 +16,25 @@
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 
+/** The company's own rates, from the desktop's Administration screen. Cents. */
+export interface CompanyRates {
+  labour: { concreter: number; electrician: number; labourer1: number; labourer2: number };
+  defaultCosts: { council: number; engineering: number; rubbish: number; delivery: number; concrete: number };
+}
+
 /** Everything a company may configure. */
 export interface CompanySettings {
   /** The settings row's version; a revision records the version it was priced under. */
   version: number;
   name: string;
   abn: string | null;
+  /**
+   * The company's own rate table.
+   *
+   * `null` until written. Additions uses the labour rates to turn hours into money; with no
+   * table the operator types every line by hand.
+   */
+  rates: CompanyRates | null;
   /** The company's own margin, overriding the book's table for **every** building family. */
   margin: number | null;
   /** Deposit and progress as percentages. GST is not here: it is 10% by law. */
@@ -125,6 +138,7 @@ export function normaliseSettings(
     version,
     name: text('name', fallbackName),
     abn: orNull('abn'),
+    rates: readRates(raw),
     // A margin outside 1–10 is a typo, not a strategy. Refused by becoming the default rather
     // than by throwing: a company with a bad stored value should still be able to open a quote.
     margin: margin !== null && margin >= 1 && margin <= 10 ? margin : null,
@@ -139,6 +153,45 @@ export function normaliseSettings(
     logoText,
     terms,
   };
+}
+
+/**
+ * Read the stored rate table, or `null`.
+ *
+ * A partially readable table is treated as absent rather than half-used: nine rates where seven
+ * loaded would price some hours and not others, and nobody would notice which.
+ */
+function readRates(input: Record<string, unknown> | null): CompanyRates | null {
+  if (input === null) return null;
+  const raw = input.rates;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const table = raw as { labour?: unknown; defaultCosts?: unknown };
+  const labour = (table.labour ?? {}) as Record<string, unknown>;
+  const costs = (table.defaultCosts ?? {}) as Record<string, unknown>;
+  const cents = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+
+  const read = {
+    labour: {
+      concreter: cents(labour.concreter),
+      electrician: cents(labour.electrician),
+      labourer1: cents(labour.labourer1),
+      labourer2: cents(labour.labourer2),
+    },
+    defaultCosts: {
+      council: cents(costs.council),
+      engineering: cents(costs.engineering),
+      rubbish: cents(costs.rubbish),
+      delivery: cents(costs.delivery),
+      concrete: cents(costs.concrete),
+    },
+  };
+
+  const values = [...Object.values(read.labour), ...Object.values(read.defaultCosts)];
+  if (values.some((value) => value === null)) return null;
+
+  return read as CompanyRates;
 }
 
 /** A percentage inside 0–100, or the fallback when the stored value is nonsense. */
@@ -206,6 +259,7 @@ export async function saveSettings(
         JSON.stringify({
           name: next.name,
           abn: next.abn,
+          rates: next.rates,
           margin: next.margin,
           depositPct: next.depositPct,
           progressPct: next.progressPct,
