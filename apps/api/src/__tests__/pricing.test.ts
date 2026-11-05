@@ -724,6 +724,44 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(Number(revisions?.n)).toBe(1);
   });
 
+  it('exports the frozen BOM as CSV, with a header and a total', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-bom-csv',
+        expectedRev: 0,
+        customer: { firstName: 'Csv', lastName: 'Export', email: 'csv@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const csv = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/bom?format=csv`,
+      headers: { cookie },
+    });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.headers['content-type']).toMatch(/text\/csv/);
+
+    const lines = csv.body.split('\r\n');
+    expect(lines[0]).toBe('Group,Code,Description,Unit,Quantity,Unit cost,Mass (kg)');
+    expect(lines.at(-1)).toMatch(/,Total,/);
+    // A real BOM has material lines between the header and the total.
+    expect(lines.length).toBeGreaterThan(3);
+  });
+
   it('copies a quote into an independent quote with its own number', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',
