@@ -42,6 +42,14 @@ export interface StoredEvaluation {
   status: string;
   priceJson: string;
   linesJson: string;
+  /**
+   * The frame cut list, as JSON.
+   *
+   * Stored with the preview rather than recomputed at save: the draft on screen was
+   * priced from this list, and a save that rebuilt it could pick different sections
+   * if the factory profile changed mid-edit.
+   */
+  membersJson: string;
   issuesJson: string;
   expiresAt: string;
   consumedAt: string | null;
@@ -79,6 +87,8 @@ export async function storeEvaluation(
     price: unknown;
     /** The BOM lines, flattened: the contract names them `lines`, not `groups`. */
     lines: unknown;
+    /** The frame cut list that goes with those lines. */
+    members: unknown;
     issues: unknown;
   },
 ): Promise<{ id: string; expiresAt: string }> {
@@ -95,8 +105,9 @@ export async function storeEvaluation(
   await db.run(
     `INSERT INTO evaluations (
        id, tenant_id, config_hash, result_hash, price_book_hash, override_version, settings_version,
-       engine_version, status, price_json, lines_json, issues_json, created_by, created_at, expires_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       engine_version, status, price_json, lines_json, members_json, issues_json, created_by, created_at,
+       expires_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.tenantId,
@@ -109,6 +120,7 @@ export async function storeEvaluation(
       input.status,
       JSON.stringify(input.price),
       JSON.stringify(input.lines),
+      JSON.stringify(input.members ?? []),
       JSON.stringify(input.issues),
       input.userId,
       now(),
@@ -145,6 +157,7 @@ export async function loadEvaluationForSave(
     status: string;
     price_json: string;
     lines_json: string;
+    members_json: string;
     issues_json: string;
     expires_at: string;
     consumed_at: string | null;
@@ -152,7 +165,8 @@ export async function loadEvaluationForSave(
     tenant_id: string;
   }>(
     `SELECT id, config_hash, result_hash, price_book_hash, override_version, engine_version,
-            status, price_json, lines_json, issues_json, expires_at, consumed_at, created_by, tenant_id
+            status, price_json, lines_json, members_json, issues_json, expires_at, consumed_at,
+            created_by, tenant_id
        FROM evaluations WHERE id = ?`,
     [input.evaluationId],
   );
@@ -194,6 +208,7 @@ export async function loadEvaluationForSave(
     status: row.status,
     priceJson: row.price_json,
     linesJson: row.lines_json,
+    membersJson: row.members_json,
     issuesJson: row.issues_json,
     expiresAt: row.expires_at,
     consumedAt: row.consumed_at,

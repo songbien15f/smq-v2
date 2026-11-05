@@ -26,7 +26,7 @@
 import type { ShedConfig } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { optimise } from './optimise';
-import { frameLines } from './groups/frame';
+import { frameLines, frameMemberSchedule, type FrameMember } from './groups/frame';
 import { purlinLines } from './groups/purlin';
 import { flashingLines, gutterLines } from './groups/gutter';
 import { sheetingGroup, isOpenStructure } from './groups/sheeting';
@@ -115,6 +115,15 @@ export interface BomWithEvidence {
   issues: EstimateIssue[];
   materials: MaterialEvidence[];
   status: EstimateStatus;
+  /**
+   * The frame cut list the workshop builds from.
+   *
+   * Carried beside the BOM rather than derived from it: a priced frame line is
+   * metres of steel, and metres cannot be turned back into "six columns 6 188 mm
+   * long". It is computed from the same optimised frame and the same rules, so the
+   * two describe one building.
+   */
+  members: FrameMember[];
 }
 
 /**
@@ -398,5 +407,6 @@ export function buildBomWithEvidence(
     issues,
     materials,
     status: classifyEstimate(issues),
+    members: frameMemberSchedule(shed, frame, lookup, rules),
   };
 }

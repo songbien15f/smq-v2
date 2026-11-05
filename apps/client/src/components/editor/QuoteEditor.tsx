@@ -39,6 +39,7 @@ import { QuoteDetailsPanel } from './QuoteDetailsPanel';
 import { PlanPanel } from './PlanPanel';
 import { PlanView } from './PlanView';
 import { CostPanel } from './CostPanel';
+import { SteelworkPanel } from './SteelworkPanel';
 import { SiteCheckPanel } from './SiteCheckPanel';
 import { PricePanel } from './PricePanel';
 import { ErrorSummary, focusErrorSummary } from './ErrorSummary';
@@ -508,13 +509,16 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           {step === 'options' && <PlanPanel />}
 
           {step === 'cost' && (
-            <CostPanel
-              price={evaluation === null ? null : evaluation.price}
-              stale={pricedAt === 'stale'}
-              calculating={calculating}
-              onRecalculate={() => void calculate()}
-              canSeeMargin={session.capabilities.includes('cost:margin')}
-            />
+            <>
+              <CostPanel
+                price={evaluation === null ? null : evaluation.price}
+                stale={pricedAt === 'stale'}
+                calculating={calculating}
+                onRecalculate={() => void calculate()}
+                canSeeMargin={session.capabilities.includes('cost:margin')}
+              />
+              <SteelworkPanel members={evaluation === null ? [] : evaluation.members} />
+            </>
           )}
 
           {/* -------------------------------------------------------- the gate */}

@@ -336,6 +336,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       status: evaluation.status,
       price,
       lines,
+      members: evaluation.members,
       issues: toIssueViews(evaluation),
     });
 
@@ -348,6 +349,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
      * rather than only in the screen is what makes the capability a rule.
      */
     const canSeeMargin = session.role !== null && companyCan(session.role, 'cost:margin');
+    // The frame design is a workshop fact, not a cost: `cost:read` gates it, the same capability
+    // the saved schedule route asks for.
+    const canSeeDesign = session.role !== null && companyCan(session.role, 'cost:read');
     const view: EvaluationView = {
       evaluationId: stored.id,
       configHash,
@@ -355,6 +359,19 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       status: evaluation.status,
       price: canSeeMargin ? price : withoutInternalPrice(price),
       lines: canSeeMargin ? lines : [],
+      // The section sizes are the supplier's engineering, so they travel with the cost view
+      // rather than the sell view: an estimator quoting from the sell price does not need the
+      // factory's framing to answer the customer.
+      members: canSeeDesign
+        ? evaluation.members.map((member) => ({
+            item: member.item,
+            label: member.label,
+            section: member.section,
+            assumed: member.assumed,
+            lengthMm: member.lengthMm,
+            quantity: member.quantity,
+          }))
+        : [],
       issues: toIssueViews(evaluation),
       priceBookHash: hash,
       overrideVersion: overrides.version,
@@ -564,11 +581,11 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
         await tx.run(
           `INSERT INTO quote_revisions (
              id, quote_id, tenant_id, revision, name, description,
-             config_json, bom_json, price_json, issues_json, customer_json, company_json, provenance_json,
-             config_hash, result_hash, bom_hash, price_book_hash, override_version, settings_version,
-             engine_version, contract_cents, total_cost_cents, total_mass_kg, mocked_lines,
-             idempotency_key, created_by, created_by_email, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             config_json, bom_json, members_json, price_json, issues_json, customer_json, company_json,
+             provenance_json, config_hash, result_hash, bom_hash, price_book_hash, override_version,
+             settings_version, engine_version, contract_cents, total_cost_cents, total_mass_kg,
+             mocked_lines, idempotency_key, created_by, created_by_email, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             revisionId,
             quoteId,
@@ -579,6 +596,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
             // The frozen inputs and outputs. A price-book update next month must not move these.
             JSON.stringify(normaliseShedConfig(body.config)),
             evaluation.linesJson,
+            // The cut list, frozen beside the BOM it prices. A workshop builds from it, so it must
+            // be the steel this revision was quoted on, not what a later profile would choose.
+            evaluation.membersJson,
             evaluation.priceJson,
             evaluation.issuesJson,
             JSON.stringify(body.customer),

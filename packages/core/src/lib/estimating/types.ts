@@ -23,6 +23,7 @@
 
 import type { ShedConfig } from '@/domain/types';
 import type { BomResult } from '@/lib/bom/types';
+import type { FrameMember } from '@/lib/bom/groups/frame';
 import type { PriceLookup } from '@/lib/pricing/types';
 import type { QuotePrice } from '@/lib/pricing/price';
 import type { BomPolicy } from '@/lib/bom/rules';
@@ -121,4 +122,13 @@ export interface Evaluation {
   materials: MaterialEvidence[];
   status: EstimateStatus;
   provenance: Provenance;
+  /**
+   * The frame cut list, frozen with the revision.
+   *
+   * The desktop prints it as the Steelwork Schedule. It travels with the
+   * evaluation rather than being recomputed on demand because the factory profile
+   * that chose the sections can change, and a cut list that followed the new
+   * profile would disagree with the order it sits beside.
+   */
+  members: FrameMember[];
 }

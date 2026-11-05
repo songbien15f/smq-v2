@@ -55,7 +55,49 @@ function toBomResult(linesJson: string): BomResult {
   };
 }
 
+/**
+ * The steelwork schedule for a revision.
+ *
+ * This is the desktop's "Steelwork Schedule / Member Size" report: one row per member with the
+ * section the design chose, the cut length and the count. It is a workshop document, so it sits
+ * behind `cost:read` with the BOM — the section sizes are the factory's design, not something a
+ * reader of the customer quote is owed.
+ *
+ * It is read from the revision's frozen `members_json`, never recomputed: the same reason the BOM
+ * is frozen. A newer price book or factory profile must not change the steel a sent quote was
+ * built from.
+ */
+function registerMembers(app: FastifyInstance, db: Db): void {
+  app.get<{ Params: { quoteId: string; rev: string } }>(
+    '/quotes/:quoteId/revisions/:rev/members',
+    async (request, reply) => {
+      const session = requireCompanyCapability(request, reply, 'cost:read');
+      if (session === null) return;
+
+      const revisionNumber = Number(request.params.rev);
+      if (!Number.isInteger(revisionNumber) || revisionNumber < 1) {
+        sendFail(reply, 'validation_failed', 'The revision number must be a positive whole number.');
+        return;
+      }
+
+      const row = await db.get<{ members_json: string }>(
+        `SELECT members_json FROM quote_revisions
+          WHERE quote_id = ? AND tenant_id = ? AND revision = ?`,
+        [request.params.quoteId, session.tenantId, revisionNumber],
+      );
+      if (row === null) {
+        sendFail(reply, 'not_found', 'Not found.');
+        return;
+      }
+
+      return sendOk(reply, { members: JSON.parse(row.members_json || '[]') as unknown[] });
+    },
+  );
+}
+
 export function registerBomExport(app: FastifyInstance, db: Db): void {
+  registerMembers(app, db);
+
   app.get<{ Params: { quoteId: string; rev: string } }>(
     '/quotes/:quoteId/revisions/:rev/bom',
     async (request, reply) => {

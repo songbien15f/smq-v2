@@ -57,6 +57,24 @@ export type StructureType =
   | 'aircraft_hangar'
   | 'cyclonic';
 
+/**
+ * True for the structures whose roof falls to both long walls.
+ *
+ * A gable is a gable whether or not its bays are walled, and the price book says so: its
+ * `structure_sub_code` names `CROSSOVER GABLE` for `gable`, `tophot_64`, `tophot_96`, `zed_shed`
+ * (`GB_Z150` = *Crossover Gable, Series 6*), `aircraft_hangar` (`GB_AH`) and `cyclonic`
+ * (`GB_Z100`), and `CROSSOVER GABLE - CARPORT SERIES` for `gable_carport`. Only the two skillions
+ * are `CROSSOVER SKILLION`.
+ *
+ * So a principal rafter spans **half** the building in every family except a skillion, where the
+ * roof falls the **whole width to one side** and the rafter is `width / cos(pitch)` — which is what
+ * the desktop computes (`SkillionBuildingQuote.cs:242` divides the full width). Asking this question
+ * instead of testing `structure === 'gable'` is what stops a skillion ordering half a rafter.
+ */
+export function fallsToBothSides(structure: StructureType): boolean {
+  return structure !== 'skillion' && structure !== 'skillion_carport';
+}
+
 /** A door or window cut into one wall. */
 export interface Opening {
   id: string;

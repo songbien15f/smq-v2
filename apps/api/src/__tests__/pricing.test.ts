@@ -891,6 +891,55 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(lines.length).toBeGreaterThan(3);
   });
 
+  it('freezes the steelwork schedule with the revision', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-members',
+        expectedRev: 0,
+        customer: { firstName: 'Steel', lastName: 'Schedule', email: 'ss@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+
+    const members = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/members`,
+      headers: { cookie },
+    });
+    expect(members.statusCode).toBe(200);
+    const rows = members.json().data.members as {
+      item: string;
+      section: string;
+      lengthMm: number;
+      quantity: number;
+    }[];
+
+    // A workshop cannot build from an empty sheet, and every row has to be a real section with a
+    // positive length and count.
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.section.length).toBeGreaterThan(0);
+      expect(row.lengthMm).toBeGreaterThan(0);
+      expect(row.quantity).toBeGreaterThan(0);
+    }
+    const items = rows.map((row) => row.item);
+    expect(items).toContain('main_column');
+    expect(items).toContain('main_rafter');
+  });
+
   it('copies a quote into an independent quote with its own number', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',

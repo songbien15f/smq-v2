@@ -75,5 +75,6 @@ export function evaluateQuote(
     materials: built.materials,
     status: classifyEstimate(built.issues),
     provenance: book.provenance,
+    members: built.members,
   };
 }

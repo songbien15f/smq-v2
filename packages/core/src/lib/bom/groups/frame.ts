@@ -17,6 +17,7 @@
  */
 
 import type { Opening, ShedConfig, ShedOption, WallSide } from '@/domain/types';
+import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
@@ -136,7 +137,11 @@ function columnLength(shed: ShedConfig, embedment: number | null, rules: BomRule
  */
 function rafterLength(shed: ShedConfig, rules: BomRules): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
-  const slopeRun = shed.span / 2 / Math.cos(pitch);
+  // A gable sheds to both long walls, so its rafter runs over half the width; a
+  // skillion falls the whole way to one side and its rafter is the full width. The
+  // formula used to halve both, which ordered half a rafter on every skillion.
+  const run = fallsToBothSides(shed.structureType) ? shed.span / 2 : shed.span;
+  const slopeRun = run / Math.cos(pitch);
   const edge = KNEE_EDGE.find((row) => shed.roofPitchDeg <= row.maxPitch) ?? KNEE_EDGE[0];
   return Math.round(slopeRun + rules.rafterClearance + edge.apex + edge.haunch);
 }
@@ -255,6 +260,103 @@ function scheduleFor(
   const structureCode = lookup.structureId(subCodeFor(shed.structureType));
   if (structureCode === undefined) return undefined;
   return lookup.frameSchedule(frameScheduleQuery(shed, frame.bayStandard, structureCode));
+}
+
+/**
+ * One run of steel in the building, as the workshop reads it off a drawing.
+ *
+ * The desktop's member-size screen and its Punchings report both work from this
+ * list: a member, the section the design chose for it, its cut length, and how
+ * many the building has. It is the same information the frame group prices — the
+ * quantity here × length / 1000 is exactly the line's metres — so the cut list and
+ * the order cannot describe different steel.
+ */
+export interface FrameMember {
+  /** Stable name for the UI and for a saved snapshot. */
+  item: 'main_column' | 'end_column' | 'main_rafter' | 'end_rafter' | 'knee_brace';
+  /** What the desktop calls it. */
+  label: string;
+  /** The section from the book's structure table, or the fallback size. */
+  section: string;
+  /** True when the book has no structure table and every member takes one size. */
+  assumed: boolean;
+  /** Cut length, mm. */
+  lengthMm: number;
+  /** How many the building has. */
+  quantity: number;
+}
+
+/**
+ * The cut list for this building.
+ *
+ * Every number comes from the function that prices the same member, so a quote
+ * whose order says six main columns cannot have a cut list that says eight. It
+ * reads the book through the same `scheduleFor` as `frameLines`, which is what
+ * makes the two agree on the section as well as the count.
+ */
+export function frameMemberSchedule(
+  shed: ShedConfig,
+  frame: OptimisedFrame,
+  lookup: PriceLookup,
+  rules: BomRules = DEFAULT_BOM_RULES,
+): FrameMember[] {
+  const main = mainMemberCount(shed);
+  const end = endMemberCount(shed);
+  const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
+  const assumed = schedule === undefined;
+  const column = columnLength(shed, schedule?.embedment ?? null, rules);
+  const rafter = rafterLength(shed, rules);
+
+  const members: FrameMember[] = [
+    {
+      item: 'main_column',
+      label: MEMBER.mainColumn,
+      section: schedule?.mainColumn ?? FALLBACK_SIZE,
+      assumed,
+      lengthMm: column,
+      quantity: main,
+    },
+    {
+      item: 'main_rafter',
+      label: MEMBER.mainRafter,
+      section: schedule?.mainRafter ?? FALLBACK_SIZE,
+      assumed,
+      lengthMm: rafter,
+      quantity: main,
+    },
+    {
+      item: 'end_column',
+      label: MEMBER.endWallColumn,
+      section: schedule?.endWallColumn ?? FALLBACK_SIZE,
+      assumed,
+      lengthMm: column,
+      quantity: end,
+    },
+    {
+      item: 'end_rafter',
+      label: MEMBER.endWallRafter,
+      section: schedule?.endWallRafter ?? FALLBACK_SIZE,
+      assumed,
+      lengthMm: rafter,
+      quantity: end,
+    },
+  ];
+
+  // A design with no brace has none to cut; one with no schedule at all is assumed
+  // to have them, the same assumption the priced lines make.
+  const braceSection = assumed ? FALLBACK_SIZE : schedule.kneeBrace;
+  if (braceSection !== null) {
+    members.push({
+      item: 'knee_brace',
+      label: MEMBER.kneeBrace,
+      section: braceSection,
+      assumed,
+      lengthMm: rules.kneeBraceLength,
+      quantity: Math.max(0, main * 2),
+    });
+  }
+
+  return members.filter((member) => member.quantity > 0);
 }
 
 /**

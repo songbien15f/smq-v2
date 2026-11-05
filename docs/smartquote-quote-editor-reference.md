@@ -303,7 +303,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Punchings Details** — **bị chặn bởi model**, xem ghi chú dưới.
+1. **Punchings Details** — còn thiếu **bảng offset lỗ**; model member đã có (§12.3).
 3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
 4. **R12 skylight snap — bị chặn bởi model.** Desktop snap skylight theo **lưới tấm mái theo
    phương span** (`GetSheetingPos() * RoofSheetingSize`, trục từ eave tới ridge). v2 neo skylight
@@ -341,9 +341,11 @@ toàn giả (không kiểm soát được lịch, nơi lưu, hay khôi phục).
 khung** (`ItemName` như `MAIN_RAFTER_R1`, `INFILL_COLUMN`, `ROOLER_DOOR_COLUMN/HEADER`) cùng
 `FrameSpec.Depth`, `BasicData.DoorMullion/DoorHeader`, và offset lỗ từ `KneeEdge`/`Haunch`/`Apex`.
 
-v2 **không có model tiết diện thanh** (member size), nên không có `itemsFrame` để đọc. Đây
-cùng một lỗ hổng với R3/R5 (cột infill) và tính năng **Steelwork Schedule / Member Size**.
-Làm report này trước khi có model member sẽ là bịa số lỗ — không làm.
+**Model member size nay ĐÃ CÓ** (§12.3): `frameMemberSchedule()` sinh `itemsFrame` với tiết diện,
+chiều dài cắt và số lượng, và nó được đóng băng theo revision. Cái **vẫn còn thiếu là offset lỗ**:
+`KneeEdge`/`Haunch`/`Apex` trong v2 mới dùng để **cộng dài rafter**, chưa có bảng vị trí lỗ đục.
+Vì vậy **Steelwork Schedule đã xong**, còn **Punchings Details vẫn bị chặn ở phần offset lỗ** —
+đưa ra xưởng một danh sách lỗ tự nghĩ còn tệ hơn không có báo cáo.
 
 ### Đã xong (ghi để khỏi làm lại)
 
@@ -420,6 +422,83 @@ Không giá, không liên hệ khách.
 
 ---
 
+## 12.3 Steelwork schedule — model member size
+
+**Đây là tính năng desktop "Steelwork Schedule / Member Size"**, tương đương `itemsFrame` mà
+`PunchingDetailForm` đọc.
+
+### Hàm duy nhất sinh ra nó
+
+`frameMemberSchedule(shed, frame, lookup, rules)` trong
+`packages/core/src/lib/bom/groups/frame.ts`. Mỗi dòng:
+
+| Trường | Nguồn |
+|---|---|
+| `item` | `main_column` · `end_column` · `main_rafter` · `end_rafter` · `knee_brace` |
+| `label` | Tên desktop dùng (`Main column`, `End wall rafter`…) |
+| `section` | `FrameSchedule` của sách giá, hoặc `100 x 100 x 2.0 SHS` khi sách không có bảng |
+| `assumed` | `true` khi thiếu bảng tiết diện — UI ghi rõ, không giả vờ là thiết kế |
+| `lengthMm` | Cột: `height + embedment`. Rafter: `run / cos(pitch) + rafterClearance + apex + haunch` |
+| `quantity` | `mainMemberCount()` / `endMemberCount()` — đúng hàm `frameLines` dùng để định giá |
+
+**Vì sao dùng chung hàm đếm:** một báo giá nói 6 cột chính mà bảng cắt nói 8 thì xưởng cắt theo
+bảng và hoá đơn theo báo giá. Cả hai đọc `mainMemberCount()`/`endMemberCount()`, và cả hai đọc
+`FrameSchedule` qua `scheduleFor()`.
+
+### Một bug của v2 đã sửa: rafter của skillion
+
+`rafterLength()` trước đây luôn chia đôi span. Nhưng **chỉ skillion mới đổ toàn bộ chiều rộng về
+một phía**; mọi họ khác đổ về hai tường dài. Nay hỏi `fallsToBothSides(structureType)` trong
+`domain/types.ts`.
+
+Căn cứ **từ sách giá**, không phải phỏng đoán — cột `structure_sub_code` của bảng `structure_type`:
+
+| Structure | Sub-code | Sách giá gọi là |
+|---|---|---|
+| `gable`, `tophot_64` | `GB_TH64` | CROSSOVER GABLE – SERIES 4 |
+| `tophot_96` | `GB_TH96` | CROSSOVER GABLE – SERIES 5 |
+| `zed_shed` | `GB_Z150` | **CROSSOVER GABLE** – SERIES 6 |
+| `aircraft_hangar` | `GB_AH` | CROSSOVER AIRCRAFT HANGAR – SERIES 6 |
+| `cyclonic` | `GB_Z100` | CROSSOVER GABLE – CYCLONIC SERIES 4 |
+| `gable_carport` | `GC` | CROSSOVER GABLE – CARPORT SERIES |
+| `skillion` | `SB_TH64` | CROSSOVER **SKILLION** – SERIES 4 |
+| `skillion_carport` | `SC` | CROSSOVER **SKILLION** – CARPORT SERIES |
+
+Và desktop cũng vậy: `SkillionBuildingQuote.cs:242` chia **nguyên chiều rộng** cho `cos(pitch)`,
+còn `TopHatQuote.cs:212` dùng `width / 2`.
+
+> **Lần đầu tôi viết hàm này đã xếp `zed_shed` vào nhóm skillion — sai.** Sách giá gọi nó là
+> crossover gable. Nếu giữ nguyên, một rafter 11 m sẽ thành 22 m: không có thép dài như vậy, và
+> không ai cắt được. Test `keeps a zed shed on half the span` khoá lại điều này.
+
+**`ENGINE_VERSION` tăng lên `2`** vì công thức đổi: revision cũ đánh dấu engine 1 và giữ nguyên số
+của nó; revision mới dùng engine 2. Mọi revision skillion do engine 1 đã đặt thiếu khoảng nửa rafter.
+
+### Đóng băng theo revision
+
+- `quote_revisions.members_json` và `evaluations.members_json` (migration `012_frame_members`).
+- Trigger append-only của `010` được **tạo lại** trong `012` để `members_json` cũng nằm trong danh
+  sách cột bị khoá. Danh sách cột trong trigger là **liệt kê tay** — thêm cột mà không sửa trigger
+  thì cột mới **không được bảo vệ**.
+- Lý do phải đóng băng: `FrameSchedule` đến từ sách giá + factory profile. Đổi sách hay đổi profile
+  tháng sau mà bảng cắt tự tính lại thì nó sẽ **lệch với hoá đơn đã gửi**.
+
+### API và UI
+
+| Chỗ | Nội dung |
+|---|---|
+| `POST /evaluate` | trả `members: FrameMemberView[]` — rỗng nếu role không có `cost:read` |
+| `GET /quotes/:id/revisions/:rev/members` | bảng cắt đã đóng băng; gate `cost:read` |
+| `SteelworkPanel` | Step 3 (Cost): Member · Section · Length · Qty, ghi `(assumed)` khi cần |
+
+**Gate `cost:read`, không phải `cost:margin`:** tiết diện là thiết kế của nhà máy, không phải giá.
+Người xem báo giá không cần nó; người đặt thép thì cần.
+
+### Cái nó KHÔNG làm
+
+Không có **vị trí lỗ đục**. `KneeEdge`/`Haunch`/`Apex` chỉ được cộng vào chiều dài rafter. Muốn
+Punchings Details thì phải import bảng offset lỗ từ desktop trước.
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -458,8 +537,8 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 787 (domain, BOM, giá, tài liệu, catalogue, placement, vqu) |
-| `@sq/api` | 20 trong `pricing.test.ts` + toàn bộ suite API (auth, quote, evaluate, catalogue, site-check, send modes) |
+| `@sq/core` | 804 (domain, BOM, giá, tài liệu, catalogue, placement, vqu, steelwork schedule) |
+| `@sq/api` | 178 (auth, quote, evaluate, catalogue, site-check, send modes, members, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

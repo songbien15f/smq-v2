@@ -170,6 +170,17 @@ export interface PriceView {
   };
 }
 
+/** One row of the steelwork schedule: a member, its section, its cut length and its count. */
+export interface FrameMemberView {
+  item: 'main_column' | 'end_column' | 'main_rafter' | 'end_rafter' | 'knee_brace';
+  label: string;
+  section: string;
+  /** True when the book has no structure table and every member takes one assumed section. */
+  assumed: boolean;
+  lengthMm: number;
+  quantity: number;
+}
+
 /** The answer to a preview request. */
 export interface EvaluationView {
   evaluationId: string;
@@ -186,6 +197,14 @@ export interface EvaluationView {
   status: 'blocked' | 'indicative' | 'priced';
   price: PriceView;
   lines: BomLineView[];
+  /**
+   * The frame cut list, when the caller may see the factory's design.
+   *
+   * Empty for a role without `cost:read`: the section sizes are the supplier's engineering, and a
+   * viewer reads the quote, not how it is framed. The saved revision keeps the full list either
+   * way, so the workshop can still build what was sold.
+   */
+  members: FrameMemberView[];
   issues: IssueView[];
   /** Content hash of the price book used. A republish invalidates the preview. */
   priceBookHash: string;
