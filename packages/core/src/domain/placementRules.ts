@@ -192,8 +192,26 @@ export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlaceme
 /** Where a pointer on the plan would put an opening, and whether that works there. */
 export interface OpeningAtPoint {
   wall: WallSide;
+  /**
+   * The opening as the pointer places it — centred on the point, before any rule moves it.
+   *
+   * Carried so the overlay can draw the **ghost** where the pointer is, and the accepted or
+   * suggested position as a second marker. Without it a caller would have to rebuild the
+   * candidate to draw it, and a rebuild is where the picture and the write drift apart.
+   */
+  candidate: Opening;
   outcome: OpeningPlacement;
 }
+
+/**
+ * What an add-mode click needs to know about the opening being placed.
+ *
+ * `swing` and `track` are optional because they do not affect whether the door **fits** —
+ * they describe how it opens — so a caller placing a door from a click should not have to
+ * invent them. They default to `null`, which is what the store's own default opening uses.
+ */
+export type OpeningRequest = Omit<Opening, 'id' | 'wall' | 'align' | 'offset' | 'swing' | 'track'> &
+  Partial<Pick<Opening, 'swing' | 'track'>>;
 
 /**
  * The placement a click at `point` would produce.
@@ -205,12 +223,14 @@ export interface OpeningAtPoint {
  */
 export function openingAtPoint(
   shed: ShedConfig,
-  request: Omit<Opening, 'id' | 'wall' | 'align' | 'offset'>,
+  request: OpeningRequest,
   point: { x: number; y: number },
 ): OpeningAtPoint {
   const wall = nearestWall(shed, point);
   const u = planPointToWallU(shed, wall, point);
   const candidate: Opening = {
+    swing: null,
+    track: null,
     ...request,
     id: 'preview',
     wall,
@@ -218,7 +238,7 @@ export function openingAtPoint(
     // Centre the opening on the pointer, in wall-local millimetres.
     offset: Math.round(u - request.width / 2),
   };
-  return { wall, outcome: placeOpening(candidate, shed) };
+  return { wall, candidate, outcome: placeOpening(candidate, shed) };
 }
 
 /** R7 — a carry beam is not offered above this span. */

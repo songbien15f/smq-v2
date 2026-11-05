@@ -34,9 +34,18 @@ export interface MigrationReport {
   alreadyApplied: string[];
 }
 
-/** sha256 of a file's text, so an edit is detectable. */
+/**
+ * sha256 of a file's text, so an edit is detectable.
+ *
+ * **Line endings are normalised to `\n` first.** Without that, a checkout on Windows — where
+ * `core.autocrlf` turns every LF into CRLF — gives every migration a different checksum from
+ * the one recorded on a machine that checked it out with LF, and `migrate` refuses to start
+ * with "this migration has changed since it was applied" on a file nobody edited. The guard
+ * is there to catch an **edit**, and a line-ending conversion is not one; normalising is what
+ * makes the guard mean what it says on both platforms.
+ */
 function checksumOf(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+  return createHash('sha256').update(text.replace(/\r\n/g, '\n'), 'utf8').digest('hex');
 }
 
 /**

@@ -35,4 +35,28 @@ describe('openingAtPoint', () => {
     expect(openingAtPoint(DEFAULT_SHED, roller, { x: 6000, y: -800 }).wall).toBe('front');
     expect(openingAtPoint(DEFAULT_SHED, roller, { x: 13000, y: 6000 }).wall).toBe('right');
   });
+
+  it('returns the candidate it tested, so the ghost can be drawn where the click was', () => {
+    // The overlay draws the candidate (what the pointer asked for) and the outcome (what
+    // the rules allow) as two positions. Rebuilding the candidate in the renderer would be
+    // a second implementation of "where the pointer means", which is how a ghost and a
+    // write drift apart.
+    const { candidate, outcome } = openingAtPoint(DEFAULT_SHED, roller, { x: 6000, y: 0 });
+    expect(candidate.offset).toBe(4500);
+    expect(candidate.wall).toBe('front');
+    expect(outcome.ok).toBe(true);
+  });
+
+  it('accepts a request without swing or track, which do not decide whether it fits', () => {
+    const { outcome } = openingAtPoint(
+      DEFAULT_SHED,
+      { type: 'pa_door', width: 820, height: 2040, sill: 0 },
+      { x: 6000, y: 0 },
+    );
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.opening.swing).toBeNull();
+      expect(outcome.opening.track).toBeNull();
+    }
+  });
 });

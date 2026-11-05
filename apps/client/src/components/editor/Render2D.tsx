@@ -42,7 +42,9 @@ import {
   moveOptionTo,
   nearestWall,
   openingAtPlanPoint,
+  openingAtPoint,
   optionAtPlanPoint,
+  placementToPlanRect,
   planPointToWallU,
   pointInFootprint,
   resolveOpeningPlacement,
@@ -59,7 +61,7 @@ import {
 import { DEFAULT_OPENING_BY_TYPE } from '@sq/core/domain';
 import type { Opening, OpeningType, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
 import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
-import { PlanCanvas } from './PlanCanvas';
+import { PlanCanvas, type DoorGhost } from './PlanCanvas';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { SelectionPopover } from './SelectionPopover';
 /** Handle exposed to Task 18 through a ref. */
@@ -145,6 +147,16 @@ const ADD_TYPE_PREFIX = 'add:';
 /** The id prefix of an Add-option submenu row; the suffix is the `OptionKind`. */
 const ADD_OPTION_PREFIX = 'add-option:';
 
+/**
+ * The id prefix of a "place on the plan" row; the suffix is the `OpeningType`.
+ *
+ * Separate from `ADD_TYPE_PREFIX` because the two gestures are different: `add:` drops a
+ * door at the point the menu was opened on (one press, no aim), `place:` arms the canvas so
+ * the operator aims. Both are worth keeping — a quick add is right when the exact position
+ * does not matter yet, and aiming is right when it does.
+ */
+const PLACE_TYPE_PREFIX = 'place:';
+
 /** The floating Add button's box, container-relative, and its touch size (px). */
 const ADD_BUTTON_LEFT = 8;
 const ADD_BUTTON_TOP = 8;
@@ -218,6 +230,18 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
   // pixels for placement; `planPoint` is the stage-local plan point (mm) the
   // menu's actions work from, captured when it opened.
   const [menu, setMenu] = useState<MenuState | null>(null);
+  /**
+   * Add mode: the opening type being placed on the plan, or `null`.
+   *
+   * Arming a type turns the canvas into a placement surface — a ghost follows the pointer,
+   * a click places the door exactly where the rules would put it, and Escape leaves without
+   * adding anything. It exists because the desktop lets an operator pick a wall and put a
+   * door on it, and the only way to do that here was to add at the default position and
+   * then drag; that is two gestures and a guess where one press will do.
+   */
+  const [placing, setPlacing] = useState<OpeningType | null>(null);
+  /** The ghost's last known position, updated on pointer move. */
+  const [ghostAt, setGhostAt] = useState<Point | null>(null);
 
   // Mirror the camera in refs so pointer handlers can compute the next camera
   // from the current one without nesting a `setPosition` inside a `setZoom`
@@ -505,6 +529,99 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
   }, []);
 
   /**
+   * Place the armed door at a plan point.
+   *
+   * The pointer only decides **which wall and where along it** — `openingAtPoint`'s job. The
+   * rules that decide whether it lands, and the "GO WITH …" that fixes a near miss, belong to
+   * the store's `addOpening`, which is the same path the form uses. Duplicating them here
+   * would give the canvas a second rulebook that could disagree with the form's.
+   *
+   * Add mode **stays armed** after a placement: two windows on one wall should not need
+   * re-arming between them. Escape, or the Done button, leaves.
+   */
+  const placeAt = useCallback(
+    (planPoint: Point) => {
+      if (placing === null) return;
+      const size = DEFAULT_OPENING_BY_TYPE[placing];
+      const { wall, candidate } = openingAtPoint(
+        config,
+        { type: placing, width: size.width, height: size.height, sill: size.sill },
+        planPoint,
+      );
+      addOpening({
+        type: placing,
+        wall,
+        align: 'custom',
+        offset: candidate.offset ?? 0,
+        width: size.width,
+        height: size.height,
+        sill: size.sill,
+      });
+    },
+    [placing, config, addOpening],
+  );
+
+  /**
+   * The ghost under the pointer, in the state the rules would put it in.
+   *
+   * Derived here rather than drawn from the pointer: the footprint has to show where the
+   * door would **actually land** (possibly moved by a rule), not where the finger is.
+   */
+  const doorGhost = useMemo((): DoorGhost | null => {
+    if (placing === null || ghostAt === null) return null;
+    const size = DEFAULT_OPENING_BY_TYPE[placing];
+    const result = openingAtPoint(
+      config,
+      { type: placing, width: size.width, height: size.height, sill: size.sill },
+      ghostAt,
+    );
+
+    const accepted = result.outcome.ok
+      ? result.outcome.opening
+      : 'proposals' in result.outcome
+        ? result.outcome.proposals[0]?.opening
+        : undefined;
+    // A refusal with no proposal has nothing to draw where: show the raw candidate, so
+    // the operator can see the thing that does not fit rather than nothing at all.
+    const drawn = accepted ?? result.candidate;
+    const state: DoorGhost['state'] = result.outcome.ok
+      ? 'ok'
+      : accepted === undefined
+        ? 'refused'
+        : 'move';
+
+    return {
+      rect: placementToPlanRect(drawn, config),
+      at: ghostAt,
+      state,
+      label:
+        state === 'ok'
+          ? `${placing.replace('_', ' ')} on the ${result.wall} wall`
+          : state === 'move'
+            ? 'Would move here — click to accept'
+            : 'Does not fit here',
+    };
+  }, [placing, ghostAt, config]);
+
+  /**
+   * Leave add mode.
+   *
+   * Escape is the universal "cancel" on a canvas, and a mode with no keyboard exit traps a
+   * keyboard user in it. Bound to the window while armed so it works wherever focus is.
+   */
+  useEffect(() => {
+    if (placing === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPlacing(null);
+        setGhostAt(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [placing]);
+
+  /**
    * A click/tap on the plan: hit-test the pointer against the openings and
    * select the door under it, or the building when the point is inside its
    * footprint, or clear the selection when it is outside (spec §5.1).
@@ -524,6 +641,14 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
   const handleCanvasPointer = useCallback(() => {
     const planPoint = stageRef.current?.getRelativePointerPosition?.();
     if (!planPoint) return;
+
+    // In add mode a click places; it never selects. A ghost under the pointer is
+    // not listening, so this branch is the only thing a click can do.
+    if (placing !== null) {
+      placeAt(planPoint);
+      return;
+    }
+
     // Openings first: a door is a finer target and sits on the wall the user is
     // pointing at, so where a door and an option overlap the door is what was
     // meant (spec §5.4).
@@ -538,7 +663,15 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
       return;
     }
     select(pointInFootprint(geometry, planPoint) ? { kind: 'building' } : { kind: 'none' });
-  }, [geometry, select]);
+  }, [geometry, select, placing, placeAt]);
+
+  /** Track the pointer while a door is being placed, so the ghost follows it. */
+  const handleCanvasMove = useCallback(() => {
+    if (placing === null) return;
+    const planPoint = stageRef.current?.getRelativePointerPosition?.();
+    if (!planPoint) return;
+    setGhostAt(planPoint);
+  }, [placing]);
 
   /**
    * Open the context menu at a client point (the pointer for a right-click, the
@@ -689,6 +822,17 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
   }));
 
   /**
+   * The same four types, but arming add mode rather than dropping a door at the menu's
+   * point. Kept beside `typeRows` so a new opening type appears in both lists without
+   * anybody remembering to add it twice.
+   */
+  const placeTypeRows: ContextMenuItem[] = OPENING_TYPE_OPTIONS.map(({ value, label }) => ({
+    id: `${PLACE_TYPE_PREFIX}${value}`,
+    label: `Place ${label} on the plan`,
+    enabled: true,
+  }));
+
+  /**
    * The eleven option kinds as menu rows. Derived from `OPTION_KIND_OPTIONS`, the
    * same catalogue the place-option buttons use, so the menu can never offer a
    * kind the panel does not, or vice versa.
@@ -715,7 +859,7 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
     menu === null
       ? []
       : menu.kind === 'add'
-        ? [...typeRows, addOptionRow]
+        ? [...placeTypeRows, addOptionRow]
         : menu.kind === 'door'
           ? doorRows
           : menuOption !== null
@@ -731,6 +875,12 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
                     // (`OPENING_TYPE_OPTIONS`), so the menu and the editor cannot
                     // drift apart.
                     submenu: typeRows,
+                  },
+                  {
+                    id: 'place',
+                    label: 'Place on the plan',
+                    enabled: true,
+                    submenu: placeTypeRows,
                   },
                   addOptionRow,
                 ];
@@ -789,6 +939,14 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
       if (id.startsWith(ADD_TYPE_PREFIX)) {
         const type = id.slice(ADD_TYPE_PREFIX.length) as OpeningType;
         addDoorAtMenuPoint(menuPoint, type);
+        return;
+      }
+
+      if (id.startsWith(PLACE_TYPE_PREFIX)) {
+        // Arm add mode instead of adding at the menu's point: the operator chose a type,
+        // so now they choose where, with the ghost showing whether it lands.
+        setPlacing(id.slice(PLACE_TYPE_PREFIX.length) as OpeningType);
+        setGhostAt(null);
         return;
       }
 
@@ -931,6 +1089,7 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onCanvasPointer={handleCanvasPointer}
+        onCanvasMove={handleCanvasMove}
         onContextMenu={handleContextMenu}
         onResetView={resetView}
         onConstrainOpeningDrag={handleConstrainOpeningDrag}
@@ -940,6 +1099,7 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
         optionDrag={optionDrag}
         openingDrag={drag}
         dragGuide={dragGuideOverlay}
+        doorGhost={doorGhost}
         stageRef={stageRef}
       />
       {/* The wrench affordance: shown whenever something is selected but its
@@ -1048,6 +1208,35 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
       >
         Reset view
       </button>
+
+      {/*
+        Add mode's banner. A canvas mode with no visible sign is a canvas that appears to
+        have stopped responding to clicks, so the mode states itself and carries its own
+        exit. It sits at the bottom so it cannot cover the wall under the pointer.
+      */}
+      {placing !== null && (
+        <div
+          role="status"
+          className="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-md border border-teal-700/30 bg-white/95 px-3 py-2 text-xs text-slate-800 shadow-lg"
+        >
+          <span className="font-medium">
+            Click the plan to place a {placing.replace('_', ' ')}.
+          </span>
+          <span className="text-slate-500">
+            The wall nearest the pointer is used, and the same rules as the form apply.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPlacing(null);
+              setGhostAt(null);
+            }}
+            className="ml-auto rounded border border-slate-300 bg-white px-2 py-1 font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Done
+          </button>
+        </div>
+      )}
     </div>
   );
 });

@@ -157,6 +157,30 @@ Dòng `misc_option` không có tên trong book → **không tạo dòng**, phát
 `placeOpening` trả ba dạng: hợp lệ, từ chối (một câu), hoặc đề xuất. Store áp dụng đề xuất
 đầu tiên và ghi notice `GO WITH … — applied.`
 
+### Đặt cửa trực tiếp trên bản vẽ (add mode)
+
+Trước đây chỉ có hai cách thêm cửa: form trong CategoryDock, hoặc menu ngữ cảnh đặt cửa vào
+**điểm mở menu** (một cú bấm, không ngắm được). Nay có thêm **add mode**: menu có 5 dòng
+`Place <loại> on the plan`, chọn một dòng thì canvas chuyển sang chế độ đặt.
+
+| Thành phần | Vai trò |
+|---|---|
+| `openingAtPoint(shed, request, point)` | Hàm **thuần** quyết định: tường gần nhất, tâm cửa ở con trỏ, và chạy `placeOpening`. Trả `{ wall, candidate, outcome }` |
+| `DoorGhost` (PlanCanvas) | Khung nhấp nháy tại **vị trí sẽ đặt thật**, dấu `+` tại **con trỏ**, câu mô tả |
+| Màu ghost | teal = đặt được · amber = luật sẽ dời nó (bấm để chấp nhận) · đỏ = không vừa |
+| Banner dưới canvas | Nói đang ở chế độ đặt; nút **Done**; **Escape** cũng thoát |
+| `placeAt` (Render2D) | Chỉ lấy `wall` + `offset` từ `openingAtPoint` rồi gọi `store.addOpening` |
+
+**Vì sao ghost hiển thị cả `candidate` và `outcome`:** `candidate` là chỗ con trỏ yêu cầu,
+`outcome` là chỗ luật cho phép. Vẽ cả hai là để người dùng thấy khoảng cách giữa hai chỗ đó,
+thay vì thấy cửa "tự nhiên nhảy" sang chỗ khác.
+
+**Vì sao `placeAt` không tự xử lý từ chối:** luật (và câu `GO WITH …`) thuộc `store.addOpening`
+— cùng đường mà form dùng. Copy luật sang canvas sẽ tạo **bộ luật thứ hai** có thể lệch form.
+
+**Add mode giữ nguyên sau mỗi lần đặt** — thêm hai cửa sổ cùng tường không phải bật lại.
+`DoorGhost` nằm trên một `Layer listening={false}`, nên ghost không nuốt cú bấm tiếp theo.
+
 ### Chưa có — vì model chưa có (không đoán)
 
 | Rule | Thiếu gì |
@@ -537,7 +561,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 804 (domain, BOM, giá, tài liệu, catalogue, placement, vqu, steelwork schedule) |
+| `@sq/core` | 807 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork schedule) |
 | `@sq/api` | 178 (auth, quote, evaluate, catalogue, site-check, send modes, members, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
@@ -562,3 +586,20 @@ Scripts:
 **Vẫn còn một race nhỏ:** `tsup` ghi đè entry của contracts; nếu API `tsx watch` restart đúng lúc
 file đang được ghi, nó log `ERR_MODULE_NOT_FOUND … @sq/contracts/dist/index.js` và đứng chờ thay
 đổi. Cách xử: **restart API sau `build:inc`**, hoặc chạy `build:inc` **trước** khi bật dev.
+
+### Migration trên Windows — checksum chuẩn hoá CRLF
+
+`migrate()` băm **nội dung file** để phát hiện sửa đổi. Trên Windows, `core.autocrlf` đổi LF thành
+CRLF khi checkout, nên checksum lệch với cái đã ghi và `migrate` từ chối chạy:
+
+```
+Migration 009_… has changed since it was applied (recorded 2e0edeeb41d1, file 7c274a3d0328).
+```
+
+Không ai sửa file — chỉ là line ending. Đã sửa ở `packages/db/src/migrate.ts`: `checksumOf` đổi
+`\r\n` → `\n` trước khi băm. Guard vẫn bắt được **sửa thật**, và nghĩa của nó giống nhau trên cả
+hai nền tảng.
+
+**Hệ quả cần biết:** migration 010, 011, 012 chưa từng chạy trên Postgres dev trước 2026-11-05 —
+lỗi này đã che chúng. Nếu một route báo `column "…" does not exist`, chạy `pnpm db:migrate` trước
+khi tìm lỗi trong code.

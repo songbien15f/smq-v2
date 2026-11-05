@@ -49,6 +49,19 @@ export const SELECT_COLOR = '#d97706';
 /** Live drag guide line + readout — a teal distinct from the dimension grey and
  * the selection amber, so it reads as transient feedback rather than geometry. */
 export const GUIDE_COLOR = '#0e7490';
+/**
+ * Add-mode ghost, one colour per answer the placement rules can give.
+ *
+ * Green would claim the door is built; these are deliberately a *proposal* palette:
+ * teal for "it lands here", amber for "the rules would move it" (the same amber the
+ * selection uses, because both mean "look at where this is"), and a muted red for a
+ * refusal — distinct enough to read at a glance without looking like an error dialog.
+ */
+export const GHOST_COLOR: Record<'ok' | 'move' | 'refused', string> = {
+  ok: '#0f766e',
+  move: '#b45309',
+  refused: '#b91c1c',
+};
 
 /**
  * The stroke colour of each option role. Roof fixtures share the roof-direction
@@ -91,6 +104,14 @@ export interface PlanCanvasProps {
    * are the parent's job, so this component stays free of domain maths.
    */
   onCanvasPointer?: (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => void;
+  /**
+   * The pointer moving over the stage, reported verbatim.
+   *
+   * Used only by add mode, to keep the ghost under the pointer. It is a separate prop
+   * from `onCanvasPointer` because a move must never place anything — only a click does.
+   * Touch stays on `onTouchMove`, which serve pinch-zoom.
+   */
+  onCanvasMove?: (event: Konva.KonvaEventObject<MouseEvent>) => void;
   /**
    * A raw context-menu event (right-click on desktop, or the browser's own
    * long-press menu) on the stage, reported verbatim. The parent reads the
@@ -136,7 +157,30 @@ export interface PlanCanvasProps {
    * label to a `<Text>`, so it performs no domain maths of its own.
    */
   dragGuide?: DragGuide | null;
+  /**
+   * A door about to be placed, drawn as a dashed ghost where it would land.
+   *
+   * Three colours, because the placement rules really do have three answers: the
+   * pointer lands (`ok`), the rules would move it (`move`), or it cannot go there
+   * (`refused`). A ghost that only appeared when the answer was "yes" would make a
+   * refusal look like a broken canvas.
+   */
+  doorGhost?: DoorGhost | null;
   stageRef?: React.Ref<Konva.Stage>;
+}
+
+/**
+ * A door being positioned, reduced to what the canvas draws.
+ *
+ * `rect` is the **accepted or suggested** footprint in plan millimetres; `at` is the
+ * plan point under the pointer, so the guide line shows where the pointer is rather
+ * than where the rules moved the door to.
+ */
+export interface DoorGhost {
+  rect: { x: number; y: number; width: number; height: number };
+  at: { x: number; y: number };
+  state: 'ok' | 'move' | 'refused';
+  label: string;
 }
 
 /**
@@ -291,6 +335,69 @@ function DragGuideMark({ guide, scale }: { guide: DragGuide; scale: number }) {
   );
 }
 
+/**
+ * The add-mode ghost: the door's footprint where it would land, a marker under the
+ * pointer, and a sentence saying what the rules make of it.
+ *
+ * The footprint is drawn from `rect` — the **accepted or suggested** position — while the
+ * marker stays at `at`, the pointer. Showing both is the point: when the rules would move
+ * a door, the operator sees the gap between "where I clicked" and "where it can go" instead
+ * of a door silently appearing somewhere else.
+ */
+function DoorGhostMark({ ghost, scale }: { ghost: DoorGhost; scale: number }) {
+  const s = scale > 0 ? scale : 1;
+  const colour = GHOST_COLOR[ghost.state];
+  const { rect, at } = ghost;
+  // A wall opening is a line segment in plan: one dimension is often 0, so the
+  // outline needs a minimum thickness to be visible at all.
+  const pad = 2 / s;
+  const width = Math.max(rect.width, pad);
+  const height = Math.max(rect.height, pad);
+  const fontSize = 13 / s;
+  const marker = 90 / s;
+
+  return (
+    <Group>
+      <Rect
+        x={rect.x}
+        y={rect.y}
+        width={width}
+        height={height}
+        fill={colour}
+        opacity={0.18}
+      />
+      <Rect
+        x={rect.x}
+        y={rect.y}
+        width={width}
+        height={height}
+        stroke={colour}
+        strokeWidth={2 / s}
+        dash={[220 / s, 140 / s]}
+      />
+      {/* Where the pointer is. A cross rather than a dot, so it stays legible over
+          a wall line — a dot the same colour as the outline disappears into it. */}
+      <Line
+        points={[at.x - marker, at.y, at.x + marker, at.y]}
+        stroke={colour}
+        strokeWidth={1.2 / s}
+      />
+      <Line
+        points={[at.x, at.y - marker, at.x, at.y + marker]}
+        stroke={colour}
+        strokeWidth={1.2 / s}
+      />
+      <Text
+        text={ghost.label}
+        x={rect.x}
+        y={rect.y - fontSize * 1.6}
+        fontSize={fontSize}
+        fill={colour}
+      />
+    </Group>
+  );
+}
+
 export function PlanCanvas({
   geometry,
   width,
@@ -303,6 +410,7 @@ export function PlanCanvas({
   onTouchMove,
   onTouchEnd,
   onCanvasPointer,
+  onCanvasMove,
   onContextMenu,
   onResetView,
   onConstrainOpeningDrag,
@@ -312,6 +420,7 @@ export function PlanCanvas({
   optionDrag,
   openingDrag,
   dragGuide,
+  doorGhost,
   stageRef,
 }: PlanCanvasProps) {
   const { outline, bayLines, dims, roofArrow, openings, options } = geometry;
@@ -347,6 +456,7 @@ export function PlanCanvas({
       onTouchEnd={onTouchEnd}
       onClick={onCanvasPointer}
       onTap={onCanvasPointer}
+      onMouseMove={onCanvasMove}
       onDblClick={onResetView}
       onDblTap={onResetView}
       onContextMenu={onContextMenu}
@@ -480,6 +590,15 @@ export function PlanCanvas({
           <DragGuideMark guide={dragGuide} scale={s} />
         )}
       </Layer>
+
+      {/* The add-mode ghost, on its own non-listening layer so it can sit above
+          every symbol without becoming a hit target: a ghost under the pointer
+          that swallowed clicks would make the second placement impossible. */}
+      {doorGhost !== null && doorGhost !== undefined && (
+        <Layer listening={false}>
+          <DoorGhostMark ghost={doorGhost} scale={s} />
+        </Layer>
+      )}
 
       <Layer listening={false}>
         {/* The dashed footprint frame signals the *building* selection; it is
