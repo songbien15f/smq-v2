@@ -39,3 +39,6 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+
+# Local credential notes — never commit (contains live keys)
+docs/note.md
