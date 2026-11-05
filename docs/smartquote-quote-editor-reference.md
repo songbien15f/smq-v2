@@ -375,7 +375,10 @@ defaultCosts:  council · engineering · rubbish · delivery · concrete
 - `readRates` coi bảng đọc được **một phần** là `null`: 9 rate mà chỉ 7 đọc được thì giá sẽ
   đúng cho vài giờ và sai cho vài giờ, không ai phát hiện.
 - Test: *"stores the company rate table"* (PATCH → GET round-trip).
-- **Chưa có UI** và chưa nối vào Additions.
+- **UI đã có**: Settings → **Rates** (4 ô labour per hour + 5 ô default job costs; nhập bằng
+  đô-la, lưu bằng cents).
+- **Chưa nối vào Additions**: dòng lao động vẫn gõ tay `hours × rate`; bước tiếp theo là đọc
+  `settings.rates` trong Cost panel.
 
 **Plan drawing** — `GET /quotes/:id/revisions/:rev/plan` trả một trang **A4 landscape** chỉ có
 hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".
