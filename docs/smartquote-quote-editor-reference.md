@@ -303,8 +303,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Bản vẽ**: `elevations` (mặt đứng) — plan view đã có, xem §12.1.
-2. **Punchings Details** — report lỗ đột của desktop.
+1. **Punchings Details** — report lỗ đột của desktop.
 3. **Nhóm 4**: Settings rates (labour / equipment / demolition / distributor), min fee to
    distributor & carrier, backup/restore, salesmen.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
@@ -355,6 +354,12 @@ Tên cột lấy từ `countersFor` (tập đóng), không từ request.
 hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".
 **Không giá, không tên/liên hệ khách, không quảng cáo** — đây là bản vẽ dán ở xưởng.
 Dùng chung `PlanGeometry` với tài liệu khách nên hai bản không thể lệch nhau.
+
+**Elevations** — `GET /quotes/:id/revisions/:rev/elevations`, A4 landscape, 4 panel (Front / Back /
+Left end / Right end). Mỗi panel đọc `buildWallGeometries(config)` — **cùng nguồn với model 3D** —
+nên lỗ cửa đúng vị trí, sill và kích thước; đường mái là **schematic** và sheet ghi rõ.
+Không giá, không liên hệ khách.
+`CustomerDocument` vì thế mang thêm `config` (hình học thật), không chỉ block đã project.
 
 ---
 
