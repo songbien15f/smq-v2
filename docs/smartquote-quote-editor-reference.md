@@ -255,8 +255,25 @@ App/SmartQuote/mock-test.sqd   ← đang dùng làm mốc giá trong price.ts
 ```
 
 Reader v2 đã mở được file thật (`readQuoteFile` → JSON, ví dụ `VGS@@-00001.sqd`,
-`ContractPrice 305.41`). Golden harness: đọc tại chỗ, so `ContractPrice` / deposit /
-progress; lệch có chủ đích ghi `KNOWN-DEVIATIONS.md`.
+`ContractPrice 305.41`).
+
+**Harness:** `tools/golden/check-price-chain.mjs [desktopRepoRoot]`.
+
+- Đọc 12 file `.sqd` **tại chỗ** (không copy, không commit).
+- Mỗi revision kiểm 3 điều:
+  1. `KitOnly + Delivery + Engineer + Extra == TotalPrice`
+  2. `contractFromTotal(TotalPrice, QuoteRateValue, AdditionsCost) == ContractPrice`
+  3. `Deposit + Progress + Balance == ContractPrice` (không lệch một cent)
+- Dùng chính `contractFromTotal` của production, nên test kiểm code thật, không phải
+  bản sao công thức.
+
+**Kết quả 2026-11-05: 19 revision / 12 file, 0 fail.**
+
+Giới hạn: harness chỉ chứng minh **chuỗi giá**, không chứng minh số lượng BOM — muốn thế
+phải convert `HousePlan` của desktop sang `ShedConfig` (tường, cột infill, anchor option),
+là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạng
+`.NET BinaryFormatter` cũ: reader nhận diện được nhưng không giải mã, nên được báo là
+"không tính" chứ không lặng lẽ bỏ qua.
 
 ---
 

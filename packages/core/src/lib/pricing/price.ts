@@ -96,6 +96,47 @@ export const DEFAULT_DEPOSIT_PCT = 10;
 export const DEFAULT_PROGRESS_PCT = 70;
 
 /**
+ * The contract total: the quote rate marks up the job, then additions are added flat.
+ *
+ * Exported because a golden test compares this arithmetic against real desktop quote
+ * files, where the stored `KitOnly`/`TotalPrice`/`AdditionsCost` are the inputs — using
+ * the same function is what makes the comparison a test of this code rather than of a
+ * copy of its formula.
+ */
+export function contractFromTotal(
+  totalCents: number,
+  quoteRatePct: number,
+  additionsCents: number,
+): number {
+  return Math.round(totalCents * (1 + quoteRatePct / 100)) + additionsCents;
+}
+
+/**
+ * Split the contract into deposit, progress and the balance.
+ *
+ * The balance is always the remainder, so the three sum exactly. When the two
+ * percentages are meant to cover the contract (they sum to 100), the progress payment
+ * absorbs the rounding instead — a 50/50 split of an odd number of cents would otherwise
+ * leave a −1 cent balance.
+ */
+export function stagesFromContract(
+  contractCents: number,
+  depositPct: number,
+  progressPct: number,
+): { depositCents: number; progressCents: number; balanceCents: number } {
+  const depositCents = Math.round((contractCents * depositPct) / 100);
+  const stagesAreWhole = Math.abs(depositPct + progressPct - 100) <= 0.5;
+  const progressCents = stagesAreWhole
+    ? contractCents - depositCents
+    : Math.round((contractCents * progressPct) / 100);
+  return {
+    depositCents,
+    progressCents,
+    balanceCents: contractCents - depositCents - progressCents,
+  };
+}
+
+/**
  * Price a bill of materials.
  *
  * `bom.totalCost` is used, not `bom.buildingCost`: the total includes
@@ -121,21 +162,16 @@ export function priceQuote(bom: BomResult, input: PriceInput): QuotePrice {
   // The charges are GST-inclusive, as the desktop stores them: added as given,
   // never loaded again. See the module comment for the quote file that proves it.
   const totalCents = kitCents + deliveryCents + engineeringCents + extraCents;
-  const contractCents = Math.round(totalCents * (1 + quoteRatePct / 100)) + additionsCents;
+  const contractCents = contractFromTotal(totalCents, quoteRatePct, additionsCents);
 
   // Extracted, not added: the contract already includes the tax.
   const gstCents = contractCents - Math.round(contractCents / (1 + GST_RATE));
 
-  const depositCents = Math.round((contractCents * depositPct) / 100);
-  // A pair that means to cover the contract leaves no balance, so the progress
-  // payment absorbs the rounding. `Math.abs` rather than `Math.round` on the sum:
-  // 49.8 + 49.8 is a legitimate pair that does not reach 100, and rounding the
-  // sum to 100 would then hide its real balance.
-  const stagesAreWhole = Math.abs(depositPct + progressPct - 100) <= 0.5;
-  const progressCents = stagesAreWhole
-    ? contractCents - depositCents
-    : Math.round((contractCents * progressPct) / 100);
-  const balanceCents = contractCents - depositCents - progressCents;
+  const { depositCents, progressCents, balanceCents } = stagesFromContract(
+    contractCents,
+    depositPct,
+    progressPct,
+  );
 
   return {
     margin,
