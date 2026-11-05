@@ -31,9 +31,10 @@
  *   a rule that guesses is worse than no rule.
  */
 
-import type { OptionKind, ShedConfig, ShedOption } from './types';
+import type { OptionKind, ShedConfig, ShedOption, SkylightOption } from './types';
 import { hasPlanGeometry, resolveOption } from './options';
 import { carryBeamRefusal } from './placementRules';
+import { skylightCollision } from './skylightSnap';
 
 /** Why a placement was refused, addressed to a person. */
 export interface PlacementRefusal {
@@ -115,6 +116,36 @@ export function refusePlacement(kind: OptionKind, shed: ShedConfig): PlacementRe
       const smallest = Math.min(shed.span, shed.length);
       if (smallest < 900) {
         return { kind, reason: 'A skylight needs a roof at least 900 mm across.' };
+      }
+      /*
+       * **A skylight replaces a roof sheet, so two cannot share one.** R12's refusal half;
+       * the snapping half is `skylightSnap.ts`.
+       *
+       * This compares footprints, not starting positions. The desktop's `Roof.HaveSkyLight`
+       * only compares where each skylight *starts*, so two 762 mm panes starting 200 mm
+       * apart passed its check with 562 mm of glass on top of each other. Two skylights
+       * overlapping is not a drawing problem: it is two pans of glass where the order
+       * says one, and a hole in the roof.
+       *
+       * The check is on the *default* position a new skylight lands at, which is what
+       * `refusePlacement` can see — `skylightCollision` does the same test for a position
+       * an operator has dragged to.
+       */
+      const candidate: SkylightOption = {
+        id: '__new__',
+        kind: 'skylight',
+        bay: Math.floor(shed.bays / 2),
+        alongBay: 0.5,
+        width: 900,
+        height: 900,
+      };
+      const collision = skylightCollision(shed, candidate);
+      if (collision !== null) {
+        return {
+          kind,
+          reason:
+            'A skylight already covers that part of the roof. Each skylight replaces a roof sheet, so move the first one or choose a different sheet.',
+        };
       }
       return null;
     }

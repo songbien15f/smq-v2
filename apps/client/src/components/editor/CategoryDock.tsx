@@ -57,6 +57,31 @@ function NumberField({
   );
 }
 
+/**
+ * The roof sheet cover for a building's state, from the book's profile list, mm.
+ *
+ * `sheeting_cover` is per state and the editor has to pick one, so the state is the
+ * lookup key. The **roof** profile is the one that matters: a wall sheet's cover is a
+ * different number, and snapping a skylight to a wall's cover would put it on the wrong
+ * sheet of the roof.
+ *
+ * `undefined` when the catalogue has not loaded or carries no cover for this state —
+ * which the caller must treat as "cannot snap", not as "762".
+ */
+function roofCoverMm(
+  catalogue: { profiles: { profile: string; isRoof: boolean; coverByState: Record<string, number> | null }[] } | null,
+  stateCode: string,
+): number | undefined {
+  if (catalogue === null) return undefined;
+  const state = stateCode.trim().toUpperCase();
+  for (const profile of catalogue.profiles) {
+    if (!profile.isRoof) continue;
+    const cover = profile.coverByState?.[state];
+    if (cover !== undefined && cover > 0) return cover;
+  }
+  return undefined;
+}
+
 export function CategoryDock() {
   const config = useShedStore((state) => state.config);
   const addOpening = useShedStore((state) => state.addOpening);
@@ -304,6 +329,13 @@ export function CategoryDock() {
       }
 
       if (category.option === 'skylight') {
+        /*
+         * The sheet cover, so the skylight can be snapped onto a whole roof sheet (R12).
+         * It comes from the book, per state: a 0.35 Lo-Rib is 817 mm in every state and a
+         * Corro is 762, and a book may vary them. With no catalogue loaded there is
+         * nothing to snap to, so the position is left as the default rather than guessed.
+         */
+        const coverMm = roofCoverMm(catalogue, config.stateCode);
         return (
           <div className="flex flex-wrap items-end gap-sq-2">
             <label className="flex flex-col gap-sq-1">
@@ -317,9 +349,14 @@ export function CategoryDock() {
                 <option value="TL-5">TL-5</option>
               </select>
             </label>
-            <Button variant="primary" onClick={() => addSkylight(skylightType)}>
+            <Button variant="primary" onClick={() => addSkylight(skylightType, coverMm)}>
               Add {category.label}
             </Button>
+            {coverMm !== undefined && (
+              <span className="text-sq-micro text-sq-ink-muted">
+                Snapped to a {coverMm} mm roof sheet.
+              </span>
+            )}
           </div>
         );
       }

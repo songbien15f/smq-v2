@@ -16,6 +16,7 @@ import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from '@sq/core/domain';
 import { newCharge } from '@sq/core/domain';
 import { defaultOptionsFor, normaliseOption, refusePlacement } from '@sq/core/domain';
 import { clampNotices, normaliseShedConfig, placeOpening } from '@sq/core/domain';
+import { skylightOnSheet, snapSkylightToSheet } from '@sq/core/domain';
 import type { Selection } from '@sq/core/domain';
 import type { Charge, Opening, OpeningType, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
 
@@ -206,7 +207,14 @@ export interface ShedState {
   /** Add a mezzanine at a chosen design floor load. */
   addMezzanine(floorLoad: 1.5 | 3 | 5 | 7.5): void;
   /** Add a skylight glazed with the chosen sheet. */
-  addSkylight(skylightType: 'Corro' | 'TL-5'): void;
+  /**
+   * Add a skylight, snapped onto a whole roof sheet.
+   *
+   * `coverMm` is the book's sheet cover for the building's state. Omitted, the skylight
+   * lands at the default bay position and the caller gets no snapping — which is honest:
+   * snapping to a sheet needs to know how wide the sheets are.
+   */
+  addSkylight(skylightType: 'Corro' | 'TL-5', coverMm?: number): void;
   /** Add an outrigger at a chosen mounting height. */
   addOutrigger(height: number): void;
   /** Add one awning, or two for a front-and-rear run, at a chosen pitch. */
@@ -467,7 +475,7 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     get().select({ kind: 'option', id: option.id });
   },
 
-  addSkylight(skylightType) {
+  addSkylight(skylightType, coverMm) {
     const { config } = get();
     const refusal = refusePlacement('skylight', config);
     if (refusal !== null) {
@@ -476,7 +484,40 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     }
     const base = defaultOptionsFor('skylight', config)[0];
     if (base === undefined) return;
-    const option = normaliseOption({ ...base, skylightType } as ShedOption, config);
+    let option = normaliseOption({ ...base, skylightType } as ShedOption, config);
+
+    /*
+     * Snap onto a whole roof sheet — R12.
+     *
+     * A glazed sheet **is** a roof sheet, so a skylight half over two sheets would need a
+     * cut sheet each side, which is not what a factory ships. `skylightOnSheet` moves it to
+     * the sheet's centre and expresses the result as `bay`/`alongBay`, so the snapped
+     * position survives a save and a reload.
+     *
+     * With no cover the position is left alone: the caller had nothing to snap to, and
+     * guessing 762 would put a pane on the wrong sheet in a state where the cover differs.
+     */
+    if (coverMm !== undefined && coverMm > 0 && option.kind === 'skylight') {
+      /*
+       * **A skylight is one roof sheet, so its default size is that sheet.** The generic
+       * default is 900 × 900, which is wider than the reference book's 762 mm cover — so
+       * every skylight was refused with "it would need a cut sheet on each side". Sizing
+       * it to the sheet is what the desktop does too: `Skylight.Width` *is*
+       * `Plan.RoofSheetingSize` (`Skylight.cs:38`), not a size of its own.
+       *
+       * A pane the operator has already resized is left alone: they may have chosen 450 mm
+       * deliberately, and it still fits.
+       */
+      const sized: ShedOption =
+        option.width > coverMm ? ({ ...option, width: coverMm, height: coverMm } as ShedOption) : option;
+      const snap = snapSkylightToSheet(config, sized as never, coverMm);
+      if (snap.refusal !== null) {
+        set({ notices: [snap.refusal] });
+        return;
+      }
+      option = normaliseOption(skylightOnSheet(config, sized as never, coverMm) as ShedOption, config);
+    }
+
     get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
   },

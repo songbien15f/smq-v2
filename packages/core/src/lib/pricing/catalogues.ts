@@ -61,6 +61,15 @@ export interface SheetingProfile {
   bmtValues: number[];
   isWall: boolean;
   isRoof: boolean;
+  /**
+   * Sheet cover per state, mm, or `null` when the book does not say.
+   *
+   * The cover is **not** one number: `sheeting_cover` stores `QLD:762;NSW:762;…` and a
+   * state can differ (a 0.35 Lo-Rib is 817 everywhere, but a book may vary). It is also
+   * what a **skylight is snapped to** — a skylight replaces one sheet — so the editor
+   * needs it per profile rather than a single figure.
+   */
+  coverByState: Record<string, number> | null;
 }
 
 /** A footing code and its label. */
@@ -218,16 +227,51 @@ function hints(db: DatabaseSync, table: string): number[] {
   return rows(db, `SELECT hint_value FROM ${table} ORDER BY id`).map((row) => num(row.hint_value));
 }
 
+/**
+ * Sheet cover per state, keyed by the sheeting description.
+ *
+ * `sheeting_cover.sheet_cover` is a packed string (`'QLD:0.762;NSW:0.762;'`), in
+ * **metres**, while everything above this works in millimetres. Reading it as
+ * millimetres — which the desktop did with a cast, and which this build's side-wall
+ * path once did too — turns a 762 mm cover into 0, so every count divides by one.
+ */
+function coversBySheeting(db: DatabaseSync): Map<string, Record<string, number>> {
+  const byDescription = new Map<string, Record<string, number>>();
+  for (const row of rows(db, 'SELECT sheeting_size, sheet_cover FROM sheeting_cover')) {
+    const packed = str(row.sheet_cover);
+    if (packed === '') continue;
+    const perState: Record<string, number> = {};
+    for (const pair of packed.split(';')) {
+      const [state, value] = pair.split(':');
+      if (state === undefined || value === undefined) continue;
+      const metres = Number(value);
+      if (!Number.isFinite(metres) || metres <= 0) continue;
+      perState[state.trim().toUpperCase()] = Math.round(metres * 1000);
+    }
+    if (Object.keys(perState).length > 0) {
+      byDescription.set(str(row.sheeting_size), perState);
+    }
+  }
+  return byDescription;
+}
+
 /** Group sheeting rows by profile so a dropdown offers each profile once. */
 function profiles(db: DatabaseSync): SheetingProfile[] {
   const byProfile = new Map<string, SheetingProfile>();
+  // Read once: this is a full table scan, and doing it per row would be N scans for a
+  // list of a dozen profiles.
+  const covers = coversBySheeting(db);
   for (const row of rows(
     db,
-    `SELECT profile, bmt, is_wall, is_roof FROM material_sheeting
+    // `description` is what `sheeting_cover` keys on (`'0.42 Corro'`), so it has to be
+    // selected. Reading `row.description` off a query that does not ask for it gives
+    // `undefined` without complaint, and every profile's cover came back null.
+    `SELECT profile, bmt, is_wall, is_roof, description FROM material_sheeting
      WHERE is_active = 1 ORDER BY index_sort`,
   )) {
     const profile = str(row.profile);
     if (profile === '') continue;
+    const cover = covers.get(str(row.description)) ?? null;
     const existing = byProfile.get(profile);
     if (existing === undefined) {
       byProfile.set(profile, {
@@ -235,11 +279,14 @@ function profiles(db: DatabaseSync): SheetingProfile[] {
         bmtValues: [num(row.bmt)],
         isWall: active(row.is_wall),
         isRoof: active(row.is_roof),
+        coverByState: cover,
       });
     } else {
       existing.bmtValues.push(num(row.bmt));
       existing.isWall = existing.isWall || active(row.is_wall);
       existing.isRoof = existing.isRoof || active(row.is_roof);
+      // The first row with a cover wins: within one profile the cover is the same.
+      existing.coverByState = existing.coverByState ?? cover;
     }
   }
   return [...byProfile.values()].map((entry) => ({

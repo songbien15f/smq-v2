@@ -60,4 +60,45 @@ describe('createSqliteCatalogueSource', () => {
     db.exec('CREATE TABLE system_colour (colour_name TEXT, colour_value TEXT, colour_status INTEGER)');
     expect(() => createSqliteCatalogueSource(db).load()).toThrow(/no such column/i);
   });
+
+  it('reads each roof profile’s sheet cover per state, in millimetres', () => {
+    /*
+     * A skylight is snapped onto a whole roof sheet (R12), so the editor needs the cover
+     * — and `sheeting_cover` packs it per state in **metres** (`'QLD:0.762;'`).
+     *
+     * This test exists because the first version asked for `row.description` from a query
+     * that did not select it. `undefined` compares unequal to the map's keys and nothing
+     * complains, so every profile's cover came back null and the feature silently did
+     * nothing.
+     */
+    const db = emptyBook();
+    db.exec(`
+      CREATE TABLE material_sheeting (description TEXT, bmt REAL, profile TEXT, is_active INTEGER, index_sort INTEGER, is_wall INTEGER, is_roof INTEGER);
+      CREATE TABLE sheeting_cover (sheeting_size TEXT, isWall INTEGER, sheet_cover TEXT);
+      INSERT INTO material_sheeting VALUES ('0.42 Corro',0.42,'Corro',1,1,1,1),
+                                           ('0.42 Lo-Rib',0.42,'Lo-Rib',1,2,1,0);
+      INSERT INTO sheeting_cover VALUES
+        ('0.42 Corro',1,'ACT:0.762;NSW:0.762;QLD:0.762;'),
+        ('0.42 Lo-Rib',1,'ACT:0.817;NSW:0.817;QLD:0.817;');
+    `);
+    const c = createSqliteCatalogueSource(db).load();
+    const corro = c.profiles.find((p) => p.profile === 'Corro');
+    const loRib = c.profiles.find((p) => p.profile === 'Lo-Rib');
+    // Metres in the book, millimetres above it: 0.762 must arrive as 762, not 0.
+    expect(corro?.coverByState).toEqual({ ACT: 762, NSW: 762, QLD: 762 });
+    expect(loRib?.coverByState).toEqual({ ACT: 817, NSW: 817, QLD: 817 });
+    // Only the Corro is a roof profile, and that is what a skylight snaps to.
+    expect(corro?.isRoof).toBe(true);
+    expect(loRib?.isRoof).toBe(false);
+  });
+
+  it('leaves the cover null when the book has no cover row for a profile', () => {
+    const db = emptyBook();
+    db.exec(`
+      CREATE TABLE material_sheeting (description TEXT, bmt REAL, profile TEXT, is_active INTEGER, index_sort INTEGER, is_wall INTEGER, is_roof INTEGER);
+      CREATE TABLE sheeting_cover (sheeting_size TEXT, isWall INTEGER, sheet_cover TEXT);
+      INSERT INTO material_sheeting VALUES ('0.42 Zinc',0.42,'Zinc',1,1,1,1);
+    `);
+    expect(createSqliteCatalogueSource(db).load().profiles[0]?.coverByState).toBeNull();
+  });
 });

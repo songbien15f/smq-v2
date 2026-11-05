@@ -242,6 +242,43 @@ trí thiết kế ban đầu — và R3 so với nó.
    đầu tiên và cột đó vẫn đứng nguyên trong lòng cửa. Nay kiểm theo **vị trí so với `span`**, không
    theo index.
 
+### R12 — snap skylight theo tấm mái (ĐÃ CÓ)
+
+> **Ghi chú sửa sai, lần thứ hai.** Tôi từng ghi rằng R12 "bị chặn" vì "v2 neo skylight theo
+> **bay**, desktop theo **span**". **Sai.** `Roof.Width` của desktop **chính là** `Plan.Length`
+> (`Roof.cs:64`), và nó snap bằng `LocSkylight.X / RoofSheetingSize` — trục đó là **chiều dài nhà**,
+> đúng trục `alongBay` của v2. Hai trục đã khớp từ đầu; tôi chỉ so với một trục "span" mà desktop
+> không dùng cho tấm mái.
+
+`packages/core/src/domain/skylightSnap.ts`:
+
+| Hàm | Việc |
+|---|---|
+| `roofSheets(shed, coverMm)` | Danh sách tấm theo chiều dài; **tấm cuối mang bề rộng thật** (24 000 / 762 → 32 tấm, tấm cuối 378 mm) |
+| `snapSkylightToSheet` | Chọn tấm dưới tâm, trả tâm tấm + `aligned` + lý do từ chối |
+| `skylightOnSheet` | Đổi vị trí snap về dạng `bay`/`alongBay` để sống sót qua save/reload |
+| `skylightsOverlap` / `skylightCollision` | So **hình chữ nhật**, không so điểm bắt đầu |
+
+**Vì sao skylight thay thế một tấm:** tấm kính **là** một tấm mái — BOM đã trừ một tấm cho mỗi
+skylight (`sheetCounts`). Kính nằm nửa tấm này nửa tấm kia cần hai tấm cắt hai bên, xưởng không làm
+vậy. Nên snap về tấm, không về milimét tuỳ ý.
+
+**Một bug thật do việc này lộ ra:** skylight mặc định cũ là **900 × 900**, trong khi cover của sách
+giá là **762 mm** — nên **mọi** skylight bị từ chối với lý do "cần tấm cắt mỗi bên". Desktop làm
+đúng: `Skylight.Width` **chính là** `Plan.RoofSheetingSize` (`Skylight.cs:38`), không có kích thước
+riêng. Nay mặc định = một tấm khi biết cover.
+
+**Hai bug nữa trong chính lần này:**
+
+1. **`coverByState` luôn null** vì câu `SELECT profile, bmt, is_wall, is_roof FROM material_sheeting`
+   không lấy `description` — mà `sheeting_cover` khoá theo `description`. `row.description` trả
+   `undefined` **không báo lỗi**, nên cả tính năng im lặng không làm gì.
+2. **Thông báo từ chối nói sai tấm.** Khi bề rộng pane > cover, câu cũ luôn nói "tấm cuối của mái",
+   kể cả khi đó là tấm thường — đẩy người dùng đi tìm một "tấm đầy đủ" cùng bề rộng.
+
+Cover đọc từ `sheeting_cover` (**mét** trong sách, `'QLD:0.762;'`) và đổi sang mm; UI lấy cover
+theo `stateCode`, chỉ profile `isRoof`. Không có cover thì **không snap** thay vì đoán 762.
+
 ### Chưa có — vì model chưa có (không đoán)
 
 | Rule | Thiếu gì |
@@ -249,7 +286,7 @@ trí thiết kế ban đầu — và R3 so với nó.
 | ~~R5~~ | **ĐÃ XONG** — xem §6.1 dưới |
 | R9 | "2 tường bên trống" — chính docs desktop nói wording mơ hồ |
 | R11 | Track dài 1000–6000 — track là thuộc tính cửa, không phải chiều dài |
-| R12 | Snap theo tấm mái — không có lưới tấm |
+| ~~R12~~ | **ĐÃ XONG** — xem §6.2 |
 
 ---
 
@@ -710,7 +747,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 863 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill) |
+| `@sq/core` | 882 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight snap) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

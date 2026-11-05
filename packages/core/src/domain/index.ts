@@ -13,6 +13,7 @@ export * from "./plan";
 export * from "./presets";
 export * from "./schema";
 export * from "./selection";
+export * from "./skylightSnap";
 export * from "./types";
 export * from "./units";
 export * from "./walls";

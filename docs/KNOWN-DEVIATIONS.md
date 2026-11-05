@@ -29,6 +29,10 @@ change a number and need the operator's signature before a customer sees a quote
 
 | 14 | **A roller door over an infill column is refused on a wide gable and re-spaced around on a narrow one** (`AddingRuleDoor.AllowOverrideInfill` / `computeInfillPosition`). | **Both ported** — `infillOverrideRefusal` (blocker above 4 000 mm) and `respaceAroundDoors` (move/split/remove at or below it) | They are mutually exclusive answers for one door. Doing both, which a first version did, reports a blocker *and* an assumption for the same wall — the operator cannot tell whether to move the door or accept a moved column. | None directly; a wide gable with a door over a column is now **blocked** where it previously priced silently. |
 
+| 15 | **A skylight is 900 × 900 mm**, and the desktop's own `Skylight.Width` *is* `Plan.RoofSheetingSize` (`Skylight.cs:38`) — so it is one roof sheet by definition, and the app had a fixed size instead. On the reference book (762 mm cover) **every** skylight was refused. | **Fixed** — the default is sized to the sheet when the cover is known, and the position is snapped onto a whole sheet (`skylightSnap.ts`) | A skylight that replaces a sheet is the only kind a factory supplies; a pane straddling two sheets needs two cut sheets. The fixed 900 mm was not merely wrong for this book — it made the feature unusable on the book it ships with. | None. A skylight now lands on a 762 mm sheet instead of being rejected. |
+
+| 16 | **`Roof.HaveSkyLight` compares skylight *start* positions only**, so two panes starting on different sheets but wide enough to touch both pass its check. | **Fixed** — `skylightsOverlap` compares footprints | Two skylights on one part of the roof is two pans of glass where the order says one, and a hole the sheeting count does not expect. | None. |
+
 **Operational consequence of row 10:** changing the platform logo means adding a **new file** and
 pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
 revisions that referenced the old bytes simply print the text logo from then on. See
