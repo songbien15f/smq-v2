@@ -71,9 +71,16 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
   const [links, setLinks] = useState<IssuedLink[]>([]);
   const [linksError, setLinksError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  /*
+   * Which document is being printed. The default is the quotation a customer receives; the
+   * supplier kinds carry no client price, so choosing one is not cosmetic.
+   */
+  const [printKind, setPrintKind] = useState<
+    'quotation' | 'contract' | 'order' | 'supplier-quotation' | 'supplier-contract'
+  >('quotation');
 
-  const htmlHref = `${API}/quotes/${quoteId}/revisions/${revision}/html`;
-  const pdfHref = `${API}/quotes/${quoteId}/revisions/${revision}/pdf`;
+  const htmlHref = `${API}/quotes/${quoteId}/revisions/${revision}/html?kind=${printKind}`;
+  const pdfHref = `${API}/quotes/${quoteId}/revisions/${revision}/pdf?kind=${printKind}`;
   const bomHref = `${API}/quotes/${quoteId}/revisions/${revision}/bom`;
 
   /**
@@ -135,6 +142,27 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
 
   return (
     <div className="flex flex-col gap-sq-2">
+      {/*
+        The desktop's print menu. Five kinds here; elevations and the plan view are drawings rather
+        than documents and are not built yet.
+      */}
+      <label className="flex flex-wrap items-center gap-sq-2">
+        <span className="text-sq-micro font-medium text-sq-ink">Document</span>
+        <select
+          value={printKind}
+          onChange={(event) => setPrintKind(event.target.value as typeof printKind)}
+          className="min-h-9 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+        >
+          <option value="quotation">Quotation — to the customer</option>
+          <option value="contract">Contract — to the customer</option>
+          <option value="order">Order — to the supplier</option>
+          <option value="supplier-quotation">Quotation — supplier copy</option>
+          <option value="supplier-contract">Contract — supplier copy</option>
+        </select>
+        <span className="text-sq-micro text-sq-ink-muted">
+          A supplier copy carries no client price.
+        </span>
+      </label>
       <div className="flex flex-wrap items-center gap-sq-2">
         <a
           href={pdfHref}
