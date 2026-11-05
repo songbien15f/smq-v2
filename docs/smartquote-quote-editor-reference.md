@@ -297,17 +297,17 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | D10 | `extra_charge` / `engineering_charge` không phải OptionKind | Đã có `extraCents` / `engineeringCents`, thêm sẽ double-count |
 | D11 | Additions dùng `additionsCents` | Đúng công thức desktop |
 | D12 | Downpipe type tạm free-text | Bảng `downpipe` trong book là bộ phận (PVC/STEEL), không phải danh mục kiểu |
-| D13 | Fax chưa có | Cần contract + cột DB; giá trị thấp |
+| D13 | Fax đã thêm | Lưu trong `customer_json`, không cần cột DB |
 
 ---
 
 ## 12. Việc còn lại
 
-1. **6d** — PIN trước khi lưu: route stateless + gắn `siteCheckId` khi lưu.
-2. **8c** — golden harness trên 12 file `.sqd` tại chỗ.
-3. **Add-mode overlay** xanh/cam trên canvas (hiện Add tự áp dụng đề xuất + notice).
-4. **Lọc `margin`/`buildingCostCents` ở server** cho role thiếu `cost:margin`.
-5. **Fax** — nếu operator cần.
+1. **6d** — PIN trước khi lưu: route `POST /site-checks/pin` (không cần quote) +
+   `POST /site-checks/:id/import`, rồi gắn `siteCheckId` vào quote khi lưu.
+2. **Add-mode overlay** xanh/cam trên canvas (hiện Add tự áp dụng đề xuất + notice).
+
+Đã xong trong các đợt trước: golden harness (§10), lọc margin ở server (§9), Fax (§11 D13).
 
 ---
 

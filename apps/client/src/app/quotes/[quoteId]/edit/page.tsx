@@ -76,6 +76,7 @@ export default async function EditQuotePage({ params }: { params: Promise<{ quot
           email: text(customer, 'email'),
           phone: text(customer, 'phone'),
           mobile: text(customer, 'mobile'),
+          fax: text(customer, 'fax'),
           address: text(customer, 'address'),
           suburb: text(customer, 'suburb'),
           state: text(customer, 'state'),

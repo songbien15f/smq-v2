@@ -209,6 +209,19 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
           />
         </div>
         {/*
+          The desktop's Fax column. Lowercase because it is now the least-used field on
+          the form and should not compete with phone and mobile — but it is a field the
+          quote document prints, so it stays.
+        */}
+        <Field
+          id="customer-fax"
+          label="Fax"
+          type="tel"
+          inputMode="tel"
+          value={customer.fax}
+          onChange={(event) => setCustomer({ fax: event.target.value })}
+        />
+        {/*
           The address, with suggestions. Picking one fills the street line **and** the suburb, state
           and postcode below — because the state selects the price table, and a suggestion that
           filled only the street would leave the one field a typo makes expensive.

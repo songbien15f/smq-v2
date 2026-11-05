@@ -33,6 +33,7 @@ export interface DraftCustomer {
   email: string;
   phone: string;
   mobile: string;
+  fax: string;
   address: string;
   suburb: string;
   state: string;
@@ -124,6 +125,7 @@ const EMPTY_CUSTOMER: DraftCustomer = {
   email: '',
   phone: '',
   mobile: '',
+  fax: '',
   address: '',
   suburb: '',
   state: '',

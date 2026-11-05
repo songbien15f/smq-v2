@@ -45,6 +45,8 @@ export const customerInput = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
   phone: z.string().trim().max(40).optional(),
   mobile: z.string().trim().max(40).optional(),
+  /** The desktop's Fax field. Stored in `customer_json`; no column of its own. */
+  fax: z.string().trim().max(40).optional(),
   /** Street address of the customer, as Places resolved it. */
   address: z.string().trim().min(1, 'Enter the customer address').max(300),
   suburb: z.string().trim().max(120).optional(),
