@@ -9,7 +9,9 @@
  */
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Panel } from '@sq/ui';
+import { api } from '@/lib/sq';
 import { DocumentActions } from './DocumentActions';
 import { SendHistory } from './SendHistory';
 import { StatusControl } from './StatusControl';
@@ -44,9 +46,84 @@ export function QuoteActions({
   const [historyKey, setHistoryKey] = useState(0);
 
   const indicative = revision.issues.some((issue) => issue.severity === 'assumption');
+  const router = useRouter();
+  const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
+
+  const copyQuote = async (): Promise<void> => {
+    const result = await api<{ quoteId: string }>(`quotes/${quoteId}/copy`, { method: 'POST' });
+    if (!result.ok) {
+      setQuoteMessage(result.message);
+      return;
+    }
+    // A copy exists to be changed, so it opens for editing.
+    router.push(`/quotes/${result.data.quoteId}/edit`);
+  };
+
+  const renameRevision = async (): Promise<void> => {
+    const name = window.prompt(`Name for revision ${revision.number}`, '');
+    if (name === null) return;
+    const result = await api(`quotes/${quoteId}/revisions/${revision.number}`, {
+      method: 'PATCH',
+      body: { name },
+    });
+    if (!result.ok) {
+      setQuoteMessage(result.message);
+      return;
+    }
+    router.refresh();
+  };
+
+  const deleteQuote = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        `Delete ${quoteNumber}? It is taken out of use; the record of what was sent stays.`,
+      )
+    ) {
+      return;
+    }
+    const result = await api(`quotes/${quoteId}`, { method: 'DELETE' });
+    if (!result.ok) {
+      setQuoteMessage(result.message);
+      return;
+    }
+    router.push('/quotes');
+    router.refresh();
+  };
 
   return (
     <div className="flex flex-col gap-sq-4">
+      {canWrite && (
+        <Panel title="Quote">
+          <div className="flex flex-wrap items-center gap-sq-2">
+            <button
+              type="button"
+              onClick={() => void copyQuote()}
+              className="min-h-11 cursor-pointer rounded-md border border-sq-line px-sq-3 text-sq-body font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+            >
+              Copy to a new quote
+            </button>
+            <button
+              type="button"
+              onClick={() => void renameRevision()}
+              className="min-h-11 cursor-pointer rounded-md border border-sq-line px-sq-3 text-sq-body font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+            >
+              Rename revision {revision.number}
+            </button>
+            <button
+              type="button"
+              onClick={() => void deleteQuote()}
+              className="min-h-11 cursor-pointer rounded-md border border-sq-line px-sq-3 text-sq-body font-medium text-sq-danger transition-colors duration-sq-fast hover:bg-sq-ground"
+            >
+              Delete
+            </button>
+          </div>
+          {quoteMessage !== null && (
+            <p role="alert" className="mt-sq-2 text-sq-body text-sq-danger">
+              {quoteMessage}
+            </p>
+          )}
+        </Panel>
+      )}
       <Panel title="Status">
         <StatusControl
           quoteId={quoteId}
