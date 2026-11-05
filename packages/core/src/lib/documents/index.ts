@@ -18,3 +18,4 @@ export * from './html';
 export * from './pdf';
 export * from './bomSheet';
 export * from './planPage';
+export * from './elevationsPage';

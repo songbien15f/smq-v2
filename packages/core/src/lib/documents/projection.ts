@@ -29,6 +29,14 @@ import type { FrozenRevision } from './types';
 export interface CustomerDocument {
   quoteNumber: string;
   revision: number;
+  /**
+   * The frozen building, kept whole.
+   *
+   * The customer page reads the projected `building` block, but a drawing sheet needs the real
+   * geometry — walls, opening positions, sills — and re-deriving that from labels is how a drawing
+   * drifts from the quote.
+   */
+  config: ShedConfig;
   issuedAt: string;
   validUntil: string;
   company: {
@@ -246,6 +254,7 @@ export function toCustomerDocument(revision: FrozenRevision): CustomerDocument {
   return {
     quoteNumber: revision.quoteNumber,
     revision: revision.revision,
+    config,
     issuedAt: revision.createdAt.slice(0, 10),
     validUntil: revision.validUntil,
     company: {

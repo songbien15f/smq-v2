@@ -27,6 +27,7 @@ import type { PrintKind } from '@sq/core/documents';
 import {
   loadFrozenRevision,
   renderFrozenDocument,
+  renderFrozenElevations,
   renderFrozenPlan,
   RevisionNotFound,
   revisionDocumentKey,
@@ -154,6 +155,40 @@ export function registerDocuments(app: FastifyInstance, db: Db): void {
           .status(200)
           .header('content-type', 'text/html; charset=utf-8')
           .header('content-disposition', `inline; filename="plan-${frozen.quoteNumber}-r${frozen.revision}.html"`)
+          .send(html);
+      } catch (error) {
+        if (error instanceof RevisionNotFound) return sendFail(reply, 'not_found', 'Not found.');
+        throw error;
+      }
+    },
+  );
+
+  /** The four walls as elevations, again with no price on the sheet. */
+  app.get<{ Params: { quoteId: string; rev: string } }>(
+    '/quotes/:quoteId/revisions/:rev/elevations',
+    async (request, reply) => {
+      const session = requireCompanyCapability(request, reply, 'quote:read');
+      if (session === null) return;
+
+      const revisionNumber = Number(request.params.rev);
+      if (!Number.isInteger(revisionNumber) || revisionNumber < 1) {
+        return sendFail(reply, 'validation_failed', 'The revision number must be a positive whole number.');
+      }
+
+      try {
+        const frozen = await loadFrozenRevision(db, {
+          tenantId: session.tenantId as string,
+          quoteId: request.params.quoteId,
+          revision: revisionNumber,
+        });
+        const html = await renderFrozenElevations(frozen);
+        return reply
+          .status(200)
+          .header('content-type', 'text/html; charset=utf-8')
+          .header(
+            'content-disposition',
+            `inline; filename="elevations-${frozen.quoteNumber}-r${frozen.revision}.html"`,
+          )
           .send(html);
       } catch (error) {
         if (error instanceof RevisionNotFound) return sendFail(reply, 'not_found', 'Not found.');
