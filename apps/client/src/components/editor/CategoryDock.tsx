@@ -15,6 +15,7 @@
  */
 
 import { useState } from 'react';
+import type { AlignMode } from '@sq/core/domain';
 import { Button, StatusPill } from '@sq/ui';
 import { useCatalogue } from '@/hooks/useCatalogue';
 import { useShedStore } from '@/store/useShedStore';
@@ -64,12 +65,16 @@ export function CategoryDock() {
   const addCharge = useShedStore((state) => state.addCharge);
   const removeAllOpenings = useShedStore((state) => state.removeAllOpenings);
   const removeAllOptions = useShedStore((state) => state.removeAllOptions);
+  const clearOptions = useShedStore((state) => state.clearOptions);
   const patchOpening = useShedStore((state) => state.patchOpening);
   const { catalogue } = useCatalogue();
 
   const [openId, setOpenId] = useState<string | null>('window');
   const [width, setWidth] = useState(1200);
   const [height, setHeight] = useState(2100);
+  const [align, setAlign] = useState<AlignMode>('center');
+  const [offset, setOffset] = useState(0);
+  const [sill, setSill] = useState(1200);
   const [miscName, setMiscName] = useState('');
   const [miscQty, setMiscQty] = useState(1);
 
@@ -78,22 +83,49 @@ export function CategoryDock() {
   const body = (category: DockCategory) => {
     if (category.kind === 'opening') {
       return (
-        <div className="flex flex-wrap items-end gap-sq-2">
-          <NumberField id={`add-${category.id}-width`} label="Width (mm)" value={width} min={300} max={12000} step={100} onChange={setWidth} />
-          <NumberField id={`add-${category.id}-height`} label="Height (mm)" value={height} min={300} max={6000} step={100} onChange={setHeight} />
-          <Button
-            variant="primary"
-            onClick={() =>
-              addOpening({
-                type: category.opening,
-                width,
-                height,
-                sill: category.opening === 'window' ? 1200 : 0,
-              })
-            }
-          >
-            Add {category.label}
-          </Button>
+        <div className="flex flex-col gap-sq-2">
+          <div className="flex flex-wrap items-end gap-sq-2">
+            <NumberField id={`add-${category.id}-width`} label="Width (mm)" value={width} min={300} max={12000} step={100} onChange={setWidth} />
+            <NumberField id={`add-${category.id}-height`} label="Height (mm)" value={height} min={300} max={6000} step={100} onChange={setHeight} />
+            {category.opening === 'window' && (
+              <NumberField id={`add-${category.id}-sill`} label="FFL (mm)" value={sill} min={0} max={4000} step={50} onChange={setSill} />
+            )}
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro text-sq-ink">Alignment</span>
+              <select
+                value={align}
+                onChange={(event) => setAlign(event.target.value as AlignMode)}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value="center">Centre</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="custom">Custom distance</option>
+              </select>
+            </label>
+            {align === 'custom' && (
+              <NumberField id={`add-${category.id}-offset`} label="Distance (mm)" value={offset} min={0} max={50000} step={50} onChange={setOffset} />
+            )}
+            <Button
+              variant="primary"
+              onClick={() =>
+                addOpening({
+                  type: category.opening,
+                  width,
+                  height,
+                  sill: category.opening === 'window' ? sill : 0,
+                  align,
+                  offset: align === 'custom' ? offset : null,
+                })
+              }
+            >
+              Add {category.label}
+            </Button>
+          </div>
+          <p className="text-sq-micro text-sq-ink-muted">
+            Opening Only (frame prepared, no door fitted) is not modelled yet; the placement
+            rules still apply to whatever is added here.
+          </p>
         </div>
       );
     }
@@ -213,6 +245,22 @@ export function CategoryDock() {
 
   return (
     <div className="flex flex-col">
+      {config.options.length > 0 && (
+        <div className="flex items-center justify-between gap-sq-2 border-b border-sq-line px-sq-3 py-sq-2">
+          <span className="text-sq-micro text-sq-ink-muted">
+            {config.options.length} {config.options.length === 1 ? 'option' : 'options'} on the building
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Remove all ${config.options.length} options?`)) clearOptions();
+            }}
+            className="min-h-9 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-danger transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            Remove all options
+          </button>
+        </div>
+      )}
       {CATEGORY_DOCK.map((category) => {
         const count = categoryCount(config, category);
         const open = openId === category.id;

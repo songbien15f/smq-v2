@@ -207,6 +207,8 @@ export interface ShedState {
   removeAllOpenings(type: OpeningType): void;
   /** Remove every option of one kind. */
   removeAllOptions(kind: OptionKind): void;
+  /** Remove every option, as the desktop's dock-level Remove All does. */
+  clearOptions(): void;
   patchOption(id: string, patch: Partial<ShedOption>): void;
   removeOption(id: string): void;
   duplicateOption(id: string): void;
@@ -453,6 +455,10 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     get().applyPartial({
       options: get().config.options.filter((option) => option.kind !== kind),
     });
+  },
+
+  clearOptions() {
+    get().applyPartial({ options: [] });
   },
 
   removeOption(id) {
