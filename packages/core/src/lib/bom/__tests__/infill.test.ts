@@ -6,6 +6,7 @@ import {
   infillLength,
   infillPositions,
   infillSetback,
+  respaceAroundDoors,
   type InfillGeometry,
 } from '../infill';
 
@@ -131,10 +132,9 @@ describe('buildInfillColumns', () => {
     expect(buildInfillColumns(open, geometry()).columns).toEqual([]);
   });
 
-  it('withholds the columns when a gable end has an opening in it', () => {
-    // Where a column goes around a door depends on the door's style and its exact
-    // position — the desktop's `computeInfillPosition`. This build has no door model
-    // to answer that, so it says so rather than guessing a position.
+  it('re-spaces the columns around a roller door instead of withholding them', () => {
+    // R5. The desktop never leaves the gable unbraced: it moves, splits or drops the
+    // column the door would cut through. Withholding them was my earlier stopgap.
     const withDoor = shed({
       openings: [
         {
@@ -148,12 +148,82 @@ describe('buildInfillColumns', () => {
           offset: null,
           swing: null,
           track: null,
+          series: 'B',
         },
       ],
     });
     const result = buildInfillColumns(withDoor, geometry());
-    expect(result.columns).toEqual([]);
-    expect(result.withheld).toMatch(/withheld/i);
+    // The front end still has columns — re-spaced, not removed — and the back end is
+    // untouched because it has no door.
+    expect(result.columns.length).toBeGreaterThan(0);
+    expect(result.withheld).toBeNull();
+    expect(result.columns.some((column) => column.end === 'back')).toBe(true);
+    // No column may stand inside the door's opening.
+    const doorLeft = (12000 - 3000) / 2;
+    for (const column of result.columns.filter((entry) => entry.end === 'front')) {
+      expect(column.positionMm <= doorLeft || column.positionMm >= doorLeft + 3000).toBe(true);
+    }
+  });
+
+  it('re-spaces a narrow gable and leaves the far end alone', () => {
+    // The two answers are mutually exclusive, and this is the narrow one: the factory
+    // moves the column, so the gable is still built — just not where the drawing shows.
+    const narrow = shed({
+      span: 3900,
+      openings: [
+        {
+          id: 'd1',
+          type: 'roller_door',
+          width: 1800,
+          height: 2400,
+          sill: 0,
+          wall: 'front',
+          align: 'custom',
+          offset: 1050,
+          swing: null,
+          track: null,
+          series: 'A',
+        },
+      ],
+    });
+    const result = buildInfillColumns(narrow, geometry());
+    expect(result.respacedEnds).toEqual(['front']);
+    // The back end keeps the design's positions untouched.
+    const back = result.columns.filter((column) => column.end === 'back');
+    expect(back.map((column) => column.positionMm)).toEqual(result.designPositionsMm);
+  });
+
+  it('leaves a wide gable’s columns where the design put them', () => {
+    // Over 4 000 mm the desktop refuses the door rather than moving the column, so the
+    // BOM must not move it either — otherwise a quote reports a blocker and an
+    // assumption for the same door.
+    const wide = shed({
+      openings: [
+        {
+          id: 'd1',
+          type: 'roller_door',
+          width: 2400,
+          height: 2400,
+          sill: 0,
+          wall: 'front',
+          align: 'custom',
+          offset: 3000,
+          swing: null,
+          track: null,
+          series: 'A',
+        },
+      ],
+    });
+    const result = buildInfillColumns(wide, geometry());
+    expect(result.respacedEnds).toEqual([]);
+    const front = result.columns.filter((column) => column.end === 'front');
+    expect(front.map((column) => column.positionMm)).toEqual(result.designPositionsMm);
+  });
+
+  it('keeps the plain layout when the gable end has no door', () => {
+    const result = buildInfillColumns(shed(), geometry());
+    expect(result.columns).toHaveLength(4);
+    expect(result.withheld).toBeNull();
   });
 
   it('says nothing when the design genuinely has no infill', () => {
@@ -172,5 +242,94 @@ describe('buildInfillColumns', () => {
       expect(column.positionMm).toBeGreaterThan(0);
       expect(column.positionMm).toBeLessThan(3000);
     }
+  });
+});
+
+/**
+ * R5 — the desktop's `computeInfillPosition` re-spacing branch.
+ *
+ * Three cases, and each one is a column the workshop would otherwise cut through:
+ * remove it (no room either side), split it in two (room both sides), move it (room
+ * on one). The `500` and `250` thresholds are the desktop's own.
+ */
+describe('respaceAroundDoors (R5)', () => {
+  /** A style-B roller door, whose curtain takes 100 mm. */
+  const door = (leftMm: number, widthMm: number, curtainMm = 100) => ({
+    leftMm,
+    widthMm,
+    curtainMm,
+  });
+
+  it('removes a column with less than 500 mm clear either side', () => {
+    // Door 2 000..4 000. The column at 3 000 sits inside it, and the neighbours at
+    // 1 800 and 4 400 are 250 and 450 away — neither run is worth a column.
+    const positions = respaceAroundDoors([0, 1800, 3000, 4400, 6000], [door(2000, 2000)]);
+    expect(positions).not.toContain(3000);
+    expect(positions).toEqual([0, 1800, 4400, 6000]);
+  });
+
+  it('splits a column into two when there is room either side', () => {
+    // Same door, but the neighbours are 1 000 + away on both sides, so the column
+    // becomes two: 250 mm clear of each jamb, less half the 100 mm curtain.
+    const positions = respaceAroundDoors([0, 1000, 3000, 5000, 6000], [door(2000, 2000)]);
+    expect(positions).not.toContain(3000);
+    expect(positions).toContain(2000 - 250 + 50);
+    expect(positions).toContain(4000 + 250 - 50);
+  });
+
+  it('moves a column to the side that has room', () => {
+    // Close on the left (100 mm), roomy on the right (850 mm): the column moves off
+    // the right jamb rather than being dropped.
+    const positions = respaceAroundDoors([0, 1950, 3000, 4800, 6000], [door(2000, 2000)]);
+    expect(positions).not.toContain(3000);
+    expect(positions).toContain(4000 + 250 - 50);
+  });
+
+  it('leaves a column outside the door alone, however close', () => {
+    // A column 100 mm before the jamb is not inside the opening, so nothing happens to
+    // it — the clearance rules only govern columns the door actually cuts through.
+    const positions = respaceAroundDoors([0, 1900, 3000, 5000, 6000], [door(2000, 2000)]);
+    expect(positions).toContain(1900);
+  });
+
+  it('leaves the columns alone when the door misses them all', () => {
+    const positions = [0, 2000, 8000, 10000];
+    expect(respaceAroundDoors(positions, [door(4000, 2000)])).toEqual(positions);
+  });
+
+  it('never puts a column inside the door', () => {
+    // The invariant the whole function exists for.
+    const positions = [0, 1000, 3000, 5000, 7000, 9000];
+    for (const style of [50, 100]) {
+      const out = respaceAroundDoors(positions, [door(2200, 2600, style)]);
+      for (const position of out) {
+        expect(position <= 2200 || position >= 4800).toBe(true);
+      }
+    }
+  });
+
+  it('never moves a corner column, which is the end wall’s own', () => {
+    // A door hard against the left corner: the 0 must stay, because it is the corner
+    // column and removing it leaves the wall unsupported at its very edge. The span is
+    // what tells this function which positions are corners — without it, the first and
+    // last of a list are ordinary columns, which is how the interior-one bug happened.
+    const positions = respaceAroundDoors([0, 1000, 4000, 6000], [door(0, 4000)], 6000);
+    expect(positions).toContain(0);
+  });
+
+  it('re-spaces the first and last interior column, which an index test would exempt', () => {
+    // `infillPositions` returns interior positions only, so the ends of its list are
+    // ordinary columns. Treating them as corners — as the desktop's list-based rule
+    // does, because its list includes both — left a column standing inside the door.
+    const interior = [4032, 7968];
+    const out = respaceAroundDoors(interior, [door(3000, 2400, 50)], 12000);
+    expect(out).not.toContain(4032);
+    for (const position of out) expect(position <= 3000 || position >= 5400).toBe(true);
+  });
+
+  it('gives every output in sorted order with no duplicates', () => {
+    const out = respaceAroundDoors([0, 2000, 2001, 4000, 6000], [door(1500, 2000), door(3500, 1000)]);
+    expect(out).toEqual([...out].sort((a, b) => a - b));
+    expect(new Set(out).size).toBe(out.length);
   });
 });

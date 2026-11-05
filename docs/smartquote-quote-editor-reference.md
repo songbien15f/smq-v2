@@ -199,11 +199,54 @@ Vị trí cột đến từ sách giá nên `placeOpening` **không tự có**: 
 `buildBomWithEvidence` — nơi có book — truyền vị trí thật và ghi issue
 `DOOR_DISPLACES_INFILL_COLUMN` (severity `assumption`) cho từng cửa vi phạm.
 
+### R5 — dời cột infill quanh cửa cuốn (ĐÃ CÓ)
+
+`respaceAroundDoors()` port nhánh thường của `computeInfillPosition` (`BOMQuoteUtil.cs:569-637`).
+Ba câu trả lời, quyết định bởi **khoảng tường trống mỗi bên cửa**:
+
+| Trống mỗi bên | Kết quả |
+|---|---|
+| cả hai ≤ 500 mm | **bỏ** cột — không còn đoạn nào đáng giữ |
+| cả hai > 500 mm | **tách thành hai** cột, mỗi cột cách jamb 250 mm |
+| một bên > 500 mm | **dời** cột sang bên đó, cách jamb 250 mm |
+
+`500` và `250` là số của desktop. `curtain` là dung sai rèm — **50 mm cho roller style A, 100 mm
+cho loại khác** (`RDoor.GetCurtain`) — và một nửa của nó được cộng vào khoảng trống vì rèm cuốn vào
+trong hốc. `rdoor_type` trong bảng `roller_door` của sách giá chính là `Style`, và v2 đã có
+`Opening.series` — nên **không cần model mới**, chỉ cần tra đúng.
+
+### R3 và R5 loại trừ nhau — và tôi đã làm sai chỗ này
+
+Hai câu trả lời **không thể cùng tồn tại** cho một cửa:
+
+- **nhà ≤ 4000 mm** → xưởng **dời** cột (R5) → quote là *indicative*, kèm issue
+  `INFILL_COLUMNS_RESPACED`;
+- **nhà > 4000 mm** → xưởng **từ chối** cửa (R3) → issue `DOOR_DISPLACES_INFILL_COLUMN`
+  severity **blocker**.
+
+Bản đầu của tôi làm cả hai cùng lúc trên mọi nhà, nên một cửa sinh ra *vừa* blocker *vừa*
+assumption — hai câu mâu thuẫn cho cùng một cây nhà. Đã sửa: `buildInfillColumns` chỉ re-space khi
+`span ≤ 4000`.
+
+**R3 so với vị trí gốc, không phải vị trí đã dời.** Sau khi `respaceAroundDoors` dời cột ra khỏi cửa,
+so cửa với vị trí mới thì luôn không thấy gì. Nên `InfillColumns` mang thêm `designPositionsMm` — vị
+trí thiết kế ban đầu — và R3 so với nó.
+
+### Hai bug thật mà test tìm ra
+
+1. **So với cột của cả hai đầu hồi.** Offset của cửa đo theo tường của nó, nên so với cột của đầu
+   hồi bên kia báo sai — một cửa 2400 mm ở 3000 mm bị tố là đè lên cột cách đó 12 m.
+2. **Cột nội bộ bị coi là cột góc.** Desktop kiểm `index == 0 || index == count-1` trên danh sách
+   **có cả hai cột góc**. `infillPositions` chỉ trả cột nội bộ, nên phần tử đầu/cuối của nó là cột
+   thường — và phép kiểm theo index miễn trừ chúng khỏi mọi cửa. Một cửa 2400 mm đè lên cột nội bộ
+   đầu tiên và cột đó vẫn đứng nguyên trong lòng cửa. Nay kiểm theo **vị trí so với `span`**, không
+   theo index.
+
 ### Chưa có — vì model chưa có (không đoán)
 
 | Rule | Thiếu gì |
 |---|---|
-| R5 | Dọn/đặt lại cột khi thêm cửa đầu hồi (infill ±250). Cần model `RDoor` có `Style` + `RelativeLocation` như desktop (`computeInfillPosition`) — v2 có opening theo tường, không có hai thuộc tính đó. Hiện **giữ nguyên cột và cảnh báo**, không tự dời |
+| ~~R5~~ | **ĐÃ XONG** — xem §6.1 dưới |
 | R9 | "2 tường bên trống" — chính docs desktop nói wording mơ hồ |
 | R11 | Track dài 1000–6000 — track là thuộc tính cửa, không phải chiều dài |
 | R12 | Snap theo tấm mái — không có lưới tấm |
@@ -667,7 +710,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 851 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill) |
+| `@sq/core` | 863 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

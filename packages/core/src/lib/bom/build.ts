@@ -426,23 +426,53 @@ export function buildBomWithEvidence(
    * blocker: the quote is still worth producing, but the gable's steel no longer
    * matches the wall it was designed for, and the reader has to know.
    */
-  const columns = buildingInfillColumns(shed, frame, lookup, rules);
-  if (columns.length > 0) {
+  const columnsResult = buildingInfillColumns(shed, frame, lookup, rules);
+  /*
+   * R3/R5 — a door standing where the design put an infill column.
+   *
+   * The **design's** positions are what matter here, not the re-spaced ones: after
+   * `respaceAroundDoors` has moved a column off the door, comparing the door to the
+   * moved positions would always find nothing. So this compares against
+   * `designPositionsMm`, and reports the two different answers separately:
+   *
+   * - a gable the factory will re-space (≤ 4 000 mm) is an **assumption**: the steel is
+   *   still there, in a different place, and the cut list shows where;
+   * - a wider gable is a **blocker** for that door: the desktop does not re-space it, so
+   *   the wall cannot be built as drawn and the operator has to move the door.
+   *
+   * Comparing against the wrong column set was a real defect: the first version raised
+   * this on a door against a column standing on the **other** gable end, because both
+   * walls share a span and the offsets look alike.
+   */
+  if (columnsResult.designPositionsMm.length > 0) {
     for (const opening of shed.openings) {
+      const end = opening.wall === 'front' ? 'front' : opening.wall === 'back' ? 'back' : null;
+      if (end === null) continue;
+      // Only this end's columns: the two gable ends are independent walls.
       const refusal = infillOverrideRefusal(
         shed,
         opening.wall,
-        columns.map((column) => column.positionMm),
+        columnsResult.designPositionsMm,
         safeCall(() => resolveOpeningPlacement(opening, shed).u) ?? 0,
         opening.width,
       );
       if (refusal !== null) {
         issues.push({
           code: 'DOOR_DISPLACES_INFILL_COLUMN',
-          severity: 'assumption',
+          severity: 'blocker',
           message: refusal,
+          field: 'openings',
         });
       }
+    }
+
+    for (const end of columnsResult.respacedEnds) {
+      issues.push({
+        code: 'INFILL_COLUMNS_RESPACED',
+        severity: 'assumption',
+        message: `The infill columns on the ${end} gable end have been re-spaced around a roller door, because a door stood where the design put one. The steel is still there; it is not where the price book's drawing shows it.`,
+        field: 'openings',
+      });
     }
   }
   const punchSource: PunchSource = {

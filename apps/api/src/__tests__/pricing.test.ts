@@ -997,12 +997,16 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
       right: { mark: string } | null;
     }[];
 
-    // Two sheets: the gable end (C2 meets R2) then the portal (C1 meets R1).
-    expect(pages.length).toBe(2);
+    // Two frame sheets — the gable end (C2 meets R2) then the portal (C1 meets R1) — plus
+    // one sheet per pair of infill columns. This building's design names two per end, so
+    // four infill columns make two more sheets.
+    expect(pages.length).toBe(4);
     expect(pages[0].left?.mark).toBe('C2');
     expect(pages[1].left?.mark).toBe('C1');
     expect(pages[1].right?.mark).toBe('R1');
     expect(pages[1].left?.holeSize).toBe('18x22');
+    expect(pages[2].left?.mark).toBe('M');
+    expect(pages[3].left?.mark).toBe('M');
 
     const portal = pages[1].left!;
     // The book's `kneeedge` at 22.5° is 73, then `HP20-22.5` contributes d1 = 73 and

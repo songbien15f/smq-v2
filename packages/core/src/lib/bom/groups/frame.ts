@@ -20,7 +20,7 @@ import type { Opening, ShedConfig, ShedOption, WallSide } from '@/domain/types';
 import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
-import { buildInfillColumns, type InfillColumn } from '../infill';
+import { buildInfillColumns, type InfillColumns } from '../infill';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -230,7 +230,7 @@ export function frameLines(
    * than multiplied by a quantity, and the description carries the count so a reader
    * can see the line is four columns and not one long one.
    */
-  const infillColumns = buildingInfillColumns(shed, frame, lookup, rules);
+  const infillColumns = buildingInfillColumns(shed, frame, lookup, rules).columns;
   const infillMetres = infillColumns.reduce((sum, column) => sum + column.lengthMm / 1000, 0);
   const infillSection = schedule?.infill?.section ?? null;
 
@@ -431,7 +431,7 @@ export function frameMemberSchedule(
    */
   const infillSection = schedule?.infill?.section ?? null;
   if (infillSection !== null) {
-    const columns = buildingInfillColumns(shed, frame, lookup, rules);
+    const columns = buildingInfillColumns(shed, frame, lookup, rules).columns;
     if (columns.length > 0) {
       members.push({
         item: 'infill_column',
@@ -467,10 +467,11 @@ export function buildingInfillColumns(
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
-): InfillColumn[] {
+): InfillColumns {
   const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
   const infill = schedule?.infill;
-  if (infill == null || infill.section === null) return [];
+  const none: InfillColumns = { columns: [], designPositionsMm: [], respacedEnds: [], withheld: null };
+  if (infill == null || infill.section === null) return none;
 
   const endSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
   const endGeometry = safeCall(() => lookup.frameGeometry?.(endSection));
@@ -489,7 +490,7 @@ export function buildingInfillColumns(
         // same one the column length already makes.
         postInGround: true,
       }),
-    )?.columns ?? []
+    ) ?? none
   );
 }
 

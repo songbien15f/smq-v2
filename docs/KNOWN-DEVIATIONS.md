@@ -27,6 +27,8 @@ change a number and need the operator's signature before a customer sees a quote
 
 | 13 | **The BOM prices no infill columns at all.** The desktop stands extra columns in a wide gable to carry the wall sheeting (`no_M/EW`, `M1`), and this build priced only `End wall column` from `endMemberCount()`. | **Fixed** — `buildingInfillColumns()` reads the count and section from the structure row, and both the frame lines and the cut list use it | A 12 m gable with two infill columns per end was quoted **four columns short** and ~21.7 m of steel light, and the gable sheeting the quote charges for had nothing to hang on. This is the largest single omission found in the conversion. | Frame cost **rises** on every gable wide enough for infill. Quotations issued before this change understated it. |
 
+| 14 | **A roller door over an infill column is refused on a wide gable and re-spaced around on a narrow one** (`AddingRuleDoor.AllowOverrideInfill` / `computeInfillPosition`). | **Both ported** — `infillOverrideRefusal` (blocker above 4 000 mm) and `respaceAroundDoors` (move/split/remove at or below it) | They are mutually exclusive answers for one door. Doing both, which a first version did, reports a blocker *and* an assumption for the same wall — the operator cannot tell whether to move the door or accept a moved column. | None directly; a wide gable with a door over a column is now **blocked** where it previously priced silently. |
+
 **Operational consequence of row 10:** changing the platform logo means adding a **new file** and
 pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
 revisions that referenced the old bytes simply print the text logo from then on. See
