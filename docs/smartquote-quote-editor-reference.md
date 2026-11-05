@@ -304,11 +304,27 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 ## 12. Việc còn lại
 
 1. **Punchings Details** — **bị chặn bởi model**, xem ghi chú dưới.
-3. **Nhóm 4**: UI cho rate table (server đã lưu — xem §12.2), nối rate vào Additions,
-   min fee to distributor & carrier, backup/restore, salesmen.
+3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
    `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
 5. Field hiển thị: outrigger height/direction, SKU picker cho cửa.
+
+### Nhóm 4 — kết luận
+
+**Rate table: đã port** (§12.2).
+
+**Min fee to distributor / nominated carrier: KHÔNG port — tính năng chết trong desktop.**
+Tra toàn repo: bốn biến `MinFeeToDistributorInDollar/InPercent` và
+`MinFeeToNominatedCarrierInDollar/InPercent` chỉ xuất hiện ở `AdminService` (đọc/ghi settings) và
+`MainForm.cs:598-601,626-629` (copy từ admin vào `InstallationInfo`). **Không một chỗ nào trong
+`PriceController`/BOM đọc chúng.** Port nghĩa là tự phát minh cách tính mà bản gốc chưa từng có.
+
+**Salesmen: KHÔNG có màn hình để port.** Salesman là một trường trên **web ShedSafe**, lưu cùng
+building (`ShedsafeData`), không có form desktop. v2 đã gửi client/reference khi pin.
+
+**Backup/restore: là việc vận hành, không phải tính năng app.** Desktop sao lưu SQL Server cục
+bộ của nó; v2 chạy Postgres và `pg_dump` là công cụ đúng — một nút trong app sẽ tạo cảm giác an
+toàn giả (không kiểm soát được lịch, nơi lưu, hay khôi phục).
 
 ### Vì sao Punchings Details chưa làm được
 
