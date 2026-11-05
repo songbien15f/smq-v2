@@ -19,7 +19,7 @@ import { pricingInput as quotePricingInput } from './evaluation.js';
  * `accepted` / `declined` / `expired` are terminal for the sales conversation but
  * never delete the record: a decline is information.
  */
-export const QUOTE_STATUSES = ['draft', 'issued', 'accepted', 'declined', 'expired'] as const;
+export const QUOTE_STATUSES = ['draft', 'issued', 'accepted', 'declined', 'expired', 'deleted'] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 
 /** A quote in a list: enough to render a row, nothing more. */

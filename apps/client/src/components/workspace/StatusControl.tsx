@@ -38,6 +38,8 @@ const MOVES: Record<QuoteStatus, { to: QuoteStatus; label: string }[]> = {
   accepted: [],
   declined: [],
   expired: [],
+  // A deleted quote is a record, not a working document: it moves nowhere.
+  deleted: [],
 };
 
 const TONE: Record<QuoteStatus, 'ok' | 'info' | 'danger' | 'neutral'> = {
@@ -46,6 +48,7 @@ const TONE: Record<QuoteStatus, 'ok' | 'info' | 'danger' | 'neutral'> = {
   accepted: 'ok',
   declined: 'danger',
   expired: 'danger',
+  deleted: 'danger',
 };
 
 export function StatusControl({ quoteId, status, canWrite, onChanged }: StatusControlProps) {

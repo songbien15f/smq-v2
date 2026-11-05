@@ -182,6 +182,34 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
   });
 
   /**
+   * Delete a quote.
+   *
+   * A **status**, not a row delete. The desktop removed the `.sqd` file; on the web that would
+   * also destroy the record of what a customer was sent, and a hard delete is refused by the
+   * append-only guard on revisions anyway. Marking the quote `deleted` takes it out of use and
+   * keeps the audit trail, which is the difference between "deleted" and "deniable".
+   */
+  app.delete<{ Params: { quoteId: string } }>('/quotes/:quoteId', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:write');
+    if (session === null) return;
+
+    const tenantId = session.tenantId as string;
+    const quote = await db.get<{ id: string }>(
+      'SELECT id FROM quotes WHERE id = ? AND tenant_id = ?',
+      [request.params.quoteId, tenantId],
+    );
+    if (quote === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    await db.run('UPDATE quotes SET status = ?, updated_at = ? WHERE id = ?', [
+      'deleted',
+      now(),
+      quote.id,
+    ]);
+
+    return sendOk(reply, { id: quote.id, status: 'deleted' });
+  });
+
+  /**
    * Rename a revision.
    *
    * The content is immutable — config, price and BOM are frozen and the append-only trigger

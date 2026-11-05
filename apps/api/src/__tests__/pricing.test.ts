@@ -678,6 +678,52 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
    * The append-only trigger refused every UPDATE. `010_revision_label` narrows it to the frozen
    * columns, so a rename lands and a changed contract still aborts.
    */
+  it('deletes a quote as a status, keeping the record', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-delete-quote',
+        expectedRev: 0,
+        customer: { firstName: 'Del', lastName: 'Eted', email: 'del@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    const quoteId = saved.json().data.quoteId;
+
+    const deleted = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/quotes/${quoteId}`,
+      headers: { cookie },
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().data.status).toBe('deleted');
+
+    const reopened = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${quoteId}`,
+      headers: { cookie },
+    });
+    expect(reopened.statusCode).toBe(200);
+    expect(reopened.json().data.status).toBe('deleted');
+    // The revision is still there: deleting a quote is not deleting the evidence.
+    const revisions = await ctx.db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM quote_revisions WHERE quote_id = ?',
+      [quoteId],
+    );
+    expect(Number(revisions?.n)).toBe(1);
+  });
+
   it('copies a quote into an independent quote with its own number', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',
