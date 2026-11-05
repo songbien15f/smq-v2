@@ -268,10 +268,19 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
                     aria-label={`Include ${line.label}`}
                     className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-sq-brand)]"
                   />
-                  <span className="min-w-0 flex-1 text-sq-micro text-sq-ink">
-                    {line.label}
-                    {line.taxable ? ' +GST' : ''}
-                  </span>
+                  {line.id.startsWith('custom-') ? (
+                    <input
+                      value={line.label}
+                      onChange={(event) => updateAddition(line.id, { label: event.target.value })}
+                      aria-label="Line label"
+                      className="min-w-0 flex-1 rounded border border-sq-line bg-sq-surface px-1 text-sq-micro"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 text-sq-micro text-sq-ink">
+                      {line.label}
+                      {line.taxable ? ' +GST' : ''}
+                    </span>
+                  )}
                   <input
                     type="number"
                     inputMode="decimal"
@@ -299,6 +308,32 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
                 </li>
               ))}
             </ul>
+            {/*
+              The desktop's equipment-hire and distributor lists are free-form, not a fixed
+              set: a crane, a bobcat, a permit. An added line is taxable by default, and its
+              label is editable — a note belongs on the non-taxable side, which the override
+              and the Charges table already cover.
+            */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = [
+                  ...additionLines,
+                  {
+                    id: `custom-${Date.now().toString(36)}`,
+                    label: 'Equipment hire',
+                    taxable: true,
+                    enabled: true,
+                    quantity: 1,
+                    unitPriceCents: 0,
+                  },
+                ];
+                setPricing({ additionLines: next, additionsCents: additionsTotalCents(next) });
+              }}
+              className="min-h-9 self-start cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+            >
+              + Add a line
+            </button>
             <label className="flex items-center justify-between gap-sq-2 pt-sq-1">
               <span className="text-sq-micro text-sq-ink-muted">
                 Override total (typing here ignores the lines)
