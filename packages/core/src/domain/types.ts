@@ -168,6 +168,8 @@ export interface AwningOption extends OptionBase {
   offset: number | null; // mm along the wall; required when align === 'custom'
   width: number; // mm, along the wall
   depth: number; // mm, projection outward
+  /** Roof pitch in degrees; the outer edge drops by the pitch over the projection. */
+  pitchDeg?: number;
 }
 
 /** A beam bracket projecting from a column line on one wall. */

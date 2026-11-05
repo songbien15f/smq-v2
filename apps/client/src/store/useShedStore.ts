@@ -207,6 +207,8 @@ export interface ShedState {
   addMezzanine(floorLoad: 1.5 | 3 | 5 | 7.5): void;
   /** Add a skylight glazed with the chosen sheet. */
   addSkylight(skylightType: 'Corro' | 'TL-5'): void;
+  /** Add one awning, or two for a front-and-rear run, at a chosen pitch. */
+  addAwning(scope: 'front' | 'rear' | 'both', pitchDeg: number): void;
   /** Remove every opening of one type. */
   removeAllOpenings(type: OpeningType): void;
   /** Remove every option of one kind. */
@@ -475,6 +477,20 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     const option = normaliseOption({ ...base, skylightType } as ShedOption, config);
     get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
+  },
+
+  addAwning(scope, pitchDeg) {
+    const { config } = get();
+    const walls =
+      scope === 'both' ? (['front', 'back'] as const) : scope === 'rear' ? (['back'] as const) : (['front'] as const);
+    const created = walls.flatMap((wall) =>
+      defaultOptionsFor('awning', config)
+        .filter((option) => option.kind === 'awning')
+        .map((option) => normaliseOption({ ...option, wall, pitchDeg } as ShedOption, config)),
+    );
+    if (created.length === 0) return;
+    get().applyPartial({ options: [...config.options, ...created] });
+    get().select({ kind: 'option', id: created[0].id });
   },
 
   removeAllOpenings(type) {

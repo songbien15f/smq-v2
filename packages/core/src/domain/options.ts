@@ -341,6 +341,8 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
         width: clamp(option.width, Math.min(AWNING_MIN_WIDTH, run), run),
         depth: clamp(option.depth, AWNING_MIN_DEPTH, AWNING_MAX_DEPTH),
         offset: option.offset === null ? null : Math.max(0, Math.round(option.offset)),
+        // Rounded to the half-degree the desktop's pitch dropdown offers.
+        pitchDeg: Math.round(Math.min(Math.max(option.pitchDeg ?? 5, 0), 45) * 2) / 2,
       };
     }
     case 'outrigger':
@@ -475,7 +477,9 @@ export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOpt
         id: normalised.id,
         kind: normalised.kind,
         rect: wallStrip(shed, normalised.wall, u, normalised.width, normalised.depth),
-        zLow: shed.height,
+        // The awning hangs from the wall at eave height and falls by the pitch over its
+        // projection, so the outer edge is lower than the wall.
+        zLow: shed.height - Math.round(normalised.depth * Math.tan(((normalised.pitchDeg ?? 5) * Math.PI) / 180)),
         zHigh: shed.height,
       };
     }

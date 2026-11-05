@@ -64,6 +64,7 @@ export function CategoryDock() {
   const addMiscOption = useShedStore((state) => state.addMiscOption);
   const addMezzanine = useShedStore((state) => state.addMezzanine);
   const addSkylight = useShedStore((state) => state.addSkylight);
+  const addAwning = useShedStore((state) => state.addAwning);
   const addCharge = useShedStore((state) => state.addCharge);
   const removeAllOpenings = useShedStore((state) => state.removeAllOpenings);
   const removeAllOptions = useShedStore((state) => state.removeAllOptions);
@@ -84,6 +85,8 @@ export function CategoryDock() {
   const [miscQty, setMiscQty] = useState(1);
   const [floorLoad, setFloorLoad] = useState<1.5 | 3 | 5 | 7.5>(1.5);
   const [skylightType, setSkylightType] = useState<'Corro' | 'TL-5'>('Corro');
+  const [awningScope, setAwningScope] = useState<'front' | 'rear' | 'both'>('front');
+  const [awningPitch, setAwningPitch] = useState(5);
 
   const slidingDoors = config.openings.filter((opening) => opening.type === 'sliding_door');
 
@@ -213,6 +216,29 @@ export function CategoryDock() {
                 Add item
               </Button>
             </div>
+          </div>
+        );
+      }
+
+      if (category.option === 'awning') {
+        return (
+          <div className="flex flex-wrap items-end gap-sq-2">
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro text-sq-ink">Runs</span>
+              <select
+                value={awningScope}
+                onChange={(event) => setAwningScope(event.target.value as 'front' | 'rear' | 'both')}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value="front">Across the front</option>
+                <option value="rear">Across the rear</option>
+                <option value="both">Front and rear</option>
+              </select>
+            </label>
+            <NumberField id="add-awning-pitch" label="Pitch (deg)" value={awningPitch} min={0} max={45} step={0.5} onChange={setAwningPitch} />
+            <Button variant="primary" onClick={() => addAwning(awningScope, awningPitch)}>
+              Add {category.label}
+            </Button>
           </div>
         );
       }
