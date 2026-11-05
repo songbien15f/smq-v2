@@ -303,12 +303,22 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Punchings Details** — report lỗ đột của desktop.
+1. **Punchings Details** — **bị chặn bởi model**, xem ghi chú dưới.
 3. **Nhóm 4**: Settings rates (labour / equipment / demolition / distributor), min fee to
    distributor & carrier, backup/restore, salesmen.
 4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
    `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
 5. Field hiển thị: outrigger height/direction, SKU picker cho cửa.
+
+### Vì sao Punchings Details chưa làm được
+
+`PunchingDetailForm` dựng báo cáo từ `itemsFrame` — danh sách **MaterialItem của từng thanh
+khung** (`ItemName` như `MAIN_RAFTER_R1`, `INFILL_COLUMN`, `ROOLER_DOOR_COLUMN/HEADER`) cùng
+`FrameSpec.Depth`, `BasicData.DoorMullion/DoorHeader`, và offset lỗ từ `KneeEdge`/`Haunch`/`Apex`.
+
+v2 **không có model tiết diện thanh** (member size), nên không có `itemsFrame` để đọc. Đây
+cùng một lỗ hổng với R3/R5 (cột infill) và tính năng **Steelwork Schedule / Member Size**.
+Làm report này trước khi có model member sẽ là bịa số lỗ — không làm.
 
 ### Đã xong (ghi để khỏi làm lại)
 
