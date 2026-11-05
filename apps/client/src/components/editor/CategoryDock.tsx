@@ -63,6 +63,7 @@ export function CategoryDock() {
   const addOption = useShedStore((state) => state.addOption);
   const addMiscOption = useShedStore((state) => state.addMiscOption);
   const addMezzanine = useShedStore((state) => state.addMezzanine);
+  const addSkylight = useShedStore((state) => state.addSkylight);
   const addCharge = useShedStore((state) => state.addCharge);
   const removeAllOpenings = useShedStore((state) => state.removeAllOpenings);
   const removeAllOptions = useShedStore((state) => state.removeAllOptions);
@@ -82,6 +83,7 @@ export function CategoryDock() {
   const [miscName, setMiscName] = useState('');
   const [miscQty, setMiscQty] = useState(1);
   const [floorLoad, setFloorLoad] = useState<1.5 | 3 | 5 | 7.5>(1.5);
+  const [skylightType, setSkylightType] = useState<'Corro' | 'TL-5'>('Corro');
 
   const slidingDoors = config.openings.filter((opening) => opening.type === 'sliding_door');
 
@@ -211,6 +213,27 @@ export function CategoryDock() {
                 Add item
               </Button>
             </div>
+          </div>
+        );
+      }
+
+      if (category.option === 'skylight') {
+        return (
+          <div className="flex flex-wrap items-end gap-sq-2">
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro text-sq-ink">Glazing</span>
+              <select
+                value={skylightType}
+                onChange={(event) => setSkylightType(event.target.value as 'Corro' | 'TL-5')}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+              >
+                <option value="Corro">Corro</option>
+                <option value="TL-5">TL-5</option>
+              </select>
+            </label>
+            <Button variant="primary" onClick={() => addSkylight(skylightType)}>
+              Add {category.label}
+            </Button>
           </div>
         );
       }

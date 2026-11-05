@@ -205,6 +205,8 @@ export interface ShedState {
   addMiscOption(input: { name: string; quantity: number; unit: string }): void;
   /** Add a mezzanine at a chosen design floor load. */
   addMezzanine(floorLoad: 1.5 | 3 | 5 | 7.5): void;
+  /** Add a skylight glazed with the chosen sheet. */
+  addSkylight(skylightType: 'Corro' | 'TL-5'): void;
   /** Remove every opening of one type. */
   removeAllOpenings(type: OpeningType): void;
   /** Remove every option of one kind. */
@@ -457,6 +459,20 @@ export const useShedStore = create<ShedState>()((set, get) => ({
     const base = defaultOptionsFor('mezzanine', config)[0];
     if (base === undefined) return;
     const option = normaliseOption({ ...base, floorLoad } as ShedOption, config);
+    get().applyPartial({ options: [...config.options, option] });
+    get().select({ kind: 'option', id: option.id });
+  },
+
+  addSkylight(skylightType) {
+    const { config } = get();
+    const refusal = refusePlacement('skylight', config);
+    if (refusal !== null) {
+      set({ notices: [refusal.reason] });
+      return;
+    }
+    const base = defaultOptionsFor('skylight', config)[0];
+    if (base === undefined) return;
+    const option = normaliseOption({ ...base, skylightType } as ShedOption, config);
     get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
   },

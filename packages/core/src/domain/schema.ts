@@ -174,7 +174,8 @@ const openingSchema = z.object({
  */
 const completeOptionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('skylight'), id: z.string().min(1), bay: z.number().int(),
-    alongBay: z.number(), width: z.number(), height: z.number() }),
+    alongBay: z.number(), width: z.number(), height: z.number(),
+    skylightType: z.enum(['Corro', 'TL-5']).optional() }),
   z.object({ kind: z.literal('mezzanine'), id: z.string().min(1),
     corner: z.enum(['front_left', 'front_right', 'back_left', 'back_right']),
     width: z.number(), depth: z.number(), level: z.number(),
@@ -641,6 +642,7 @@ const tolerantOptionSchema = z.discriminatedUnion('kind', [
     alongBay: z.coerce.number().catch(0.5),
     width: z.coerce.number().catch(900),
     height: z.coerce.number().catch(900),
+    skylightType: z.enum(['Corro', 'TL-5']).optional().catch(undefined),
   }),
   z.object({
     kind: z.literal('mezzanine'),

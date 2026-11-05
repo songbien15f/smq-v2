@@ -323,6 +323,7 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
         alongBay: Math.min(0.9, Math.max(0.1, option.alongBay)),
         width: clamp(option.width, Math.min(SKYLIGHT_MIN, limit), limit),
         height: clamp(option.height, Math.min(SKYLIGHT_MIN, limit), limit),
+        skylightType: option.skylightType === 'TL-5' ? 'TL-5' : 'Corro',
       };
     }
     case 'mezzanine':

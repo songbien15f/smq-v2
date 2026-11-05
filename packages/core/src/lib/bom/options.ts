@@ -163,15 +163,29 @@ function roofSheetLength(shed: ShedConfig): number {
 }
 
 /** A skylight's sheet, plus the clearfix screws that hold it. */
-function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
-  const count = shed.options.filter((option) => option.kind === 'skylight').length;
-  if (count === 0) return [];
-  // A skylight sheet is one roof sheet's worth of polycarbonate, so it is priced
-  // by the same profile lookup the roof uses.
-  const row = safeCall(() => lookup.sheeting(PROFILE, BMT));
-  return [
-    ...eachLine('option', `Skylight sheet, ${roofSheetLength(shed)} mm`, count, row),
-  ];
+export function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
+  const skylights = shed.options.filter(
+    (option): option is Extract<ShedOption, { kind: 'skylight' }> => option.kind === 'skylight',
+  );
+  if (skylights.length === 0) return [];
+
+  /*
+   * One line per glazing type: a Corro skylight and a TL-5 skylight are different sheets
+   * with different prices, so adding them together would price half the roof at the wrong
+   * rate. The profile is the sheeting row's own name.
+   */
+  const byType = new Map<'Corro' | 'TL-5', number>();
+  for (const skylight of skylights) {
+    const type = skylight.skylightType === 'TL-5' ? 'TL-5' : 'Corro';
+    byType.set(type, (byType.get(type) ?? 0) + 1);
+  }
+
+  const lines: BomLine[] = [];
+  for (const [type, count] of byType) {
+    const row = safeCall(() => lookup.sheeting(type, BMT));
+    lines.push(...eachLine('option', `Skylight sheet (${type}), ${roofSheetLength(shed)} mm`, count, row));
+  }
+  return lines;
 }
 
 /** A mezzanine: a priced floor area, not a list of members. */

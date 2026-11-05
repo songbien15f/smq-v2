@@ -142,6 +142,8 @@ export interface SkylightOption extends OptionBase {
   alongBay: number;
   width: number; // mm
   height: number; // mm, along the length axis
+  /** The sheet it is glazed with; the two are priced from different profiles. */
+  skylightType?: 'Corro' | 'TL-5';
 }
 
 /** A raised floor slab in one corner of the shed. */
