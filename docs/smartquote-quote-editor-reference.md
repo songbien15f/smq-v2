@@ -279,12 +279,31 @@ riêng. Nay mặc định = một tấm khi biết cover.
 Cover đọc từ `sheeting_cover` (**mét** trong sách, `'QLD:0.762;'`) và đổi sang mm; UI lấy cover
 theo `stateCode`, chỉ profile `isRoof`. Không có cover thì **không snap** thay vì đoán 762.
 
+### R9 — mezzanine không được cắt qua cửa (ĐÃ CÓ)
+
+> **Ghi chú sửa sai, lần thứ ba.** Tôi ghi R9 là "category cần **2 tường bên trống**" và cho là
+> wording mơ hồ. Đọc `AddMezzamineRule` thì nó **không phải** vậy: rule đi qua các option trên hai
+> tường mà sàn mezzanine chạm tới và đếm những cái sàn sẽ cắt qua — cửa cuốn cao hơn sàn, cửa sổ có
+> dải sill–head chứa sàn, cửa PA đủ cao. Không phải "tường trống", mà là **độ cao** so với sàn.
+
+`optionsUnderMezzanine` trong `optionRules.ts`:
+
+- vị trí mặc định `back_left`, sàn ở 2400 mm, dày 150 mm (`MEZZ_SLAB`);
+- hai tường mà góc đó chạm: một tường dài + một đầu hồi;
+- một cửa bị coi là vướng khi dải đứng của nó giao dải của sàn — cửa: `sill` đến `sill + height`;
+- **> 1 vật cản** → báo tổng số kèm danh sách; **đúng 1** → nêu tên, y như
+  `WarningBlockedMezznine(optName)` của desktop.
+
+**Khác desktop một chỗ có chủ ý:** desktop **cảnh báo** rồi vẫn cho đặt; v2 **từ chối**. Sàn cắt
+qua cửa là thứ không xây được — ai đó phải dời cửa hoặc dời sàn — và cảnh báo là thứ người ta bấm
+qua. Câu từ chối nêu tên thứ vướng, đó là toàn bộ giá trị của phép kiểm.
+
 ### Chưa có — vì model chưa có (không đoán)
 
 | Rule | Thiếu gì |
 |---|---|
 | ~~R5~~ | **ĐÃ XONG** — xem §6.1 dưới |
-| R9 | "2 tường bên trống" — chính docs desktop nói wording mơ hồ |
+| ~~R9~~ | **ĐÃ XONG** — hoá ra không phải "2 tường trống"; xem §6.3 |
 | R11 | Track dài 1000–6000 — track là thuộc tính cửa, không phải chiều dài |
 | ~~R12~~ | **ĐÃ XONG** — xem §6.2 |
 
@@ -747,7 +766,7 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 882 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight snap) |
+| `@sq/core` | 886 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine headroom) |
 | `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

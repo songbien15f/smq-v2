@@ -35,6 +35,7 @@ import type { OptionKind, ShedConfig, ShedOption, SkylightOption } from './types
 import { hasPlanGeometry, resolveOption } from './options';
 import { carryBeamRefusal } from './placementRules';
 import { skylightCollision } from './skylightSnap';
+import { MEZZ_SLAB } from './options';
 
 /** Why a placement was refused, addressed to a person. */
 export interface PlacementRefusal {
@@ -48,6 +49,59 @@ const MEZZ_HEADROOM = 300;
 
 /** The smallest shed a dividing wall can sit inside, mm — two margins plus a wall. */
 const DIVIDING_MIN_RUN = 900;
+
+/** The label a person reads for an opening type, in a sentence. */
+const OPENING_LABEL: Record<string, string> = {
+  roller_door: 'roller door',
+  pa_door: 'PA door',
+  sliding_door: 'sliding door',
+  window: 'window',
+  opening: 'opening',
+};
+
+/**
+ * The openings a mezzanine's slab would cut through, named.
+ *
+ * A mezzanine that does not fill the building sits in a corner against two walls; the
+ * desktop walks the options on those walls. This build's mezzanine has a `corner` and a
+ * size, so the walls it touches are the corner's two — front or back, and left or right —
+ * and the slab runs across the full width and depth it was given from that corner.
+ *
+ * An opening is in the way when:
+ * - it stands on one of those walls, **and**
+ * - its vertical band crosses the slab: for a door that means its head is above the slab;
+ *   for a window, its sill is below the slab's top and its head above its underside.
+ *
+ * The desktop's `minHR`/`maxHR` (`:140-145`) is the same test with the door's headroom
+ * style folded in; this build has no headroom field, so the door's own height is the head,
+ * which is the conservative reading: a door that just reaches the slab is still in the way.
+ */
+function optionsUnderMezzanine(shed: ShedConfig): string[] {
+  const mezzanine = shed.options.find((option) => option.kind === 'mezzanine');
+  // No mezzanine yet: a new one lands at `back_left` with a 3 m square, which is where the
+  // check has to look.
+  const corner = mezzanine?.kind === 'mezzanine' ? mezzanine.corner : 'back_left';
+  const level = mezzanine?.kind === 'mezzanine' ? mezzanine.level : 2400;
+  const slabTop = level + MEZZ_SLAB;
+
+  // A corner touches one long wall and one gable end.
+  const walls: string[] = [
+    corner === 'front_left' || corner === 'front_right' ? 'front' : 'back',
+    corner === 'front_left' || corner === 'back_left' ? 'left' : 'right',
+  ];
+
+  const blocked: string[] = [];
+  for (const opening of shed.openings) {
+    if (!walls.includes(opening.wall)) continue;
+    const label = OPENING_LABEL[opening.type] ?? opening.type;
+    // A door's band runs from the floor to its head; a window's from its sill.
+    const low = opening.sill;
+    const high = opening.sill + opening.height;
+    // It is in the way when the slab's band overlaps the opening's band.
+    if (level < high && slabTop > low) blocked.push(label);
+  }
+  return blocked;
+}
 
 /**
  * Whether `kind` may be added to `shed`, and why not.
@@ -81,6 +135,31 @@ export function refusePlacement(kind: OptionKind, shed: ShedConfig): PlacementRe
         return {
           kind,
           reason: `A mezzanine needs walls of at least ${minimumLevel + MEZZ_HEADROOM} mm to stand on at ${minimumLevel} mm. This shed's walls are ${shed.height} mm — raise them, or use a different option.`,
+        };
+      }
+      /*
+       * **The slab must clear every door and window it stands over.** The desktop's
+       * `AddMezzamineRule` (`:130-200`) walks the options on the walls the mezzanine touches and
+       * counts the ones its slab would cut through: a roller or PA door whose height reaches above
+       * the slab, a window whose sill-to-head band contains it. More than one obstruction earns a
+       * generic warning; exactly one names the culprit (`WarningBlockedMezznine(optName)`).
+       *
+       * The desktop **warned** and let the operator place it. This refuses, because a mezzanine
+       * whose slab runs through a door cannot be built — somebody has to move one of them — and a
+       * warning is what a person clicks past. The sentence names what is in the way, which is the
+       * whole value of the desktop's check.
+       */
+      const blocked = optionsUnderMezzanine(shed);
+      if (blocked.length > 1) {
+        return {
+          kind,
+          reason: `A mezzanine here would cut through ${blocked.length} openings — ${blocked.join(', ')}. Move it to a corner with no doors, or remove one of them.`,
+        };
+      }
+      if (blocked.length === 1) {
+        return {
+          kind,
+          reason: `A mezzanine here would cut through the ${blocked[0]}. Move it to a corner with no doors, or move that one.`,
         };
       }
       return null;

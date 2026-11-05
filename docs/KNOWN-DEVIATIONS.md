@@ -33,6 +33,8 @@ change a number and need the operator's signature before a customer sees a quote
 
 | 16 | **`Roof.HaveSkyLight` compares skylight *start* positions only**, so two panes starting on different sheets but wide enough to touch both pass its check. | **Fixed** — `skylightsOverlap` compares footprints | Two skylights on one part of the roof is two pans of glass where the order says one, and a hole the sheeting count does not expect. | None. |
 
+| 17 | **A mezzanine whose slab cuts through a door is a *warning*** (`AddMezzamineRule:200`, `WarningBlockedMezznine`); the operator could place it and see what it blocked. | **Refused**, with the culprit named | A slab through a door cannot be built — somebody has to move one — and a warning is what a person clicks past. The desktop's own sentence naming the option is kept; only the severity changes. | None. A quote that would have carried an unbuildable mezzanine is now refused at placement. |
+
 **Operational consequence of row 10:** changing the platform logo means adding a **new file** and
 pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
 revisions that referenced the old bytes simply print the text logo from then on. See

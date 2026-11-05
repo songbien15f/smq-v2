@@ -85,7 +85,8 @@ const MEZZ_LOADS = [1.5, 3, 5, 7.5] as const;
 /** Clearance between a mezzanine's top and the eaves, mm. */
 const MEZZ_HEADROOM = 300;
 /** Slab thickness, mm. */
-const MEZZ_SLAB = 150;
+/** Mezzanine slab thickness, mm — exported so the headroom rule uses the same number. */
+export const MEZZ_SLAB = 150;
 const AWNING_MIN_WIDTH = 1000;
 const AWNING_MIN_DEPTH = 500;
 const AWNING_MAX_DEPTH = 3000;
