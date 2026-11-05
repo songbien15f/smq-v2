@@ -45,8 +45,8 @@ const sendRequest = z.object({
   mode: z.enum(SEND_MODES).default('quote'),
 });
 
-/** The counter columns a mode increments. */
-function countersFor(mode: SendMode): string[] {
+/** The counter columns a mode increments. Exported for its unit test. */
+export function countersFor(mode: SendMode): string[] {
   switch (mode) {
     case 'quote':
       return ['quote_send_count'];
