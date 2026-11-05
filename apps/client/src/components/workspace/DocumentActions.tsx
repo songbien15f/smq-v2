@@ -82,6 +82,8 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
   const htmlHref = `${API}/quotes/${quoteId}/revisions/${revision}/html?kind=${printKind}`;
   const pdfHref = `${API}/quotes/${quoteId}/revisions/${revision}/pdf?kind=${printKind}`;
   const bomHref = `${API}/quotes/${quoteId}/revisions/${revision}/bom`;
+  /** The plan as its own sheet: a drawing a workshop pins up, with no price on it. */
+  const planHref = `${API}/quotes/${quoteId}/revisions/${revision}/plan`;
 
   /**
    * Load the links already issued for this quote.
@@ -177,6 +179,14 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
           className="inline-flex min-h-11 items-center rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
         >
           Open in a tab
+        </a>
+        <a
+          href={planHref}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-h-11 items-center rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
+        >
+          Plan drawing
         </a>
         {/*
           The materials workbook. It is not the customer's document — it carries unit costs and group

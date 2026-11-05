@@ -724,6 +724,42 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     expect(Number(revisions?.n)).toBe(1);
   });
 
+  it('serves the plan as a drawing sheet with no money on it', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-plan-sheet',
+        expectedRev: 0,
+        customer: { firstName: 'Plan', lastName: 'Sheet', email: 'ps@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+
+    const plan = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${saved.json().data.quoteId}/revisions/1/plan`,
+      headers: { cookie },
+    });
+    expect(plan.statusCode).toBe(200);
+    expect(plan.headers['content-type']).toMatch(/text\/html/);
+    expect(plan.body).toContain('<svg');
+    expect(plan.body).toContain('A4 landscape');
+    // A drawing a workshop pins up carries no price and no customer contact.
+    expect(plan.body).not.toContain('Contract price');
+    expect(plan.body).not.toContain('ps@example.com');
+  });
+
   it('serves a supplier copy with no client price, and refuses an unknown kind', async () => {
     const evaluated = await ctx.app.inject({
       method: 'POST',

@@ -16,7 +16,7 @@
 import type { Db } from '@sq/db';
 import { resolveFromRoot } from '@sq/db';
 import type { FrozenIssue, FrozenPrice, FrozenRevision, PrintKind } from '@sq/core/documents';
-import { renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
+import { renderPlanPageHtml, renderQuoteHtml, toCustomerDocument } from '@sq/core/documents';
 import { normaliseShedConfig } from '@sq/core/domain';
 import { loadLogo } from '@sq/core/branding';
 
@@ -69,6 +69,11 @@ export async function renderFrozenDocument(
     html: renderQuoteHtml(toCustomerDocument(frozen), { logo, printKind }),
     logoKey: used,
   };
+}
+
+/** The plan as a drawing sheet: no price, no customer block. */
+export async function renderFrozenPlan(frozen: FrozenRevision): Promise<string> {
+  return renderPlanPageHtml(toCustomerDocument(frozen));
 }
 
 /** Raised when the revision does not exist, or belongs to another company. */

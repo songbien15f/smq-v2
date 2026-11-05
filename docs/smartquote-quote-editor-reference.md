@@ -303,7 +303,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. **Bản vẽ**: `elevations` và `plan view` xuất riêng (plan đã có trong tài liệu; mặt đứng chưa).
+1. **Bản vẽ**: `elevations` (mặt đứng) — plan view đã có, xem §12.1.
 2. **Punchings Details** — report lỗ đột của desktop.
 3. **Nhóm 4**: Settings rates (labour / equipment / demolition / distributor), min fee to
    distributor & carrier, backup/restore, salesmen.
@@ -350,6 +350,11 @@ Tên cột lấy từ `countersFor` (tập đóng), không từ request.
 - Mỗi loại có `<h1>` riêng.
 - `kind` nằm trong **cache key PDF**, để bản supplier không bị phục vụ PDF của bản khách.
 - `kind` lạ → **422**, không âm thầm rơi về bản khách.
+
+**Plan drawing** — `GET /quotes/:id/revisions/:rev/plan` trả một trang **A4 landscape** chỉ có
+hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".
+**Không giá, không tên/liên hệ khách, không quảng cáo** — đây là bản vẽ dán ở xưởng.
+Dùng chung `PlanGeometry` với tài liệu khách nên hai bản không thể lệch nhau.
 
 ---
 

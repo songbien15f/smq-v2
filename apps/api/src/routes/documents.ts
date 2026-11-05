@@ -27,6 +27,7 @@ import type { PrintKind } from '@sq/core/documents';
 import {
   loadFrozenRevision,
   renderFrozenDocument,
+  renderFrozenPlan,
   RevisionNotFound,
   revisionDocumentKey,
 } from '../lib/documents.js';
@@ -129,6 +130,37 @@ export function registerDocuments(app: FastifyInstance, db: Db): void {
       }
     },
   );
+
+  /** The plan and its openings as a drawing sheet, for a workshop wall. */
+  app.get<{ Params: { quoteId: string; rev: string } }>(
+    '/quotes/:quoteId/revisions/:rev/plan',
+    async (request, reply) => {
+      const session = requireCompanyCapability(request, reply, 'quote:read');
+      if (session === null) return;
+
+      const revisionNumber = Number(request.params.rev);
+      if (!Number.isInteger(revisionNumber) || revisionNumber < 1) {
+        return sendFail(reply, 'validation_failed', 'The revision number must be a positive whole number.');
+      }
+
+      try {
+        const frozen = await loadFrozenRevision(db, {
+          tenantId: session.tenantId as string,
+          quoteId: request.params.quoteId,
+          revision: revisionNumber,
+        });
+        const html = await renderFrozenPlan(frozen);
+        return reply
+          .status(200)
+          .header('content-type', 'text/html; charset=utf-8')
+          .header('content-disposition', `inline; filename="plan-${frozen.quoteNumber}-r${frozen.revision}.html"`)
+          .send(html);
+      } catch (error) {
+        if (error instanceof RevisionNotFound) return sendFail(reply, 'not_found', 'Not found.');
+        throw error;
+      }
+    },
+  );
 }
 
 /**
@@ -189,7 +221,8 @@ async function buildHtml(
   }
 }
 
-/** Exported for the share route, which renders the same page from a token rather than a session. */
+
+  /** Exported for the share route, which renders the same page from a token rather than a session. */
 export { buildHtml as renderRevisionHtmlForShare };
 export { pdfCacheRoot, chromePath, filenameFor };
 export { clientIp };

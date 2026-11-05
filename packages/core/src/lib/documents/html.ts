@@ -75,7 +75,7 @@ export interface QuoteHtmlOptions {
  * is legitimate history, and a customer holding last month's PDF must still be able to download it —
  * so an absent field prints blank instead of failing the whole document.
  */
-function escapeHtml(value: string | null | undefined): string {
+export function escapeHtml(value: string | null | undefined): string {
   return (value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
