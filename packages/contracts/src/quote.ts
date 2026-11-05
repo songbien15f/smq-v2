@@ -115,6 +115,13 @@ export const saveQuoteRequest = z.object({
 });
 export type SaveQuoteRequest = z.infer<typeof saveQuoteRequest>;
 
+/** Renaming a revision: metadata only, the frozen content is never touched. */
+export const revisionMetadataRequest = z.object({
+  name: z.string().trim().max(120).optional(),
+  description: z.string().trim().max(500).optional(),
+});
+export type RevisionMetadataRequest = z.infer<typeof revisionMetadataRequest>;
+
 /** What a save returns. */
 export interface SaveQuoteResult {
   quoteId: string;

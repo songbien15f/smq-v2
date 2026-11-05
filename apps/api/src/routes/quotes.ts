@@ -12,6 +12,7 @@ import type { Db } from '@sq/db';
 import { pageQuery, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import type { QuoteListItem, QuoteStatus } from '@sq/contracts';
+import { revisionMetadataRequest } from '@sq/contracts';
 
 export function registerQuotes(app: FastifyInstance, db: Db): void {
   app.get('/quotes', async (request, reply) => {
@@ -177,6 +178,49 @@ export function registerQuotes(app: FastifyInstance, db: Db): void {
 
     return sendOk(reply, { items: rows });
   });
+
+  /**
+   * Rename a revision.
+   *
+   * The content is immutable — config, price and BOM are frozen and the append-only trigger
+   * enforces it. `name` and `description` are labels written after the fact, and
+   * `010_revision_label` narrows the trigger to allow exactly those. A field left out of the
+   * body is left as it is.
+   */
+  app.patch<{ Params: { quoteId: string; revision: string } }>(
+    '/quotes/:quoteId/revisions/:revision',
+    async (request, reply) => {
+      const session = requireCompanyCapability(request, reply, 'quote:write');
+      if (session === null) return;
+
+      const body = parseBody(revisionMetadataRequest, request.body, reply);
+      if (body === null) return;
+
+      const revision = Number(request.params.revision);
+      if (!Number.isInteger(revision) || revision < 1) {
+        return sendFail(reply, 'not_found', 'Not found.');
+      }
+
+      const tenantId = session.tenantId as string;
+      const existing = await db.get<{ id: string }>(
+        `SELECT r.id FROM quote_revisions r
+          JOIN quotes q ON q.id = r.quote_id
+         WHERE r.quote_id = ? AND r.revision = ? AND q.tenant_id = ?`,
+        [request.params.quoteId, revision, tenantId],
+      );
+      if (existing === null) return sendFail(reply, 'not_found', 'Not found.');
+
+      // Allowed only because the frozen columns are unchanged.
+      await db.run(
+        `UPDATE quote_revisions
+            SET name = COALESCE(?, name), description = COALESCE(?, description)
+          WHERE quote_id = ? AND revision = ? AND tenant_id = ?`,
+        [body.name ?? null, body.description ?? null, request.params.quoteId, revision, tenantId],
+      );
+
+      return sendOk(reply, { revision });
+    },
+  );
 
   // `parseBody` is imported for the save route that follows in phase 5; keeping the
   // import used here avoids a dead-import warning while the route is being written.

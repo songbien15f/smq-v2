@@ -673,6 +673,64 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
   });
 
   /**
+   * A revision's label may change; its content may not.
+   *
+   * The append-only trigger refused every UPDATE. `010_revision_label` narrows it to the frozen
+   * columns, so a rename lands and a changed contract still aborts.
+   */
+  it('renames a revision without touching its frozen content', async () => {
+    const evaluated = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: config(), pricing },
+    });
+    const saved = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/quotes',
+      headers: { cookie },
+      payload: {
+        evaluationId: evaluated.json().data.evaluationId,
+        idempotencyKey: 'test-rename-revision',
+        expectedRev: 0,
+        customer: { firstName: 'Re', lastName: 'Name', email: 'rn@example.com', address: 'x' },
+        site: { address: 'x', deliveryAcknowledged: true },
+        config: config(),
+        pricing,
+      },
+    });
+    expect(saved.statusCode).toBe(201);
+    const quoteId = saved.json().data.quoteId;
+    const before = await ctx.db.get<{ config_json: string; contract_cents: number }>(
+      'SELECT config_json, contract_cents FROM quote_revisions WHERE quote_id = ? AND revision = 1',
+      [quoteId],
+    );
+
+    const renamed = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/quotes/${quoteId}/revisions/1`,
+      headers: { cookie },
+      payload: { name: 'Option B — bigger door' },
+    });
+    expect(renamed.statusCode).toBe(200);
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/quotes/${quoteId}/revisions`,
+      headers: { cookie },
+    });
+    const row = list.json().data.items.find((item: { revision: number }) => item.revision === 1);
+    expect(row.name).toBe('Option B — bigger door');
+
+    const after = await ctx.db.get<{ config_json: string; contract_cents: number }>(
+      'SELECT config_json, contract_cents FROM quote_revisions WHERE quote_id = ? AND revision = 1',
+      [quoteId],
+    );
+    expect(after?.config_json).toBe(before?.config_json);
+    expect(after?.contract_cents).toBe(before?.contract_cents);
+  });
+
+  /**
    * The internal breakdown is a capability, not a screen preference.
    *
    * `cost:read` lets an estimator quote from the sell price; the material cost, the

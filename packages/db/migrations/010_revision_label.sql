@@ -1,0 +1,9 @@
+-- 010 — a revision's label may change; its content may not.
+--
+-- Portable half: no table changes. The append-only guard lives in a trigger (SQLite) and a
+-- trigger function (Postgres), so the difference is dialect-specific and lives in
+-- `sqlite/010_revision_label.sql` and `pg/010_revision_label.sql`.
+--
+-- This file exists so the runner visits prefix `010` at all: `migrate()` applies a dialect
+-- file only for a prefix that has a portable counterpart, so a dialect-only migration is
+-- silently skipped. The comment is the whole portable change.
