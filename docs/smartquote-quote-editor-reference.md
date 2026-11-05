@@ -305,8 +305,10 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 1. **Punchings Details** — **bị chặn bởi model**, xem ghi chú dưới.
 3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
-4. **Nhóm 5**: R3/R5/R9/R12 (cần model cột infill và lưới tấm mái), golden BOM (cần converter
-   `HousePlan` → `ShedConfig`), overlay add-mode trên canvas.
+4. **R12 skylight snap — bị chặn bởi model.** Desktop snap skylight theo **lưới tấm mái theo
+   phương span** (`GetSheetingPos() * RoofSheetingSize`, trục từ eave tới ridge). v2 neo skylight
+   bằng `bay` + `alongBay` — tức theo **phương dọc nhà**. Snap `alongBay` sẽ là snap sai trục.
+   Muốn làm đúng phải thêm vị trí skylight theo phương span trước.
 5. Field hiển thị: hướng outrigger (left/right).
 
 **Outrigger height: đã có** — `height` (mm), mặc định 2000, không vượt chiều cao tường; bracket
