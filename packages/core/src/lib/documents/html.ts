@@ -31,9 +31,40 @@ import { logoDataUri, type LogoImage } from '@/lib/branding/logo';
  * stays a pure function of its inputs and `packages/core` keeps its no-filesystem rule at the render
  * boundary.
  */
+/**
+ * Which document this is.
+ *
+ * The desktop printed seven kinds from one template, and every one of them showed the client's
+ * price — including the order a supplier receives. That is a commercial leak: a supplier who
+ * knows the sell price knows the margin. The customer-facing kinds keep the money block; the
+ * supplier-facing ones do not.
+ */
+export type PrintKind =
+  | 'quotation'
+  | 'contract'
+  | 'order'
+  | 'supplier-quotation'
+  | 'supplier-contract';
+
+/** True for a document that goes to a supplier rather than to the buyer. */
+export function isSupplierPrint(kind: PrintKind): boolean {
+  return kind === 'order' || kind === 'supplier-quotation' || kind === 'supplier-contract';
+}
+
+/** The heading each kind carries, so a reader knows what they are holding. */
+const PRINT_TITLE: Record<PrintKind, string> = {
+  quotation: 'Quotation',
+  contract: 'Contract',
+  order: 'Order',
+  'supplier-quotation': 'Quotation (supplier copy)',
+  'supplier-contract': 'Contract (supplier copy)',
+};
+
 export interface QuoteHtmlOptions {
   /** The platform logo, or `null`/absent when there is none. */
   logo?: LogoImage | null;
+  /** Defaults to `quotation`, the document a customer receives. */
+  printKind?: PrintKind;
 }
 
 /**
@@ -110,6 +141,7 @@ function readableDate(iso: string): string {
 export function renderQuoteHtml(document: CustomerDocument, options: QuoteHtmlOptions = {}): string {
   const { company, customer, building, price, plan } = document;
   const indicative = document.status !== 'priced';
+  const supplier = isSupplierPrint(options.printKind ?? 'quotation');
 
   return `<!doctype html>
 <html lang="en-AU">
@@ -167,7 +199,7 @@ ${indicative ? `<div class="watermark">INDICATIVE — ALLOWANCES APPLY</div>` : 
   </div>
 </header>
 
-<h1>Quotation</h1>
+<h1>${escapeHtml(PRINT_TITLE[options.printKind ?? 'quotation'])}</h1>
 ${indicative ? `<p><span class="status">${escapeHtml(document.estimateLabel)}</span></p>` : ''}
 
 <h2>Prepared for</h2>
@@ -231,7 +263,10 @@ ${document.inclusions.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n')}
   } Indicative only — not for construction.</p>
 </div>
 
-<h2>Price</h2>
+${
+  supplier
+    ? ''
+    : `<h2>Price</h2>
 <table class="price">
   <tr class="total"><td>Contract price</td><td class="amount mono">${money(price.contractCents)}</td></tr>
   <tr><td>Includes GST</td><td class="amount mono">${money(price.gstCents)}</td></tr>
@@ -242,7 +277,8 @@ ${document.inclusions.map((item) => `<li>${escapeHtml(item)}</li>`).join('\n')}
   <tr><td>Deposit on signing</td><td class="amount mono">${money(price.depositCents)}</td></tr>
   <tr><td>Progress payment at frame stage</td><td class="amount mono">${money(price.progressCents)}</td></tr>
   <tr><td>Balance before delivery</td><td class="amount mono">${money(price.balanceCents)}</td></tr>
-</table>
+</table>`
+}
 
 <h2>What this estimate covers</h2>
 ${document.assumptions
