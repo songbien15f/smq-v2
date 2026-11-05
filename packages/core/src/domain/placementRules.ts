@@ -29,6 +29,9 @@ const ROLLER_MIN_HEIGHT = 2000;
 const ROLLER_MIN_WIDTH = 1000;
 /** A carry beam is not offered on a building wider than this, mm. */
 const CARRY_BEAM_MAX_RUN = 15000;
+/** A sliding door's track segment, mm. The desktop's R11 bound. */
+const TRACK_MIN_WIDTH = 1000;
+const TRACK_MAX_WIDTH = 6000;
 
 /** One suggestion that would make the placement legal. */
 export interface OpeningProposal {
@@ -114,6 +117,22 @@ export function placeOpening(request: Opening, shed: ShedConfig): OpeningPlaceme
       ok: false,
       reason: `This opening is ${request.width} mm wide, wider than the ${run} mm wall allows with a ${WALL_MARGIN} mm margin at each end.`,
     };
+  }
+
+  // R11 — a track segment outside 1000–6000 mm is not a track the factory sells.
+  if (request.type === 'sliding_door' && request.trackWidth !== undefined) {
+    const clamped = Math.round(Math.min(Math.max(request.trackWidth, TRACK_MIN_WIDTH), TRACK_MAX_WIDTH));
+    if (clamped !== Math.round(request.trackWidth)) {
+      return {
+        ok: false,
+        proposals: [
+          {
+            label: `GO WITH ${clamped} mm per track segment`,
+            opening: { ...request, trackWidth: clamped },
+          },
+        ],
+      };
+    }
   }
 
   const u = offsetFor(request, run);

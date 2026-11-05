@@ -86,6 +86,10 @@ export interface Opening {
   series?: 'A' | 'AA' | 'B' | null;
   /** Roller door windlocks. The desktop defaults them on in wind regions C and D. */
   windlock?: boolean;
+  /** Sliding door only: how many track segments the opening spans (1–20). */
+  trackSegments?: number;
+  /** Sliding door only: the width each segment covers, 1000–6000 mm (desktop R11). */
+  trackWidth?: number;
 }
 
 /** Hex colours applied to 3D materials and to the 2D door/roof panels. */

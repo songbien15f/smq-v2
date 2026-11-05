@@ -234,7 +234,7 @@ export function CategoryDock() {
         ) : (
           <ul className="flex flex-col gap-sq-1">
             {slidingDoors.map((door) => (
-              <li key={door.id} className="flex items-center gap-sq-2 text-sq-body">
+              <li key={door.id} className="flex flex-wrap items-center gap-sq-2 text-sq-body">
                 <span className="min-w-0 flex-1 truncate">
                   {door.width} × {door.height} mm on the {door.wall} wall
                 </span>
@@ -250,6 +250,36 @@ export function CategoryDock() {
                   <option value="single">Single</option>
                   <option value="double">Double</option>
                 </select>
+                <label className="flex items-center gap-sq-1 text-sq-micro text-sq-ink-muted">
+                  Seg
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    value={door.trackSegments ?? 1}
+                    onChange={(event) =>
+                      patchOpening(door.id, { trackSegments: Number(event.target.value) })
+                    }
+                    aria-label="Track segments"
+                    className="min-h-8 w-14 rounded border border-sq-line bg-sq-surface px-1 text-right"
+                  />
+                </label>
+                <label className="flex items-center gap-sq-1 text-sq-micro text-sq-ink-muted">
+                  mm
+                  <input
+                    type="number"
+                    min={1000}
+                    max={6000}
+                    step={50}
+                    value={door.trackWidth ?? 3000}
+                    onChange={(event) =>
+                      patchOpening(door.id, { trackWidth: Number(event.target.value) })
+                    }
+                    aria-label="Track width per segment"
+                    className="min-h-8 w-20 rounded border border-sq-line bg-sq-surface px-1 text-right"
+                  />
+                </label>
               </li>
             ))}
           </ul>

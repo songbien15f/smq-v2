@@ -161,6 +161,8 @@ const openingSchema = z.object({
   prepOnly: z.boolean().default(false),
   series: z.enum(['A', 'AA', 'B']).nullable().default(null),
   windlock: z.boolean().default(false),
+  trackSegments: z.number().int().min(1).max(20).optional(),
+  trackWidth: z.number().min(1000).max(6000).optional(),
 });
 
 /** The fields the model is asked to extract. */
@@ -611,6 +613,8 @@ const tolerantOpeningSchema = z.object({
   series: z.enum(['A', 'AA', 'B']).nullable().catch(null),
   // Left undefined when absent so the wind-region default can be applied later.
   windlock: z.boolean().optional().catch(undefined),
+  trackSegments: z.coerce.number().optional().catch(undefined),
+  trackWidth: z.coerce.number().optional().catch(undefined),
 });
 
 /** True for a non-null, non-array object (a "plain" record). */
@@ -918,6 +922,16 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
           : false,
       prepOnly: opening.prepOnly ?? false,
       sku: opening.sku ?? null,
+      // The track belongs to the sliding door that runs on it. 1000–6000 mm per segment
+      // is the desktop's R11 bound; a segment outside it is not a track the factory sells.
+      trackSegments:
+        opening.type === 'sliding_door'
+          ? Math.round(Math.min(Math.max(opening.trackSegments ?? 1, 1), 20))
+          : undefined,
+      trackWidth:
+        opening.type === 'sliding_door'
+          ? Math.round(Math.min(Math.max(opening.trackWidth ?? 3000, 1000), 6000))
+          : undefined,
     };
   });
 
