@@ -298,14 +298,31 @@ theo `stateCode`, chỉ profile `isRoof`. Không có cover thì **không snap** 
 qua cửa là thứ không xây được — ai đó phải dời cửa hoặc dời sàn — và cảnh báo là thứ người ta bấm
 qua. Câu từ chối nêu tên thứ vướng, đó là toàn bộ giá trị của phép kiểm.
 
-### Chưa có — vì model chưa có (không đoán)
+### R11 — track segment 1000–6000 mm
 
-| Rule | Thiếu gì |
-|---|---|
-| ~~R5~~ | **ĐÃ XONG** — xem §6.1 dưới |
-| ~~R9~~ | **ĐÃ XONG** — hoá ra không phải "2 tường trống"; xem §6.3 |
-| R11 | Track dài 1000–6000 — track là thuộc tính cửa, không phải chiều dài |
-| ~~R12~~ | **ĐÃ XONG** — xem §6.2 |
+**Đã có từ trước**, trong `placeOpening` (`placementRules.ts:156`) và có test riêng
+(`trackRule.test.ts:45`). Nó đã bị liệt kê sai ở bảng "chưa có" vì một ghi chú cũ nói track là
+"thuộc tính cửa, không phải chiều dài" — trong khi `Opening.trackWidth` **chính là** chiều dài
+segment, nên rule áp được.
+
+### Bảng R1–R12 — trạng thái cuối
+
+| Rule | Trạng thái | Ở đâu |
+|---|---|---|
+| R1 lề 100 mm | ✅ | `placeOpening` |
+| R2 chồng lấn cửa | ✅ | `placeOpening` |
+| R3 cửa đè cột infill | ✅ | `infillOverrideRefusal` — §6 |
+| R4 đề xuất `GO WITH …` | ✅ | `placeOpening` |
+| R5 dời cột quanh cửa cuốn | ✅ | `respaceAroundDoors` — §6 |
+| R6 track/sliding/carry beam xung đột | ⚠️ **một phần** | Xoá cửa gỡ `carry_beam.openingId` (`removeOpeningWithCascade`); rule "track bị chiếm thì từ chối" **chưa có** — cần model track như một đối tượng, v2 có `opening.track` là thuộc tính. Xem §12 |
+| R7 carry beam > 15 m | ✅ | `carryBeamRefusal` |
+| R8 cửa cao hơn sàn mezzanine | ✅ | `optionsUnderMezzanine` — §6 |
+| R9 (cùng R8 — xem ghi chú §6.3) | ✅ | `optionsUnderMezzanine` |
+| R10 roller door tối thiểu | ✅ | `placeOpening` |
+| R11 track 1000–6000 | ✅ | `placeOpening` |
+| R12 snap theo tấm mái | ✅ | `skylightSnap.ts` — §6.2 |
+
+**R6 là rule duy nhất còn một nửa**, và nửa còn lại cần model track như đối tượng — xem §12.
 
 ---
 
@@ -444,13 +461,20 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 
 ## 12. Việc còn lại
 
-1. ~~Punchings Details~~ — **đã xong** (§12.4); chỉ còn nhánh infill/roller-door cần model cột infill.
-3. **Nhóm 4** — xem kết luận dưới: rate table đã xong; ba mục còn lại **không phải việc port**.
-4. **R12 skylight snap — bị chặn bởi model.** Desktop snap skylight theo **lưới tấm mái theo
-   phương span** (`GetSheetingPos() * RoofSheetingSize`, trục từ eave tới ridge). v2 neo skylight
-   bằng `bay` + `alongBay` — tức theo **phương dọc nhà**. Snap `alongBay` sẽ là snap sai trục.
-   Muốn làm đúng phải thêm vị trí skylight theo phương span trước.
-5. Field hiển thị: hướng outrigger (left/right).
+**Toàn bộ R1–R12 đã xong.** Bảng dưới là những gì còn lại, và **không mục nào là rule bị bỏ dở**:
+
+| # | Còn gì | Vì sao |
+|---|---|---|
+| 1 | Phiếu punchings cho **roller-door column/header** | Cần model mullion/header của `RDoor` — chưa có trong v2 |
+| 2 | **R6 nửa còn lại: track bị chiếm thì từ chối** | Cần model **track như một đối tượng** có vị trí riêng; v2 có `opening.track` là thuộc tính của cửa, nên "cửa khác đè lên track" không diễn đạt được |
+| 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
+| 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
+| 5 | Hướng outrigger (left/right) | Chỉ là field hiển thị; `wall` đã bao trùm ngữ nghĩa |
+
+> **Ba lần tôi kết luận "bị chặn" và cả ba lần đều sai:** Punchings (§12.4), R12 skylight, và R9.
+> Mỗi lần nguyên nhân giống nhau — tôi tin một ghi chú cũ của chính mình thay vì đọc code desktop.
+> Khi một mục có vẻ bị chặn, việc đầu tiên là **tra bảng dữ liệu và đọc hàm desktop**, không phải
+> viết "cần model mới".
 
 **Outrigger height: đã có** — `height` (mm), mặc định 2000, không vượt chiều cao tường; bracket
 được vẽ đúng cao độ gắn chứ không phải ở eave.
