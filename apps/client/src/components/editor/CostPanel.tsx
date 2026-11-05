@@ -27,7 +27,7 @@ import type { PriceView } from '@sq/contracts';
 import { chargesSubtotalCents, chargeAmountCents } from '@sq/core/domain';
 import { DEFAULT_ADDITION_LINES, additionsTotalCents } from '@sq/core/domain';
 import type { AdditionLine } from '@sq/core/domain';
-import { money, percent, Panel, StatusPill } from '@sq/ui';
+import { Button, money, percent, Panel, StatusPill } from '@sq/ui';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
 import { MoneyField } from './MoneyField';
@@ -113,6 +113,40 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
       <Panel
         title="What the customer pays"
         description="The contract is GST-inclusive. GST is shown separately because an Australian buyer expects to see it."
+        actions={
+          <div className="flex items-center gap-sq-1">
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setPricing({
+                  contractOverrideCents: null,
+                  depositOverrideCents: null,
+                  progressOverrideCents: null,
+                })
+              }
+              title="Discard the typed contract, deposit and progress; the engine's figures come back."
+            >
+              Reset
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setPricing({
+                  depositPct: 10,
+                  progressPct: 70,
+                  contractOverrideCents: null,
+                  depositOverrideCents: null,
+                  progressOverrideCents: null,
+                  additionLines: DEFAULT_ADDITION_LINES,
+                  additionsCents: 0,
+                })
+              }
+              title="Restore the default payment terms and clear the additions."
+            >
+              Default
+            </Button>
+          </div>
+        }
       >
         <div className="flex flex-col gap-sq-3">
           <MoneyField
