@@ -148,6 +148,16 @@ export function registerQuoteFile(app: FastifyInstance, db: Db): void {
 
     return sendOk(reply, {
       format: file.format,
+      /*
+       * What the file claims about itself, and what to do about each answer.
+       *
+       * `absent` is normal — a file from the old desktop makes no claim — so it is not an error.
+       * `invalid` is the one that matters: the file states a digest and does not match it, which
+       * means somebody edited it after it was written. The two digests come back so the operator
+       * can compare against a copy they trust.
+       */
+      integrity: file.integrity ?? 'absent',
+      ...(file.integrityDetail === undefined ? {} : { integrityDetail: file.integrityDetail }),
       revisions: file.revisions.map((revision) => ({
         revision: revision.RevisionId ?? null,
         name: revision.RevisionName ?? '',

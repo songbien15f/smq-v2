@@ -64,10 +64,13 @@ export function PlatformPage({
   usage,
   releases,
   templates,
+  companies,
 }: {
   usage: UsageRow[];
   releases: ReleaseRow[];
   templates: TemplateRow[];
+  /** The companies a template can belong to. */
+  companies: { id: string; name: string; code: string | null }[];
 }) {
   const [rows, setRows] = useState(releases);
   const [label, setLabel] = useState('');
@@ -81,7 +84,22 @@ export function PlatformPage({
    * inputs would either drop everything else or need thirty of them. The screen says so, and missing
    * fields take their defaults.
    */
-  const [draft, setDraft] = useState({ code: '', name: '', typeCode: 'gable', config: '' });
+  /**
+   * The author form.
+   *
+   * `tenantId` is first because it is the field a mistake hides in: a template belongs to **one**
+   * company, and one authored without an owner is invisible to everybody — which looks like "the
+   * catalogue is empty" rather than "this row is wrong".
+   */
+  const [draft, setDraft] = useState({
+    tenantId: '',
+    code: '',
+    name: '',
+    typeCode: 'gable',
+    description: '',
+    sortOrder: 0,
+    config: '',
+  });
   const [templateRows, setTemplateRows] = useState(templates);
   const [templateBusy, setTemplateBusy] = useState<string | null>(null);
   /**
@@ -131,15 +149,29 @@ export function PlatformPage({
       return;
     }
 
+    if (draft.tenantId === '') {
+      setTemplateBusy(null);
+      setMessage({ tone: 'danger', text: 'Choose the company this template belongs to.' });
+      return;
+    }
+
     const result = await api<{ id: string; name: string }>('admin/templates', {
       method: 'POST',
-      body: { code: draft.code.trim(), name: draft.name.trim(), typeCode: draft.typeCode, config },
+      body: {
+        tenantId: draft.tenantId,
+        code: draft.code.trim(),
+        name: draft.name.trim(),
+        typeCode: draft.typeCode,
+        description: draft.description.trim(),
+        sortOrder: Number(draft.sortOrder) || 0,
+        config,
+      },
     });
 
     setTemplateBusy(null);
     if (result.ok) {
       setMessage({ tone: 'ok', text: `${result.data.name} added to the catalogue.` });
-      setDraft({ code: '', name: '', typeCode: draft.typeCode, config: '' });
+      setDraft({ ...draft, code: '', name: '', description: '', sortOrder: 0, config: '' });
       // Re-read, so the row shows exactly what was stored rather than what was typed.
       const refreshed = await api<{ items: TemplateRow[] }>('admin/templates');
       if (refreshed.ok) setTemplateRows(refreshed.data.items);
@@ -311,7 +343,46 @@ export function PlatformPage({
           finding a saved quote and posting JSON by hand.
         */}
         <div className="flex flex-col gap-sq-3 border-b border-sq-line px-sq-3 py-sq-3">
-          <div className="grid gap-sq-3 sm:grid-cols-3">
+          {/*
+            The company comes first, because it is the field a mistake hides in. Every other field
+            is visible in the list below if it is wrong; a template authored into the wrong company
+            (or into none) simply never appears, and the operator concludes the catalogue is broken.
+          */}
+          <div className="grid gap-sq-3 sm:grid-cols-2">
+            <label htmlFor="template-tenant" className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro font-medium text-sq-ink">
+                Company <span className="text-sq-danger">*</span>
+              </span>
+              <select
+                id="template-tenant"
+                value={draft.tenantId}
+                onChange={(event) => setDraft({ ...draft, tenantId: event.target.value })}
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+              >
+                <option value="">Choose a company</option>
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                    {company.code === null ? '' : ` (${company.code})`}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sq-micro text-sq-ink-muted">
+                A template belongs to one company. There is no shared catalogue: a company sees its
+                own templates and nobody else&rsquo;s.
+              </span>
+            </label>
+            <Field
+              id="template-description"
+              label="Description"
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+              placeholder="12 × 24 workshop with a roller door and a mezzanine"
+              hint="One line, shown in the company's catalogue."
+            />
+          </div>
+
+          <div className="grid gap-sq-3 sm:grid-cols-4">
             <Field
               id="template-code"
               label="Code"
@@ -340,6 +411,14 @@ export function PlatformPage({
                 <option value="carport">Carport</option>
               </select>
             </label>
+            <Field
+              id="template-sort"
+              label="Order"
+              type="number"
+              value={String(draft.sortOrder)}
+              onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) || 0 })}
+              hint="Lower comes first in the catalogue."
+            />
           </div>
 
           <label htmlFor="template-config" className="flex flex-col gap-sq-1">

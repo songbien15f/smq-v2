@@ -29,6 +29,7 @@
  */
 
 import { createDecipheriv } from 'node:crypto';
+import { checkIntegrity, integrityBlock } from './integrity';
 import { readFileSync } from 'node:fs';
 
 /**
@@ -73,6 +74,17 @@ export interface QuoteFile {
   revisions: RawRevision[];
   /** Set when `format` is not `json` or `aes`, explaining why there is no data. */
   refusal?: string;
+  /**
+   * What the file claims about its own contents.
+   *
+   * `absent` is normal: a file from the old desktop, or one written before the block existed, makes
+   * no claim and is still readable. `invalid` means the file states a digest and does not match it —
+   * somebody edited it — and a caller must not treat its figures as what was sent. `unsupported` is
+   * a claim in an algorithm this build cannot check, which is different from a wrong one.
+   */
+  integrity?: 'valid' | 'invalid' | 'absent' | 'unsupported';
+  /** The two digests, present only when they disagree, so a person can compare them. */
+  integrityDetail?: { expected: string; actual: string };
 }
 
 /** Detect the format from the leading bytes, without decrypting. */
@@ -101,6 +113,31 @@ function decryptLegacy(bytes: Buffer): string {
   // Node strips PKCS#7 padding and throws when it is malformed, which is exactly the
   // signal that these bytes were not encrypted with this key.
   return Buffer.concat([decipher.update(bytes), decipher.final()]).toString('utf8');
+}
+
+/**
+ * Parse a decrypted/plaintext quote document, and say what it claims about its own integrity.
+ *
+ * One function for both readers (`readQuoteFile` and `readQuoteFileBytes`): the two differ only in
+ * how the bytes arrive, and a second copy of this logic is how one of them would come to skip the
+ * integrity check.
+ */
+function readJsonDocument(text: string, format: QuoteFileFormat): QuoteFile {
+  const parsed = JSON.parse(text) as Record<string, unknown> & { SmartQuoteVersions?: unknown };
+  const revisions = Array.isArray(parsed.SmartQuoteVersions)
+    ? (parsed.SmartQuoteVersions as RawRevision[])
+    : [];
+  const check = checkIntegrity(parsed);
+  return {
+    format,
+    revisions,
+    integrity: check.verdict,
+    // The two digests travel only when they disagree — the numbers a person needs to compare
+    // against a copy they trust, and noise otherwise.
+    ...(check.verdict === 'invalid'
+      ? { integrityDetail: { expected: check.expected ?? '', actual: check.actual ?? '' } }
+      : {}),
+  };
 }
 
 /**
@@ -168,11 +205,7 @@ export function readQuoteFile(path: string): QuoteFile {
   }
 
   try {
-    const parsed = JSON.parse(text) as { SmartQuoteVersions?: unknown };
-    const revisions = Array.isArray(parsed.SmartQuoteVersions)
-      ? (parsed.SmartQuoteVersions as RawRevision[])
-      : [];
-    return { format, revisions };
+    return readJsonDocument(text, format);
   } catch {
     return {
       format,
@@ -299,7 +332,7 @@ export function writeQuoteFile(file: WritableQuoteFile): Buffer {
   }));
 
   const now = new Date().toISOString();
-  const document = {
+  const document: Record<string, unknown> = {
     SmartQuoteVersions: versions,
     VersionMetadata: {
       CurrentRevision: current,
@@ -308,6 +341,15 @@ export function writeQuoteFile(file: WritableQuoteFile): Buffer {
       LastUpdated: now,
     },
   };
+
+  /*
+   * The `Integrity` block, so a file that arrives by email can prove it was not edited.
+   *
+   * Written **last** and hashed over the document *without* it: a digest cannot include itself.
+   * The issuer is the company code of the newest revision, which is what a recipient recognises —
+   * an `unknown` there means the quote was written without one.
+   */
+  document.Integrity = integrityBlock(document, now, versions.at(-1)?.CompanyCode ?? '');
 
   // No BOM: `detectFormat` skips whitespace but not a BOM, so a BOM-prefixed file would fall
   // through to the AES branch and be refused.
@@ -360,11 +402,7 @@ export function readQuoteFileBytes(bytes: Buffer): QuoteFile {
   }
 
   try {
-    const parsed = JSON.parse(text) as { SmartQuoteVersions?: unknown };
-    const revisions = Array.isArray(parsed.SmartQuoteVersions)
-      ? (parsed.SmartQuoteVersions as RawRevision[])
-      : [];
-    return { format, revisions };
+    return readJsonDocument(text, format);
   } catch {
     return {
       format,

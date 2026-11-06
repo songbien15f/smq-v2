@@ -47,6 +47,20 @@ const templateRequest = z
     code: z.string().trim().min(2).max(60).regex(/^[a-z0-9][a-z0-9-]*$/),
     name: z.string().trim().min(1).max(200),
     typeCode: z.string().trim().min(1).max(40),
+    /**
+     * The company this template belongs to. **Required, and there is no global scope.**
+     *
+     * The operator's rule: a company sees only its own templates. That makes a template with no
+     * `tenant_id` one that **nobody** can see — the safe direction for a mistake, since the
+     * alternative is every company reading a building authored for one of them. So the field is
+     * required at authoring time rather than defaulting to "global", and the database column stays
+     * nullable only because it predates this rule.
+     */
+    tenantId: z.string().trim().min(1),
+    /** One line for the catalogue screen — what the building is for. */
+    description: z.string().trim().max(500).default(''),
+    /** Where it sits in the catalogue. Lower first. */
+    sortOrder: z.number().int().min(0).max(9999).default(0),
     /** The building to clone. Copied as structure only — see the note on identity below. */
     config: z.unknown(),
     note: z.string().trim().max(500).default(''),
@@ -58,6 +72,7 @@ interface TemplateRow {
   code: string;
   name: string;
   status: string;
+  description: string | null;
   type_code: string;
   type_name: string;
   config_json: string | null;
@@ -66,6 +81,9 @@ interface TemplateRow {
   updated_at: string;
   active_file_label: string | null;
   file_revisions: number;
+  sort_order: number;
+  tenant_id: string | null;
+  tenant_name: string | null;
 }
 
 export function registerPlatform(app: FastifyInstance, db: Db): void {
@@ -151,12 +169,15 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
      * which invites the operator to find out from a support call.
      */
     const rows = await db.all<TemplateRow>(
-      `SELECT t.id, t.code, t.name, t.status, t.config_json, t.clone_count, t.created_at, t.updated_at,
+      `SELECT t.id, t.code, t.name, t.status, t.description, t.sort_order, t.tenant_id,
+              t.config_json, t.clone_count, t.created_at, t.updated_at,
               ty.code AS type_code, ty.name AS type_name,
+              tn.name AS tenant_name,
               f.version_label AS active_file_label,
               (SELECT COUNT(*) FROM quote_template_files c WHERE c.template_id = t.id) AS file_revisions
          FROM quote_templates t
          JOIN template_types ty ON ty.id = t.type_id
+         LEFT JOIN tenants tn ON tn.id = t.tenant_id
          LEFT JOIN quote_template_files f ON f.id = t.active_file_revision_id
         ORDER BY t.sort_order, t.name`,
     );
@@ -170,6 +191,10 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
         typeCode: row.type_code,
         typeName: row.type_name,
         cloneCount: Number(row.clone_count),
+        description: row.description,
+        sortOrder: Number(row.sort_order),
+        tenantId: row.tenant_id,
+        tenantName: row.tenant_name,
         hasConfig: row.config_json !== null,
         activeFileLabel: row.active_file_label,
         fileRevisions: Number(row.file_revisions ?? 0),
@@ -197,6 +222,17 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     const type = await db.get<{ id: string }>('SELECT id FROM template_types WHERE code = ?', [body.typeCode]);
     if (type === null) return sendFail(reply, 'validation_failed', `Unknown template type: ${body.typeCode}`);
 
+    // The company must exist, or the template is authored into nobody's catalogue. A typo in an
+    // id would otherwise create a row that is invisible everywhere — the kind of failure nobody
+    // reports because nothing looks broken.
+    const owner = await db.get<{ id: string; name: string }>(
+      'SELECT id, name FROM tenants WHERE id = ?',
+      [body.tenantId],
+    );
+    if (owner === null) {
+      return sendFail(reply, 'validation_failed', 'That company does not exist.');
+    }
+
     const config = normaliseShedConfig(body.config);
     const id = newId();
     const at = now();
@@ -204,13 +240,17 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     try {
       await db.run(
         `INSERT INTO quote_templates
-           (id, code, name, type_id, status, basic_config_json, config_json, clone_count, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, 0, ?, ?)`,
+           (id, code, name, type_id, status, tenant_id, description, sort_order,
+            basic_config_json, config_json, clone_count, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, 0, ?, ?)`,
         [
           id,
           body.code,
           body.name,
           type.id,
+          owner.id,
+          body.description === '' ? null : body.description,
+          body.sortOrder,
           // The display basics, as the catalogue list shows them.
           JSON.stringify({ span: config.span, length: config.length, height: config.height, bays: config.bays }),
           JSON.stringify(config),
@@ -260,13 +300,24 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     const session = requireCompanyCapability(request, reply, 'quote:write');
     if (session === null) return;
 
+    /*
+     * **Only this company's templates.**
+     *
+     * The operator's rule, and the reason the `tenant_id` column exists: a company sees its own
+     * catalogue and nobody else's. The previous query filtered on `status` alone, so every company
+     * saw every template — while the *file* route already filtered by tenant, which meant a company
+     * could list a competitor's building and then be refused its `.sqd`. Half a rule is worse than
+     * none: it looks like a bug rather than a policy.
+     */
     const rows = await db.all<TemplateRow>(
-      `SELECT t.id, t.code, t.name, t.status, t.config_json, t.clone_count, t.created_at, t.updated_at,
+      `SELECT t.id, t.code, t.name, t.status, t.description, t.config_json, t.clone_count,
+              t.created_at, t.updated_at,
               ty.code AS type_code, ty.name AS type_name
          FROM quote_templates t
          JOIN template_types ty ON ty.id = t.type_id
-        WHERE t.status = 'active'
-        ORDER BY t.name`,
+        WHERE t.status = 'active' AND t.tenant_id = ?
+        ORDER BY t.sort_order, t.name`,
+      [session.tenantId],
     );
 
     return sendOk(reply, {
@@ -275,6 +326,7 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
         code: row.code,
         name: row.name,
         typeName: row.type_name,
+        description: row.description,
         // The building, ready to seed an editor. `null` for a template authored without one.
         config: row.config_json === null ? null : JSON.parse(row.config_json),
       })),
@@ -292,9 +344,12 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     const session = requireCompanyCapability(request, reply, 'quote:write');
     if (session === null) return;
 
-    await db.run('UPDATE quote_templates SET clone_count = clone_count + 1 WHERE id = ?', [
-      request.params.templateId,
-    ]);
+    // Scoped to the company, like the read: a counter another company can move is a counter that
+    // tells them a template id exists.
+    await db.run(
+      'UPDATE quote_templates SET clone_count = clone_count + 1 WHERE id = ? AND tenant_id = ?',
+      [request.params.templateId, session.tenantId],
+    );
     return sendOk(reply, { counted: true });
   });
 }

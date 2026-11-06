@@ -25,6 +25,8 @@ interface TemplateItem {
   code: string;
   name: string;
   typeName: string;
+  /** One line saying what the building is for, written by whoever authored it. */
+  description: string | null;
   config: {
     span?: number;
     length?: number;
@@ -82,6 +84,11 @@ export function TemplatePicker({ templates }: { templates: TemplateItem[] }) {
               <div className="min-w-0">
                 <span className="text-sq-body font-medium text-sq-ink">{template.name}</span>
                 <span className="ml-sq-2 text-sq-micro text-sq-ink-muted">{template.typeName}</span>
+                {template.description !== null && template.description !== '' && (
+                  <span className="block text-sq-micro text-sq-ink-muted">
+                    {template.description}
+                  </span>
+                )}
                 <span className="block sq-numeric text-sq-micro text-sq-ink-muted">{size}</span>
               </div>
               <Button loading={busy === template.id} onClick={() => void start(template)}>

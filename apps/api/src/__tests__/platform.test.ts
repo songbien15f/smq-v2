@@ -68,6 +68,8 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
   let companyCookie: string;
   let platformCookie: string;
   let booksDir: string;
+  /** The company a template now has to belong to. */
+  let tenantId: string;
   const originalBooks = process.env.PRICE_BOOKS;
 
   beforeAll(async () => {
@@ -76,13 +78,14 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
     publishPriceBook(DUMP, booksDir);
 
     ctx = await makeTestApp(testConfig());
-    await seedCompany(ctx.db, {
+    const seeded = await seedCompany(ctx.db, {
       name: 'Usage Test Sheds',
       slug: 'usage-test',
       email: 'owner@usage.test',
       password: 'a-long-enough-password',
       role: 'company_admin',
     });
+    tenantId = seeded.tenantId;
     await seedPlatformAdmin(ctx.db, { email: 'ops@usage-vendor.test', password: 'a-long-enough-password' });
 
     companyCookie = await signIn(ctx.app, 'owner@usage.test', 'a-long-enough-password');
@@ -242,7 +245,15 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
       method: 'POST',
       url: '/api/v1/admin/templates',
       headers: { cookie: platformCookie },
-      payload: { code: 'gable-9x18', name: 'Gable 9 × 18', typeCode: 'gable', config: config() },
+      payload: {
+        code: 'gable-9x18',
+        name: 'Gable 9 × 18',
+        typeCode: 'gable',
+        tenantId,
+        // A template belongs to one company; there is no global scope.
+        description: 'A 9 × 18 workshop with a roller door',
+        config: config(),
+      },
     });
     expect(created.statusCode).toBe(201);
 
@@ -270,6 +281,97 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
     const items = response.json().data.items as { code: string; config: { span: number } | null }[];
     const template = items.find((item) => item.code === 'gable-9x18');
     expect(template?.config?.span).toBe(9000);
+  });
+
+  it('shows a template only to the company that owns it', async () => {
+    /*
+     * The operator's rule: a company sees its own catalogue and nobody else's. Before this, the
+     * list filtered on `status` alone while the *file* route filtered by tenant, so a company could
+     * see a competitor's building and then be refused its `.sqd` — half a rule, which reads as a
+     * bug rather than a policy.
+     */
+    const other = await seedCompany(ctx.db, {
+      name: 'Rival Sheds',
+      slug: 'rival-sheds',
+      code: 'RIVAL',
+      email: 'rival@example.com',
+      password: 'a-long-enough-password',
+    });
+    const rivalCookie = await signIn(ctx.app, other.code, other.username, 'a-long-enough-password');
+
+    const mine = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/templates',
+      headers: { cookie: companyCookie },
+    });
+    const theirs = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/templates',
+      headers: { cookie: rivalCookie },
+    });
+
+    expect((mine.json().data.items as { code: string }[]).map((i) => i.code)).toContain('gable-9x18');
+    // The rival sees an empty catalogue, not a filtered one with a hint in it.
+    expect(theirs.json().data.items).toEqual([]);
+  });
+
+  it('refuses to author a template with no company, or one that does not exist', async () => {
+    // A template with no `tenant_id` is one **nobody** can see. Refusing at authoring time is the
+    // only place the mistake is still visible; afterwards it is a catalogue entry that silently
+    // never appears.
+    const missing = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/templates',
+      headers: { cookie: platformCookie },
+      payload: { code: 'no-owner', name: 'No owner', typeCode: 'gable', config: config() },
+    });
+    expect(missing.statusCode).toBe(422);
+
+    const bogus = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/templates',
+      headers: { cookie: platformCookie },
+      payload: {
+        code: 'bogus-owner',
+        name: 'Bogus owner',
+        typeCode: 'gable',
+        tenantId: 'tenant-that-does-not-exist',
+        config: config(),
+      },
+    });
+    expect(bogus.statusCode).toBe(422);
+
+    const rows = await ctx.db.all("SELECT id FROM quote_templates WHERE code IN ('no-owner','bogus-owner')");
+    expect(rows).toEqual([]);
+  });
+
+  it('does not let one company count a clone against another company’s template', async () => {
+    // A counter another company can move is a counter that confirms the id is real.
+    const other = await seedCompany(ctx.db, {
+      name: 'Third Sheds',
+      slug: 'third-sheds',
+      code: 'THIRD',
+      email: 'third@example.com',
+      password: 'a-long-enough-password',
+    });
+    const thirdCookie = await signIn(ctx.app, other.code, other.username, 'a-long-enough-password');
+
+    const row = await ctx.db.get<{ id: string; clone_count: number }>(
+      "SELECT id, clone_count FROM quote_templates WHERE code = 'gable-9x18'",
+    );
+    const before = Number(row?.clone_count ?? 0);
+
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${row?.id}/cloned`,
+      headers: { cookie: thirdCookie },
+    });
+
+    const after = await ctx.db.get<{ clone_count: number }>(
+      'SELECT clone_count FROM quote_templates WHERE id = ?',
+      [row?.id ?? ''],
+    );
+    expect(Number(after?.clone_count)).toBe(before);
   });
 
   it('counts a clone separately from a read', async () => {

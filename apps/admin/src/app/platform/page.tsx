@@ -49,7 +49,7 @@ export default async function PlatformRoute() {
 
   // Each section is fetched independently: a role that may read usage but not publish releases should
   // still see the usage numbers rather than an error page.
-  const [usage, releases, templates] = await Promise.all([
+  const [usage, releases, templates, companies] = await Promise.all([
     /*
      * `summary`, not `items` — the route answers `{ scope, summary, recent }` and this read
      * `.items`, which is `undefined`. The page then called `usage.length` and crashed with
@@ -61,6 +61,8 @@ export default async function PlatformRoute() {
     serverFetch<{ scope: string; summary: UsageRow[] }>('/admin/usage'),
     serverFetch<{ items: ReleaseRow[] }>('/admin/releases'),
     serverFetch<{ items: TemplateRow[] }>('/admin/templates'),
+    // A template belongs to one company, so the author form has to be able to name it.
+    serverFetch<{ items: { id: string; name: string; code: string | null }[] }>('/admin/companies'),
   ]);
 
   const forbidden = [usage, releases, templates].every((result) => !result.ok && result.code === 'forbidden');
@@ -91,6 +93,7 @@ export default async function PlatformRoute() {
           usage={usage.ok ? usage.data.summary : []}
           releases={releases.ok ? releases.data.items : []}
           templates={templates.ok ? templates.data.items : []}
+          companies={companies.ok ? companies.data.items : []}
         />
       </div>
     </ShellFrame>

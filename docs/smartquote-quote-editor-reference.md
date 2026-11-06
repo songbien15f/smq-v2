@@ -467,7 +467,9 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 |---|---|---|
 | 1 | ~~Phiếu punchings cho roller-door column/header~~ | **ĐÃ XONG** — §12.5 |
 | 1b | **File `.sqd` cho template** | **ĐÃ XONG 2026-11-06** — §16 |
-| 1c | Slice 2 phần còn lại: ô mô tả + thứ tự trong form admin, gán `tenant_id` khi tạo | Cột DB đã có (migration `014`) |
+| 1c | ~~Slice 2 phần còn lại~~ | **ĐÃ XONG** — form admin có công ty + mô tả + thứ tự; catalogue công ty hiện mô tả |
+| 1d | **Template cô lập theo công ty** | **ĐÃ XONG** — mỗi template thuộc đúng một công ty, không có catalogue dùng chung |
+| 1e | **Khối `Integrity` trong `.sqd`** | **ĐÃ XONG** — §17 |
 | 2 | ~~R6 nửa còn lại: track bị chiếm~~ | **CỐ Ý KHÔNG PORT** — track không có giá trong desktop (§12.6) |
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
@@ -925,6 +927,76 @@ giờ hiện. Nay hằng số là **900 KB** — dưới trần, và câu thông
 và `usage.length` ném `Cannot read properties of undefined`. Kiểu viết tay nói `items`, và không có
 test nào cho page admin nên không ai thấy. Nay đọc `summary`.
 
+## 17. Template thuộc một công ty — không có catalogue dùng chung
+
+**Quyết định của operator, khác spec gốc.** Spec cho phép `tenant_id IS NULL` = template global dùng
+cho mọi công ty. Operator nói: *"công ty nào thì chỉ thấy của công ty đó"*. Nay **mọi template phải
+thuộc một công ty**, và `tenantId` là trường **bắt buộc** khi tạo.
+
+**Vì sao bắt buộc thay vì mặc định global:** một template không có `tenant_id` là template **không ai
+thấy**. Hỏng theo hướng đó an toàn hơn "ai cũng thấy", nhưng nó vô hình — người dùng kết luận
+"catalogue hỏng" chứ không phải "dòng này sai". Bắt buộc lúc tạo là chỗ duy nhất lỗi còn nhìn thấy
+được; route cũng kiểm công ty có thật, nên một id gõ nhầm bị từ chối chứ không tạo dòng mồ côi.
+
+**Ba chỗ phải lọc, và trước đây chỉ một chỗ lọc:**
+- `GET /templates` — lọc `tenant_id` (trước đây chỉ lọc `status`)
+- `POST /templates/:id/cloned` — lọc `tenant_id` (bộ đếm mà công ty khác bấm được là bộ đếm xác nhận id
+  tồn tại)
+- `GET /templates/:id/file` — đã lọc từ Slice 3
+
+**Nửa vời tệ hơn không có:** trước khi sửa, công ty **thấy** template của đối thủ trong danh sách
+nhưng **không tải được** file của nó. Trông như lỗi, không như chính sách.
+
+**Một bug im lặng tìm được khi sửa:** `db.run('... WHERE id = ? AND tenant_id = ?', [id])` — mảng
+**một** phần tử cho **hai** dấu `?`. Không throw, chỉ không khớp, nên bộ đếm clone đứng yên và test
+clone cũ fail. TypeScript không bắt được vì `run` nhận mảng.
+
+## 18. Khối `Integrity` trong `.sqd`
+
+### Hai câu hỏi khác nhau, hai cơ chế khác nhau
+
+| | Hash gì | Trả lời |
+|---|---|---|
+| `templateFiles.ts` (Slice 3) | **byte** của file trên đĩa | "File trên đĩa có bị sửa không?" |
+| `integrity.ts` (Slice 4) | **canonical JSON** của document | "File gửi qua email có bị sửa sau khi ghi không?" |
+
+Không lẫn hai cái: byte của file gửi qua email không phải byte server nào lưu, nên hash byte **không
+chứng minh gì** ở đó.
+
+### Canonical, không phải text
+
+Cùng một document có thể ghi với khoảng trắng, thứ tự khoá, format số khác nhau — đều là cùng một báo
+giá. Hash text sẽ làm file chỉ được **format lại** trông như bị sửa. Nên hash trên canonical form
+(khoá sắp xếp, không khoảng trắng), đúng RFC 8785 — cùng cách `canonicalHash` trong `priceBook.ts` đã
+làm cho việc so config.
+
+**Block bị bỏ ra trước khi hash** rồi thêm lại: một digest không thể chứa chính nó.
+
+### Ba trạng thái khi đọc
+
+| | Nghĩa | Có phải lỗi? |
+|---|---|---|
+| `valid` | Có block, digest khớp | Không |
+| `absent` | **Không có block** — file desktop cũ | **Không** — đây là điều quan trọng nhất |
+| `invalid` | Có block, digest **không khớp** → ai đó đã sửa | **Có** |
+| `unsupported` | Block dùng thuật toán build này không kiểm được | Không — không được gọi là "invalid" |
+
+`absent` **không được** từ chối: làm vậy sẽ khiến mọi file cũ không đọc được, ngược hẳn mục đích.
+
+### Nó KHÔNG phải chữ ký
+
+Một người sửa file rồi **tính lại digest** sẽ tạo ra file `valid`. Block chứng minh file **tự nhất
+quán**, không chứng minh người viết trung thực. Có test ghi rõ điều này để sau này không ai nhầm.
+
+### Kiểm chứng
+
+```
+block trong file:  Digest f3e86a8437da…, Issuer ACME
+đọc lại:           valid
+sửa giá 30118.63 → 29999.99:  invalid (expected f3e86a84…, actual 4871cd82…)
+chỉ format lại JSON:          valid
+```
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -963,8 +1035,8 @@ Ghi chú khi port:
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 919 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors) |
-| `@sq/api` | 201 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, template files, body limit, pricing) |
+| `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
+| `@sq/api` | 204 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, template files, template scope, body limit, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

@@ -35,7 +35,14 @@ export default async function QuotesPage() {
    */
   const templatesResult = session.capabilities.includes('quote:write')
     ? await serverFetch<{
-        items: { id: string; code: string; name: string; typeName: string; config: Record<string, number> | null }[];
+        items: {
+          id: string;
+          code: string;
+          name: string;
+          typeName: string;
+          description: string | null;
+          config: Record<string, number> | null;
+        }[];
       }>('/templates')
     : null;
   const templates = templatesResult !== null && templatesResult.ok ? templatesResult.data.items : [];
