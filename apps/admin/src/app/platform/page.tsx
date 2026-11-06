@@ -50,7 +50,15 @@ export default async function PlatformRoute() {
   // Each section is fetched independently: a role that may read usage but not publish releases should
   // still see the usage numbers rather than an error page.
   const [usage, releases, templates] = await Promise.all([
-    serverFetch<{ items: UsageRow[] }>('/admin/usage'),
+    /*
+     * `summary`, not `items` — the route answers `{ scope, summary, recent }` and this read
+     * `.items`, which is `undefined`. The page then called `usage.length` and crashed with
+     * "Cannot read properties of undefined (reading 'length')" for **every** platform admin,
+     * because no platform role could reach the usage panel anyway: `/admin/usage` asks for
+     * `platform:audit` and `platform_admin` holds it, so the answer was a 200 with no `items`.
+     * Found in a browser on 2026-11-06; the type annotation said `items` and nothing checked it.
+     */
+    serverFetch<{ scope: string; summary: UsageRow[] }>('/admin/usage'),
     serverFetch<{ items: ReleaseRow[] }>('/admin/releases'),
     serverFetch<{ items: TemplateRow[] }>('/admin/templates'),
   ]);
@@ -80,7 +88,7 @@ export default async function PlatformRoute() {
         </div>
 
         <PlatformPage
-          usage={usage.ok ? usage.data.items : []}
+          usage={usage.ok ? usage.data.summary : []}
           releases={releases.ok ? releases.data.items : []}
           templates={templates.ok ? templates.data.items : []}
         />

@@ -64,6 +64,8 @@ interface TemplateRow {
   clone_count: number;
   created_at: string;
   updated_at: string;
+  active_file_label: string | null;
+  file_revisions: number;
 }
 
 export function registerPlatform(app: FastifyInstance, db: Db): void {
@@ -142,12 +144,21 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     const session = requirePlatformCapability(request, reply, 'platform:templates');
     if (session === null) return;
 
+    /*
+     * The file columns come along, because the catalogue screen has to say whether a template can
+     * actually be downloaded. A template with a `config_json` and no `.sqd` clones inside this
+     * product but cannot be handed to a company's desktop — and a list that does not show which is
+     * which invites the operator to find out from a support call.
+     */
     const rows = await db.all<TemplateRow>(
       `SELECT t.id, t.code, t.name, t.status, t.config_json, t.clone_count, t.created_at, t.updated_at,
-              ty.code AS type_code, ty.name AS type_name
+              ty.code AS type_code, ty.name AS type_name,
+              f.version_label AS active_file_label,
+              (SELECT COUNT(*) FROM quote_template_files c WHERE c.template_id = t.id) AS file_revisions
          FROM quote_templates t
          JOIN template_types ty ON ty.id = t.type_id
-        ORDER BY t.name`,
+         LEFT JOIN quote_template_files f ON f.id = t.active_file_revision_id
+        ORDER BY t.sort_order, t.name`,
     );
 
     return sendOk(reply, {
@@ -160,6 +171,8 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
         typeName: row.type_name,
         cloneCount: Number(row.clone_count),
         hasConfig: row.config_json !== null,
+        activeFileLabel: row.active_file_label,
+        fileRevisions: Number(row.file_revisions ?? 0),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })),

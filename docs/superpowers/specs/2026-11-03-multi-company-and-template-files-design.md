@@ -305,8 +305,8 @@ Bảng `salesmen` theo tenant; dùng thay `client.email` khi pin ShedSafe; đồ
 | Slice | File chạm | Xong khi |
 |---|---|---|
 | **1** Multi-company + login | migration cho `tenants.code` **và** `memberships.username`; `config.ts` ×2; `server.ts`; `lib/company.ts`; `routes/auth.ts`; `contracts/auth.ts`; `SignInForm` ×2; `field.tsx`; 8 chỗ client | hai công ty tồn tại; login bằng code+username vào **đúng** công ty; username trùng ở hai công ty **đều đăng nhập được**; **test cô lập dữ liệu xanh**; `grep memberships\[0\]` = 0; form đăng nhập mới render |
-| **2** Catalogue | migration cho 3 cột; `routes/platform.ts`; `PlatformPage` | template global thấy ở mọi công ty; template riêng chỉ thấy ở công ty đó; admin có ô mô tả + thứ tự |
-| **3** File hash | `routes/templateFiles.ts` mới; UI upload | upload → hash lưu; tải lại verify khớp; sửa 1 byte ⇒ 409; `curl` đường dẫn thật ⇒ 404 |
+| **2** Catalogue | migration cho 3 cột; `routes/platform.ts`; `PlatformPage` | ⚠️ **cột đã có** (migration `014`: `description`, `sort_order`, `tenant_id`), và route công ty của Slice 3 đã lọc theo `tenant_id`. **Còn thiếu:** ô mô tả + thứ tự trong form admin, và `tenant_id` chưa được gán khi tạo template |
+| **3** File hash | `lib/templateFiles.ts` + `routes/templateFiles.ts` mới; UI upload trong `PlatformPage`; migration `014` (cột `tenant_id` mà route công ty cần) | ✅ **XONG 2026-11-06** — upload → hash lưu; tải lại verify khớp (byte-for-byte qua `curl`); sửa 1 byte ⇒ **409** kèm hai hash; công ty B tải template của A ⇒ **404**, body **giống hệt** id không tồn tại |
 | **4** Integrity | `packages/core/src/lib/quoteFile/`; `routes/quoteFile.ts` | vector cố định cho cùng digest trên 2 driver, 2 lần chạy; import báo `valid`/`invalid`/`absent` |
 | **5** Salesman | migration bảng mới; `routes/salesmen.ts`; `lib/shedsafe.ts` dùng salesman; UI | pin site check dùng salesman đã chọn, không dùng `client.email` |
 

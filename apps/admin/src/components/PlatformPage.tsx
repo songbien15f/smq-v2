@@ -47,6 +47,9 @@ interface TemplateRow {
   cloneCount: number;
   hasConfig: boolean;
   updatedAt: string;
+  /** How many `.sqd` file revisions this template has, and which one is served. */
+  fileRevisions?: number;
+  activeFileLabel?: string | null;
 }
 
 /** How a usage kind reads. */
@@ -81,6 +84,15 @@ export function PlatformPage({
   const [draft, setDraft] = useState({ code: '', name: '', typeCode: 'gable', config: '' });
   const [templateRows, setTemplateRows] = useState(templates);
   const [templateBusy, setTemplateBusy] = useState<string | null>(null);
+  /**
+   * The `.sqd` being attached to a template, per template id.
+   *
+   * Held as one record rather than per-row state because only one upload runs at a time — the
+   * button that starts it is the same button for every row.
+   */
+  const [upload, setUpload] = useState<{ templateId: string; name: string; base64: string } | null>(
+    null,
+  );
 
   const publish = async (): Promise<void> => {
     setBusy(true);
@@ -156,6 +168,38 @@ export function PlatformPage({
     } else {
       setMessage({ tone: 'danger', text: result.message });
     }
+  };
+
+  /**
+   * Attach a `.sqd` to a template.
+   *
+   * The browser reads the file and posts it as base64, because this API has no multipart parser —
+   * the same shape the quote import and the price list import use. The server hashes the bytes,
+   * proves the file is a quote file, and stores a **new revision**: uploading twice never replaces
+   * the first, which is what makes the history real.
+   */
+  const attachFile = async (templateId: string, file: File): Promise<void> => {
+    setTemplateBusy(templateId);
+    setMessage(null);
+
+    const buffer = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    const result = await api<{ fileId: string; sha256: string; sizeBytes: number }>(
+      `admin/templates/${templateId}/file`,
+      { method: 'POST', body: { data: base64, versionLabel: file.name.replace(/\.sqd$/i, '') } },
+    );
+
+    setTemplateBusy(null);
+    if (!result.ok) {
+      setMessage({ tone: 'danger', text: result.message });
+      return;
+    }
+    setMessage({
+      tone: 'ok',
+      text: `Attached ${(result.data.sizeBytes / 1024).toFixed(1)} KB — SHA-256 ${result.data.sha256.slice(0, 12)}…`,
+    });
+    const refreshed = await api<{ items: TemplateRow[] }>('admin/templates');
+    if (refreshed.ok) setTemplateRows(refreshed.data.items);
   };
 
   return (
@@ -335,6 +379,7 @@ export function PlatformPage({
                   <th scope="col" className="px-sq-3 py-sq-2 font-medium">Type</th>
                   <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Cloned</th>
                   <th scope="col" className="px-sq-3 py-sq-2 font-medium">State</th>
+                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">.sqd file</th>
                   <th scope="col" className="px-sq-3 py-sq-2 font-medium">Change</th>
                 </tr>
               </thead>
@@ -350,6 +395,34 @@ export function PlatformPage({
                         tone={row.status === 'active' ? 'ok' : 'neutral'}
                         label={row.status === 'active' ? 'Active' : row.status}
                       />
+                    </td>
+                    <td className="px-sq-3 py-sq-2">
+                      {/*
+                        One file per template, uploaded here. A template's `config_json` can be cloned
+                        but not transported: an operator who wants the building in the desktop app
+                        needs the `.sqd` itself. Uploading again adds a revision — nothing is
+                        replaced, so a clone made last month still points at the bytes it was made
+                        from.
+                      */}
+                      <label className="inline-flex cursor-pointer items-center gap-sq-1 text-sq-micro text-sq-brand">
+                        <span className="underline underline-offset-2">
+                          {templateBusy === row.id ? 'Uploading…' : 'Attach .sqd'}
+                        </span>
+                        <input
+                          type="file"
+                          accept=".sqd,application/octet-stream"
+                          className="sr-only"
+                          disabled={templateBusy !== null}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = '';
+                            if (file !== undefined) void attachFile(row.id, file);
+                          }}
+                        />
+                      </label>
+                      <span className="ml-sq-2 text-sq-micro text-sq-ink-muted">
+                        {row.activeFileLabel ?? 'none yet'}
+                      </span>
                     </td>
                     <td className="px-sq-3 py-sq-2">
                       <Button

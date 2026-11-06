@@ -466,6 +466,8 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | # | Còn gì | Vì sao |
 |---|---|---|
 | 1 | ~~Phiếu punchings cho roller-door column/header~~ | **ĐÃ XONG** — §12.5 |
+| 1b | **File `.sqd` cho template** | **ĐÃ XONG 2026-11-06** — §16 |
+| 1c | Slice 2 phần còn lại: ô mô tả + thứ tự trong form admin, gán `tenant_id` khi tạo | Cột DB đã có (migration `014`) |
 | 2 | ~~R6 nửa còn lại: track bị chiếm~~ | **CỐ Ý KHÔNG PORT** — track không có giá trong desktop (§12.6) |
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
@@ -854,6 +856,75 @@ dòng 20.
 **Đây là lần thứ tư** một mục trong danh sách "còn thiếu" hoá ra không phải việc cần làm — sau
 Punchings, R12, R9.
 
+## 16. File `.sqd` cho template — content-addressed, verify khi tải
+
+### Vì sao template cần file
+
+`config_json` của template đủ để **clone** trong sản phẩm này, nhưng không đủ để **chuyển**: một
+người dùng desktop cũ cần chính file `.sqd`, không phải một JSON blob họ không mở được.
+
+### Ba quy tắc
+
+**1. Hash trên BYTE, không phải canonical JSON.** Content-addressed storage (S3
+`x-amz-checksum-sha256`, Git blob, npm `integrity`) băm đúng thứ được lưu, nên người đọc verify được
+mà không cần biết producer serialize thế nào. Khối `Integrity` *bên trong* file (Slice 4) băm
+canonical JSON — cơ chế khác cho câu hỏi khác, và lẫn hai cái là lỗi.
+
+**2. Đọc mà không khớp thì TỪ CHỐI, không trả file.** Một `.sqd` hỏng mở ra thành báo giá trông hợp
+lý nhưng sai số. Trả **409** kèm **cả hai** hash để người dùng so được với bản backup.
+
+**3. `rel_path` từ DB không được tin.** Mọi lần đọc `resolve` rồi kiểm kết quả **nằm trong**
+`data/template-files/`. `../../.env` resolve ra ngoài và bị từ chối. So sánh có **dấu phân cách**
+(`root + sep`) để thư mục anh em `template-files-old` không bị nhận nhầm là con.
+
+**Không ghi đè:** mỗi upload là revision mới; `active_file_revision_id` là con trỏ, nên rollback là
+trỏ về row cũ.
+
+### Bốn route
+
+| Route | Capability | Việc |
+|---|---|---|
+| `POST /admin/templates/:id/file` | `platform:templates` | Lưu một revision (validate là `.sqd` thật trước khi ghi) |
+| `GET /admin/templates/:id/file` | `platform:templates` | Bản active (hoặc `?revisionId=`), verify |
+| `GET /admin/templates/:id/files` | `platform:templates` | Lịch sử |
+| `GET /templates/:id/file` | `quote:write` | Công ty tải bản active |
+
+**Công ty bị từ chối luôn nhận 404, và body giống hệt id không tồn tại** — một 403 xác nhận id là
+thật, tức lộ rằng template của đối thủ đang ở đó.
+
+### Giới hạn request body — hai lỗi thật tìm được khi kiểm chứng
+
+**Lỗi 1: `priceImport` khai 8 MB nhưng server chặn 1 MB.** `app.ts:61` đặt `bodyLimit: 1 MB`, nên
+mọi bảng giá lớn hơn ~750 KB bị chặn **trước khi route chạy**, và câu "larger than 8 MB" không bao
+giờ hiện. Nay hằng số là **900 KB** — dưới trần, và câu thông báo tính từ chính hằng số đó.
+
+**Lỗi 2: mọi lỗi 4xx bị bọc thành 500.** Upload 2 MB trả
+`{"code":"internal","message":"Something went wrong..."}` thay vì 413. Nguyên nhân:
+`setErrorHandler` gán cứng 500. Nay handler **giữ `statusCode` của Fastify** khi nó là 4xx và trả
+`payload_too_large`, nhưng **không bao giờ chuyển tiếp message gốc** — message của lỗi DB từng làm lộ
+`UNIQUE constraint failed: memberships.username` ra browser.
+
+**Vì sao dùng byte, không phải số dòng:** file `.sqd` lớn nhất trong 31 file thật của desktop là
+**97 KB**; v2 tự ghi 20 revision là **8,4 KB**. Base64 phình 33%, nên 1 MB là dư 5–7 lần.
+
+### Kiểm chứng (2026-11-06, qua `curl` với server thật)
+
+| Ca | Kết quả |
+|---|---|
+| upload 623 B | `sha256 f0c2f42f…`, `sizeBytes 623` |
+| tải về và `sha256sum` | **khớp tuyệt đối**, header `x-content-sha256` = hash DB |
+| sửa 1 byte trên đĩa rồi tải | **409**, KHÔNG có body file, nói `recorded f0c2f42f…, found b85fafa9…` |
+| upload lần hai (v2) | revision mới; v2 thành active, v1 vẫn tải riêng được |
+| công ty tải template global | **200** với `x-content-sha256` |
+| công ty B tải template của A | **404**, body **giống hệt** một id không tồn tại |
+
+### Một lỗi có sẵn khác, sửa luôn
+
+**`/platform` crash cho mọi platform admin.** `apps/admin/src/app/platform/page.tsx` đọc
+`usage.data.items`, nhưng `/admin/usage` trả `{ scope, summary, recent }`. `usage` thành `undefined`
+và `usage.length` ném `Cannot read properties of undefined`. Kiểu viết tay nói `items`, và không có
+test nào cho page admin nên không ai thấy. Nay đọc `summary`.
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -893,7 +964,7 @@ Ghi chú khi port:
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 919 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors) |
-| `@sq/api` | 180 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, pricing) |
+| `@sq/api` | 201 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, template files, body limit, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

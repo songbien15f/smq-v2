@@ -33,6 +33,7 @@ import { registerEnquiries } from './routes/enquiries.js';
 import { registerPlaces } from './routes/places.js';
 import { registerShedSafe } from './routes/shedsafe.js';
 import { registerPlatform } from './routes/platform.js';
+import { registerTemplateFiles } from './routes/templateFiles.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSettings } from './routes/settings.js';
 import { registerAdmin } from './routes/admin.js';
@@ -76,6 +77,36 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
    * the child is created with the handler already inherited.
    */
   app.setErrorHandler((error, request, reply) => {
+    /*
+     * **A Fastify error that already carries a status keeps it.**
+     *
+     * Wrapping everything as 500 turned a 413 into "Something went wrong. The details were logged."
+     * — measured: a 2 MB upload to the price import answered 500, because this handler ran
+     * *after* Fastify's body-limit parser had already decided the answer was 413. The operator was
+     * told the server broke when in fact their file was too big, which is the one thing they can
+     * act on.
+     *
+     * Only the status code is trusted, never the message: a parser error's message is about an
+     * internal limit, and a database error's message is how a raw `UNIQUE constraint failed:
+     * memberships.username` reached a browser once. The status is safe to pass on; the text is not.
+     */
+    // Fastify hands this handler an `unknown`; the two fields read below are its own contract on a
+    // parsed request error, so they are narrowed once here rather than asserted at each use.
+    const failure = error as { statusCode?: unknown; code?: unknown };
+    const status = typeof failure.statusCode === 'number' ? failure.statusCode : 500;
+    if (status >= 400 && status < 500) {
+      request.log.warn({ err: error }, 'client error');
+      const tooLarge = failure.code === 'FST_ERR_CTP_BODY_TOO_LARGE';
+      reply.status(status).send({
+        ok: false,
+        code: tooLarge ? 'payload_too_large' : 'invalid_request',
+        message: tooLarge
+          ? 'That request body is larger than this endpoint accepts.'
+          : 'That request could not be read.',
+      });
+      return;
+    }
+
     request.log.error({ err: error }, 'unhandled');
     reply.status(500).send({
       ok: false,
@@ -138,6 +169,7 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       registerPlaces(scope);
       registerShedSafe(scope, db);
       registerPlatform(scope, db);
+      registerTemplateFiles(scope, db);
       registerUsage(scope, db);
       registerSettings(scope, db, mail);
       registerShares(scope, db, process.env.SITE_ORIGIN ?? 'http://localhost:3063');

@@ -42,8 +42,19 @@ import { parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import { activeBookHash, priceBooksDir } from '../lib/priceBook.js';
 
-/** The largest sheet accepted, in bytes. A price list is thousands of rows, not a database dump. */
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+/**
+ * The largest sheet accepted, in bytes.
+ *
+ * **It has to stay under the server's `bodyLimit`** (`app.ts:61`), or this number is a fiction: the
+ * body parser refuses the request before this route runs, and the sentence below — "larger than
+ * 8 MB" — is never shown to anybody. Measured 2026-11-06: a 2 MB upload answered 413 from the
+ * parser while this constant still claimed 8 MB was allowed.
+ *
+ * 900 KB sits under the 1 MB limit with room for the JSON envelope and base64's 33 % expansion, so
+ * the *file* a person can attach is about 660 KB. A supplier's list of a few thousand rows fits; a
+ * database dump does not, and was never meant to.
+ */
+const MAX_UPLOAD_BYTES = 900 * 1024;
 
 /** What the browser posts: the file as base64, because a JSON API has no multipart parser here. */
 const uploadBody = {
@@ -156,7 +167,11 @@ export function registerPriceImport(app: FastifyInstance, db: Db): void {
     const body = uploadBody.parse(request.body);
     if (body === null) return sendFail(reply, 'validation_failed', 'Attach the spreadsheet file.');
     if (body.buffer.length > MAX_UPLOAD_BYTES) {
-      return sendFail(reply, 'validation_failed', 'That file is larger than 8 MB. A price list is not that big.');
+      return sendFail(
+        reply,
+        'validation_failed',
+        `That file is larger than ${Math.round(MAX_UPLOAD_BYTES / 1024)} KB. A supplier price list is not that big — check you attached the sheet and not a database export.`,
+      );
     }
 
     const hash = await activeBookHash(db);
