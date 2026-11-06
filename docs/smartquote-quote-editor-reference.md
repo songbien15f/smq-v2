@@ -470,6 +470,8 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | 1c | ~~Slice 2 phần còn lại~~ | **ĐÃ XONG** — form admin có công ty + mô tả + thứ tự; catalogue công ty hiện mô tả |
 | 1d | **Template cô lập theo công ty** | **ĐÃ XONG** — mỗi template thuộc đúng một công ty, không có catalogue dùng chung |
 | 1e | **Khối `Integrity` trong `.sqd`** | **ĐÃ XONG** — §17 |
+| 1f | ~~Slice 5: salesman~~ | **ĐÃ XONG (khác spec)** — §19. Không có bảng 72 cột; salesman là chuỗi tự do trên site check |
+| 1g | **Guard `autoCalc` + bảy trường địa lý** | **ĐÃ XONG** — §19 |
 | 2 | ~~R6 nửa còn lại: track bị chiếm~~ | **CỐ Ý KHÔNG PORT** — track không có giá trong desktop (§12.6) |
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
@@ -997,6 +999,60 @@ sửa giá 30118.63 → 29999.99:  invalid (expected f3e86a84…, actual 4871cd8
 chỉ format lại JSON:          valid
 ```
 
+## 19. ShedSafe — guard Auto Calc, bảy trường địa lý, salesman
+
+### Lỗi thật mà desktop đã sửa, và v2 từng mắc lại
+
+ShedSafe trả **đủ** các trường gió **kể cả khi chưa bấm Auto Calc**, và giá trị trước đó là **số thô**
+— `topographicFactor` và `vSite1` đặc biệt. Comment của desktop ghi lại hậu quả:
+
+> *"GUARD: block premature Get SiteCheck Report before the building has been Pinned + Auto
+> Calculated... Without this, the app silently accepts raw/uncalculated values (e.g. wrong
+> topographicFactor / vSite1) and reports success, corrupting the structural design."*
+
+**v2 trước đây chỉ kiểm "có giá trị nào không"** — tức đúng cái guard sai. Nay:
+
+| | |
+|---|---|
+| Cờ dùng | **`autoCalc === true`** **và** `message.errorMessage` rỗng |
+| Cờ KHÔNG dùng | `windRegion` — **nó có trước Auto Calc**, nên kiểm nó là guard giả |
+| Khi chưa tính | **409**, không ghi gì vào DB, câu nói rõ việc cần làm |
+
+Có test dựng đúng ca này: `windRegion: 'C'` đã có, `autoCalc: false` → phải từ chối.
+
+### Bảy trường địa lý
+
+`SiteCheckValues` mở rộng thêm `shielding`, `topographicFactor`, `snowLoadRegion`,
+`earthquakeHazardFactor`, `elevation`, `latitude`/`longitude`, `rainfallIntensity100/20Years`,
+`rainfallIntensityTown` — đúng bảy dòng desktop hiện trong "show more parameters" và
+`UcShedSafeInfoView`.
+
+**Lưu ở `site_checks.detail_json`** (migration `015`), không phải chín cột riêng: không trường nào
+tính giá, và thêm một cột mỗi lần cơ quan cấp chứng nhận thêm một chỉ số là không đúng hướng.
+
+**Hai nhóm trong API, cố ý tách:** `values` là sáu trường engine đã định giá từ, `site` là những gì
+chứng nhận nói về **địa điểm**. Gộp chúng sẽ gợi rằng độ cao ảnh hưởng giá — nó không.
+
+**Một lỗi tôi tự tạo khi làm:** `importIntoCheck` ghi `detail_json` mới, **xoá salesman** đã lưu lúc
+pin — mất đúng lúc người ta cần biết ai đã yêu cầu kiểm tra. Nay **merge**, và có test
+`keeps the salesman it recorded at pin time`.
+
+### Salesman — làm khác spec, và nhỏ hơn nhiều
+
+Spec §4.8 nói "bảng `salesmen` theo tenant + đồng bộ `createsalesman`/`updatesalesman`".
+
+**Kiểm chứng lại thì không đáng:**
+- Desktop đặt **`Salesman = ""`** — chuỗi rỗng, literal (`QuoteDetailsView.Events.cs:2391`).
+- Salesman là khái niệm của **licence server**: bảng 72 cột (`SSId`, `FranchiseName`, `FranchiseId`…),
+  phục vụ màn hình "Building Management" theo franchise — thứ operator đã nói không cần.
+- Không có tác dụng lên giá.
+
+**Đã làm thay:** một ô **chuỗi tự do** trên site check, gửi lên ShedSafe qua tham số `salesman` của
+`getsalesmansitelink`, lưu trong `detail_json`. Đúng chỗ desktop có nó (rỗng, người dùng tự điền).
+
+**Một lỗi cũ sửa luôn:** v2 gửi **`client.email`** làm `salesman` — tức email **khách hàng** xuất hiện
+như người đi kiểm tra site. Nay là trường riêng.
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -1036,7 +1092,7 @@ Ghi chú khi port:
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
-| `@sq/api` | 204 (auth, quote, evaluate, catalogue, site-check, send modes, members, punchings, template files, template scope, body limit, pricing) |
+| `@sq/api` | 211 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, body limit, pricing) |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

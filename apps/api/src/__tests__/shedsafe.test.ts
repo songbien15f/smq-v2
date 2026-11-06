@@ -185,26 +185,36 @@ describe('pin', () => {
 });
 
 describe('read', () => {
-  it('maps the six certified fields, including vSite1', async () => {
+  it('maps the certified fields, including vSite1, and reports them calculated', async () => {
     const { fetch } = fakeFetch({
       '/authenticate': authOk,
       '/building/get/': () =>
         new Response(
           JSON.stringify({
+            // The flag that says Auto Calc has run. Without it the values are raw.
+            autoCalc: true,
             importanceLevel: 2,
             windRegion: 'C',
             terrainCategory: 2.5,
             buildingClass: 'Class 10a',
             snowLoad: 0,
             vSite1: 41.5,
+            shielding: 1,
+            topographicFactor: 1.1,
+            elevation: 42.5,
+            latitude: -27.47,
+            longitude: 153.03,
+            rainfallIntensity100Years: 264,
+            rainfallIntensity20Years: 156,
           }),
           { status: 200 },
         ),
     });
 
-    const values = await createShedSafeTransport(config, fetch).read('B-1');
+    const result = await createShedSafeTransport(config, fetch).read('B-1');
 
-    expect(values).toEqual({
+    expect(result?.calculated).toBe(true);
+    expect(result?.values).toEqual({
       importanceLevel: 2,
       windRegion: 'C',
       terrainCategory: 2.5,
@@ -213,19 +223,84 @@ describe('read', () => {
       snowLoad: 0,
       // ShedSafe calls design wind speed `vSite1`.
       designWindSpeed: 41.5,
+      shielding: 1,
+      topographicFactor: 1.1,
+      snowLoadRegion: null,
+      earthquakeHazardFactor: null,
+      elevation: 42.5,
+      latitude: -27.47,
+      longitude: 153.03,
+      rainfallIntensity100Years: 264,
+      rainfallIntensity20Years: 156,
+      rainfallIntensityTown: null,
     });
   });
 
-  it('answers null when the building has not been calculated', async () => {
+  it('**reports uncalculated values as uncalculated, even though they are present**', async () => {
+    /*
+     * The defect the desktop wrote a guard for, reproduced as a test.
+     *
+     * ShedSafe answers with the wind fields **before** Auto Calc has run, and those values are raw.
+     * A reader that keys on "are the values there" accepts them and prices the building against a
+     * rating nobody issued — while every screen says the check succeeded. The desktop's own comment:
+     *
+     *   "the app silently accepts raw/uncalculated values (e.g. wrong topographicFactor / vSite1)
+     *    and reports success, corrupting the structural design."
+     *
+     * Note `windRegion` is populated here: it is filled in before Auto Calc, so it is **not** a
+     * signal, and a check on it would pass.
+     */
     const { fetch } = fakeFetch({
       '/authenticate': authOk,
-      // Pinned but not calculated: every field absent.
-      '/building/get/': () => new Response(JSON.stringify({ buildingId: 'B-1' }), { status: 200 }),
+      '/building/get/': () =>
+        new Response(
+          JSON.stringify({
+            autoCalc: false,
+            windRegion: 'C',
+            importanceLevel: 2,
+            terrainCategory: 2.5,
+            vSite1: 12.3,
+            topographicFactor: 1,
+          }),
+          { status: 200 },
+        ),
     });
 
-    // Null, not a set of zeros. A wind region of 0 would be a value nobody certified, and it would
-    // price the quote against nothing.
-    expect(await createShedSafeTransport(config, fetch).read('B-1')).toBeNull();
+    const result = await createShedSafeTransport(config, fetch).read('B-1');
+    expect(result).not.toBeNull();
+    // The values travel — a screen can show what is there — but they are marked as not to be used.
+    expect(result?.calculated).toBe(false);
+    expect(result?.values.windRegion).toBe('C');
+  });
+
+  it('treats an error message from ShedSafe as not calculated', async () => {
+    // A building it could not finish is not a building it calculated, whatever the flag says.
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/get/': () =>
+        new Response(
+          JSON.stringify({
+            autoCalc: true,
+            windRegion: 'C',
+            message: { errorMessage: 'Address could not be geocoded' },
+          }),
+          { status: 200 },
+        ),
+    });
+    const result = await createShedSafeTransport(config, fetch).read('B-1');
+    expect(result?.calculated).toBe(false);
+    expect(result?.errorMessage).toBe('Address could not be geocoded');
+  });
+
+  it('gives nulls rather than zeros for the fields ShedSafe omitted', async () => {
+    // A wind region of 0 would be a value nobody certified.
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/get/': () => new Response(JSON.stringify({ autoCalc: true }), { status: 200 }),
+    });
+    const result = await createShedSafeTransport(config, fetch).read('B-1');
+    expect(result?.values.importanceLevel).toBeNull();
+    expect(result?.values.elevation).toBeNull();
   });
 
   it('answers null for an unknown building rather than throwing', async () => {

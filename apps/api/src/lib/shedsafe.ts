@@ -25,7 +25,13 @@
  * test server and production cannot share a token.
  */
 
-/** The six certified fields, as ShedSafe names them. */
+/**
+ * The certified fields, as ShedSafe names them.
+ *
+ * Six of these decide the structural design, and all six come back **before** the site has been
+ * calculated on ShedSafe's own web app — which is why `calculated` travels beside them. See
+ * `SiteCheckResult`.
+ */
 export interface SiteCheckValues {
   importanceLevel: number | null;
   windRegion: string | null;
@@ -34,6 +40,57 @@ export interface SiteCheckValues {
   snowLoad: number | null;
   /** ShedSafe calls this `vSite1`. Metres per second. */
   designWindSpeed: number | null;
+
+  /*
+   * The seven geographic parameters the desktop showed under "show more parameters". They do not
+   * drive the price directly, but they are part of what the certificate says about this site, and
+   * an operator reading a quote against its rating needs them.
+   */
+  /** Terrain shielding, the multiplier the wind code applies for obstructions upwind. */
+  shielding: number | null;
+  /** The topographic factor `Mt` — a ridge or a escarpment raises the design wind speed. */
+  topographicFactor: number | null;
+  /** The region name behind `snowLoad`, when the site has one. */
+  snowLoadRegion: string | null;
+  /** The hazard factor `Z` for the site's location. */
+  earthquakeHazardFactor: number | null;
+  /** Height above sea level, metres. */
+  elevation: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  /** Rainfall intensity for the 100- and 20-year return periods, mm/h. */
+  rainfallIntensity100Years: number | null;
+  rainfallIntensity20Years: number | null;
+  /** The town those intensities were read for, so the number can be traced. */
+  rainfallIntensityTown: string | null;
+}
+
+/**
+ * What reading a ShedSafe building produced.
+ *
+ * ## Why `calculated` is a separate answer, and why it is the important one
+ *
+ * ShedSafe returns every one of the fields above **whether or not** the operator has pressed
+ * *Auto Calc* on its own web app. The values before that press are raw — `topographicFactor` and
+ * `vSite1` in particular are not the site's certified numbers yet — and taking them would price a
+ * building against a wind rating nobody issued.
+ *
+ * The desktop learned this the hard way and wrote a guard for it. Its own comment says so:
+ *
+ * > *GUARD: block premature "Get SiteCheck Report" before the building has been Pinned + Auto
+ * > Calculated on the ShedSafe web. Without this, the app silently accepts raw/uncalculated values
+ * > (e.g. wrong topographicFactor / vSite1) and reports success, corrupting the structural design.*
+ *
+ * And it keys off `autoCalc`, **not** `windRegion`, because `windRegion` is populated before Auto
+ * Calc runs (same comment). That is the detail that makes the difference between a guard and the
+ * appearance of one.
+ */
+export interface SiteCheckResult {
+  /** True when ShedSafe says the building has been Auto Calculated and reports no error. */
+  calculated: boolean;
+  /** ShedSafe's own error message, when it gave one. Non-empty means it did not finish. */
+  errorMessage: string | null;
+  values: SiteCheckValues;
 }
 
 /** What a pin returns. */
@@ -114,14 +171,28 @@ export interface ShedSafeTransport {
     reference: string;
     siteAddress: { addressLine1: string; suburb: string; state: string; postcode: string };
     client: { firstName: string; lastName: string; email: string };
+    /**
+     * The salesperson's name or email, sent to ShedSafe so their own site shows who asked.
+     *
+     * Optional, and **not** the customer's email: the parameter is the person doing the site check.
+     * The desktop sends an empty string here and lets the operator type one; this does the same when
+     * the caller has nothing to say.
+     */
+    salesman?: string;
     /** Metres, as ShedSafe wants them. */
     height: number;
     span: number;
     length: number;
     importanceLevel: number;
   }): Promise<PinnedBuilding>;
-  /** The six certified fields, or `null` when ShedSafe has not calculated the building yet. */
-  read(buildingId: string): Promise<SiteCheckValues | null>;
+  /**
+   * The building's fields, **and whether ShedSafe has calculated them**.
+   *
+   * `null` means ShedSafe has no such building (404). A building it has but has not calculated
+   * comes back with `calculated: false` and the raw values, so a caller can say *why* it will not
+   * use them rather than pretending the building does not exist.
+   */
+  read(buildingId: string): Promise<SiteCheckResult | null>;
 }
 
 /**
@@ -230,7 +301,7 @@ export function createShedSafeTransport(
        * the endpoint sometimes answers bare text — so both shapes are handled here rather than one.
        */
       const linkResponse = await call(
-        `/building/getsalesmansitelink?id=${encodeURIComponent(body.buildingId)}&salesman=${encodeURIComponent(input.client.email)}&returnurl=${encodeURIComponent(`https://sitecheck.shedsafe.com.au/Building/Edit/${body.buildingId}`)}`,
+        `/building/getsalesmansitelink?id=${encodeURIComponent(body.buildingId)}&salesman=${encodeURIComponent(input.salesman ?? '')}&returnurl=${encodeURIComponent(`https://sitecheck.shedsafe.com.au/Building/Edit/${body.buildingId}`)}`,
       );
       const raw = linkResponse.ok ? (await linkResponse.text()).trim() : '';
       let siteLink = '';
@@ -260,11 +331,6 @@ export function createShedSafeTransport(
       const str = (value: unknown): string | null =>
         typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 
-      /*
-       * A building that has been pinned but not calculated has no rating yet. Answering with nulls
-       * rather than zeros is what lets the screen say "not calculated" instead of showing a wind
-       * region of 0 — a value nobody certified.
-       */
       const values: SiteCheckValues = {
         importanceLevel: num(body.importanceLevel),
         windRegion: str(body.windRegion),
@@ -272,10 +338,36 @@ export function createShedSafeTransport(
         buildingClass: str(body.buildingClass),
         snowLoad: num(body.snowLoad),
         designWindSpeed: num(body.vSite1),
+        // The seven geographic parameters, same null-when-absent rule: a zero here would be a
+        // reading nobody took.
+        shielding: num(body.shielding),
+        topographicFactor: num(body.topographicFactor),
+        snowLoadRegion: str(body.snowLoadRegion),
+        earthquakeHazardFactor: num(body.earthquakeHazardFactor),
+        elevation: num(body.elevation),
+        latitude: num(body.latitude),
+        longitude: num(body.longitude),
+        rainfallIntensity100Years: num(body.rainfallIntensity100Years),
+        rainfallIntensity20Years: num(body.rainfallIntensity20Years),
+        rainfallIntensityTown: str(body.rainfallIntensityTown),
       };
 
-      const hasAny = Object.values(values).some((value) => value !== null);
-      return hasAny ? values : null;
+      /*
+       * **The guard the desktop already paid for.**
+       *
+       * ShedSafe returns these fields whether or not Auto Calc has run, and the pre-calculation
+       * values are raw — `topographicFactor` and `vSite1` above all. The desktop's comment records
+       * what happened without this check: *"the app silently accepts raw/uncalculated values …
+       * and reports success, corrupting the structural design."*
+       *
+       * Keyed on `autoCalc` **and** an empty error, exactly as the desktop does, because
+       * `windRegion` is populated before Auto Calc and would pass as "calculated" if it were the
+       * signal. That is the whole reason this is not a check on whether the values look plausible.
+       */
+      const errorMessage = str((body.message as Record<string, unknown> | undefined)?.errorMessage);
+      const calculated = body.autoCalc === true && (errorMessage === null || errorMessage === '');
+
+      return { calculated, errorMessage, values };
     },
   };
 }

@@ -22,7 +22,7 @@
  * of freezing it.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { newId, now } from '@sq/db';
 import { z } from 'zod';
 import { parseBody, sendFail, sendOk } from '../lib/http.js';
@@ -55,6 +55,14 @@ const pinRequest = z
     spanMm: z.number().int().min(1000).max(40000),
     lengthMm: z.number().int().min(1000).max(120000),
     importanceLevel: z.number().int().min(1).max(4).default(2),
+    /**
+     * Who is doing the check, as ShedSafe shows it on their side.
+     *
+     * Free text on purpose: the licence server kept a 72-column `Salesman` table because it managed
+     * buildings by franchise, and none of that survives into a quoting product. The desktop sent an
+     * empty string and let the operator type a name — this does the same.
+     */
+    salesman: z.string().trim().max(200).default(''),
     /** Reuse an existing check rather than pinning a second building for the same site. */
     reference: z.string().trim().min(1).max(80).optional(),
   })
@@ -76,6 +84,8 @@ interface SiteCheckRow {
   last_error: string | null;
   pinned_at: string;
   imported_at: string | null;
+  /** The site's geographic readings, as JSON. `null` for a check imported before this existed. */
+  detail_json: string | null;
 }
 
 /** What a screen gets back. camelCase, and the six fields grouped so a UI can label them together. */
@@ -97,6 +107,17 @@ function toView(row: SiteCheckRow) {
       snowLoad: row.snow_load === null ? null : Number(row.snow_load),
       designWindSpeed: row.design_wind_speed === null ? null : Number(row.design_wind_speed),
     },
+    /*
+     * The site's geographic readings, separate from the six that drive the design.
+     *
+     * Two groups because they answer two questions: `values` is what the engine priced from, and
+     * `site` is what the certificate says about the place. A screen that mixed them would suggest
+     * the elevation affects the price, which it does not.
+     *
+     * `null` for a check imported before the readings were stored — the values were never fetched,
+     * which is different from a site at sea level with no rain.
+     */
+    site: row.detail_json === null ? null : (JSON.parse(row.detail_json) as Record<string, unknown>),
   };
 }
 
@@ -115,6 +136,142 @@ function newReference(): string {
  * Changing them means editing the environment and restarting, which is the right amount of friction
  * for a credential that spends money on every request.
  */
+/**
+ * Import a ShedSafe building into a site-check row, and refuse it until it has been calculated.
+ *
+ * ## One implementation for two routes
+ *
+ * `POST /quotes/:id/site-check/import` and `POST /site-checks/:id/import` differ only in how they
+ * find the check. The **guard** is the reason they must share the rest: a second copy is how one of
+ * them would come to skip it.
+ *
+ * ## Why the guard exists at all
+ *
+ * ShedSafe answers with the wind fields whether or not the operator has pressed **Auto Calc** on its
+ * own web app, and the pre-calculation values are raw — `topographicFactor` and `vSite1` above all.
+ * Accepting them prices a building against a rating nobody issued, and every screen still says the
+ * check succeeded. The desktop's own comment records that this happened to it:
+ *
+ * > *"Without this, the app silently accepts raw/uncalculated values (e.g. wrong topographicFactor /
+ * > vSite1) and reports success, corrupting the structural design."*
+ *
+ * It keys off `autoCalc` **and** an empty `errorMessage`, exactly as the desktop does — **not** on
+ * whether the values look plausible, and not on `windRegion`, which ShedSafe fills in before Auto
+ * Calc runs and would therefore pass as "calculated".
+ *
+ * ## What the operator is told
+ *
+ * The refusal names the one action they can take. "Not calculated" alone sends them back to the app
+ * to guess; "open the site link and run Auto Calc" is the fix.
+ */
+async function importIntoCheck(
+  reply: FastifyReply,
+  db: Db,
+  shedSafe: ShedSafeTransport,
+  check: SiteCheckRow,
+): Promise<unknown> {
+  const at = now();
+  // A check with no building id never reached ShedSafe; calling read would ask for `undefined`.
+  const buildingId = check.building_id;
+  if (buildingId === null) {
+    return sendFail(reply, 'conflict', 'The site check has no ShedSafe building id yet. Pin the site again.');
+  }
+
+  try {
+    const result = await shedSafe.read(buildingId);
+
+    if (result === null) {
+      const message = 'ShedSafe has no building with that id. Pin the site again.';
+      await db.run(
+        "UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?",
+        [message, at, check.id],
+      );
+      return sendFail(reply, 'conflict', message);
+    }
+
+    if (!result.calculated) {
+      const message =
+        result.errorMessage !== null && result.errorMessage !== ''
+          ? `ShedSafe reported a problem with this building: ${result.errorMessage}`
+          : 'This site has not been Auto Calculated in ShedSafe yet, so its wind rating is not issued. ' +
+            'Open the site link, pin the location and run Auto Calc, then import again.';
+      await db.run(
+        "UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?",
+        [message, at, check.id],
+      );
+      return sendFail(reply, 'conflict', message);
+    }
+
+    const v = result.values;
+    await db.run(
+      `UPDATE site_checks
+          SET importance_level = ?, wind_region = ?, terrain_category = ?, building_class = ?,
+              snow_load = ?, design_wind_speed = ?, status = 'imported', last_error = NULL,
+              imported_at = ?, updated_at = ?
+        WHERE id = ?`,
+      [
+        v.importanceLevel,
+        v.windRegion,
+        v.terrainCategory,
+        v.buildingClass,
+        v.snowLoad,
+        v.designWindSpeed,
+        at,
+        at,
+        check.id,
+      ],
+    );
+
+    /*
+     * The seven geographic parameters go into `detail_json` rather than columns of their own.
+     *
+     * They describe the **site**, not the quote's structural inputs: nothing prices from them, and a
+     * column per reading would mean a migration each time a rating body adds one. They are stored so
+     * a quote can be read against the certificate it was issued under, which is the question an
+     * engineer asks — not so the engine can compute from them.
+     */
+    /*
+     * **Merge, do not replace.** `detail_json` already holds the salesman recorded at pin time, and
+     * writing a fresh object would delete it — the check would lose who asked for it the moment it
+     * was imported, which is exactly when somebody wants to know.
+     */
+    const prior = await db.get<{ detail_json: string | null }>(
+      'SELECT detail_json FROM site_checks WHERE id = ?',
+      [check.id],
+    );
+    const existingDetail: Record<string, unknown> =
+      prior?.detail_json == null ? {} : (JSON.parse(prior.detail_json) as Record<string, unknown>);
+
+    await db.run('UPDATE site_checks SET detail_json = ? WHERE id = ?', [
+      JSON.stringify({
+        ...existingDetail,
+        shielding: v.shielding,
+        topographicFactor: v.topographicFactor,
+        snowLoadRegion: v.snowLoadRegion,
+        earthquakeHazardFactor: v.earthquakeHazardFactor,
+        elevation: v.elevation,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        rainfallIntensity100Years: v.rainfallIntensity100Years,
+        rainfallIntensity20Years: v.rainfallIntensity20Years,
+        rainfallIntensityTown: v.rainfallIntensityTown,
+      }),
+      check.id,
+    ]);
+
+    const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [check.id]);
+    return sendOk(reply, { check: row === null ? null : toView(row) });
+  } catch (error) {
+    const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
+    await db.run("UPDATE site_checks SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", [
+      message,
+      at,
+      check.id,
+    ]);
+    return sendFail(reply, 'internal', message);
+  }
+}
+
 function transport(): ShedSafeTransport | null {
   if (!shedsafeConfigured()) return null;
   const username = (process.env.SHEDSAFE_USERNAME as string).trim();
@@ -186,6 +343,7 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
         span: body.spanMm / 1000,
         length: body.lengthMm / 1000,
         importanceLevel: body.importanceLevel,
+        salesman: body.salesman,
       });
 
       const existing = await db.get<{ id: string }>(
@@ -194,11 +352,24 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       );
 
       const checkId = existing === null ? newId() : existing.id;
+      // Who asked for the check, kept beside the site's readings. Not a table: the licence server's
+      // 72-column `Salesman` existed to manage buildings by franchise, and a quoting product has no
+      // franchise to manage. A name on the check is what a support call asks for.
+      const salesperson = body.salesman === '' ? null : body.salesman;
       if (existing === null) {
         await db.run(
-          `INSERT INTO site_checks (id, tenant_id, building_id, reference, site_link, status, pinned_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'pinned', ?, ?)`,
-          [checkId, tenantId, pinned.buildingId, reference, pinned.siteLink, at, at],
+          `INSERT INTO site_checks (id, tenant_id, building_id, reference, site_link, status, detail_json, pinned_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'pinned', ?, ?, ?)`,
+          [
+            checkId,
+            tenantId,
+            pinned.buildingId,
+            reference,
+            pinned.siteLink,
+            salesperson === null ? null : JSON.stringify({ salesman: salesperson }),
+            at,
+            at,
+          ],
         );
       } else {
         // A retry updates the same row, so the quote keeps pointing at one check rather than
@@ -281,53 +452,7 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       return sendFail(reply, 'conflict', 'The site check has no ShedSafe building id yet. Pin the site again.');
     }
 
-    const at = now();
-
-    try {
-      const values = await shedSafe.read(check.building_id);
-
-      if (values === null) {
-        await db.run(
-          "UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?",
-          ['ShedSafe has not calculated this building yet. Finish the check in ShedSafe, then import again.', at, check.id],
-        );
-        return sendFail(
-          reply,
-          'conflict',
-          'ShedSafe has not calculated this building yet. Finish the check in ShedSafe, then import again.',
-        );
-      }
-
-      await db.run(
-        `UPDATE site_checks
-            SET importance_level = ?, wind_region = ?, terrain_category = ?, building_class = ?,
-                snow_load = ?, design_wind_speed = ?, status = 'imported', last_error = NULL,
-                imported_at = ?, updated_at = ?
-          WHERE id = ?`,
-        [
-          values.importanceLevel,
-          values.windRegion,
-          values.terrainCategory,
-          values.buildingClass,
-          values.snowLoad,
-          values.designWindSpeed,
-          at,
-          at,
-          check.id,
-        ],
-      );
-
-      const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [check.id]);
-      return sendOk(reply, { check: row === null ? null : toView(row) });
-    } catch (error) {
-      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
-      await db.run("UPDATE site_checks SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", [
-        message,
-        at,
-        check.id,
-      ]);
-      return sendFail(reply, 'internal', message);
-    }
+    return importIntoCheck(reply, db, shedSafe, check);
   });
 
   /**
@@ -363,6 +488,7 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
         span: body.spanMm / 1000,
         length: body.lengthMm / 1000,
         importanceLevel: body.importanceLevel,
+        salesman: body.salesman,
       });
 
       const existing = await db.get<{ id: string }>(
@@ -371,11 +497,22 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       );
       const checkId = existing === null ? newId() : existing.id;
 
+      const salesperson = body.salesman === '' ? null : body.salesman;
       if (existing === null) {
         await db.run(
-          `INSERT INTO site_checks (id, tenant_id, building_id, reference, site_link, status, pinned_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'pinned', ?, ?)`,
-          [checkId, tenantId, pinned.buildingId, reference, pinned.siteLink, at, at],
+          `INSERT INTO site_checks
+             (id, tenant_id, building_id, reference, site_link, status, detail_json, pinned_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'pinned', ?, ?, ?)`,
+          [
+            checkId,
+            tenantId,
+            pinned.buildingId,
+            reference,
+            pinned.siteLink,
+            salesperson === null ? null : JSON.stringify({ salesman: salesperson }),
+            at,
+            at,
+          ],
         );
       } else {
         await db.run(
@@ -424,48 +561,6 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       return sendFail(reply, 'conflict', 'The site check has no ShedSafe building id yet. Pin the site again.');
     }
 
-    const at = now();
-    try {
-      const values = await shedSafe.read(check.building_id);
-      if (values === null) {
-        const message = 'ShedSafe has not calculated this building yet. Finish the check in ShedSafe, then import again.';
-        await db.run("UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?", [
-          message,
-          at,
-          check.id,
-        ]);
-        return sendFail(reply, 'conflict', message);
-      }
-
-      await db.run(
-        `UPDATE site_checks
-            SET importance_level = ?, wind_region = ?, terrain_category = ?, building_class = ?,
-                snow_load = ?, design_wind_speed = ?, status = 'imported', last_error = NULL,
-                imported_at = ?, updated_at = ?
-          WHERE id = ?`,
-        [
-          values.importanceLevel,
-          values.windRegion,
-          values.terrainCategory,
-          values.buildingClass,
-          values.snowLoad,
-          values.designWindSpeed,
-          at,
-          at,
-          check.id,
-        ],
-      );
-
-      const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [check.id]);
-      return sendOk(reply, { check: row === null ? null : toView(row) });
-    } catch (error) {
-      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
-      await db.run("UPDATE site_checks SET status = 'failed', last_error = ?, updated_at = ? WHERE id = ?", [
-        message,
-        at,
-        check.id,
-      ]);
-      return sendFail(reply, 'internal', message);
-    }
+    return importIntoCheck(reply, db, shedSafe, check);
   });
 }

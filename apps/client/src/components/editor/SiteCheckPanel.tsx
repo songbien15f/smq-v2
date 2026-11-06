@@ -45,6 +45,24 @@ interface SiteCheck {
   pinnedAt: string;
   importedAt: string | null;
   values: SiteCheckValues;
+  /**
+   * The site's geographic readings, or `null` for a check imported before they were stored.
+   *
+   * Separate from `values` on purpose: those six price the building, these describe the place.
+   * `null` means "never fetched", which is different from a site at sea level with no rain.
+   */
+  site: {
+    shielding: number | null;
+    topographicFactor: number | null;
+    snowLoadRegion: string | null;
+    earthquakeHazardFactor: number | null;
+    elevation: number | null;
+    latitude: number | null;
+    longitude: number | null;
+    rainfallIntensity100Years: number | null;
+    rainfallIntensity20Years: number | null;
+    rainfallIntensityTown: string | null;
+  } | null;
 }
 
 export interface SiteCheckPanelProps {
@@ -81,6 +99,14 @@ export function SiteCheckPanel({
   const [check, setCheck] = useState<SiteCheck | null>(null);
   const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
+  /**
+   * Who is doing the check, as ShedSafe shows it on their side.
+   *
+   * Remembered in a ref-less piece of state rather than derived from the signed-in user, because
+   * the salesperson who arranged a site visit is often not the person at the keyboard. The desktop
+   * sent an empty string here and let the operator type a name; so does this.
+   */
+  const [salesman, setSalesman] = useState('');
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const setSiteCheckId = useDraftStore((state) => state.setSiteCheckId);
 
@@ -121,6 +147,8 @@ export function SiteCheckPanel({
         spanMm,
         lengthMm,
         importanceLevel,
+        // Who is doing the check. Empty is what the desktop sent; a name is what ShedSafe shows.
+        salesman,
       },
     });
 
@@ -224,6 +252,54 @@ export function SiteCheckPanel({
           </dl>
         )}
 
+        {/*
+          The site's geographic readings, in their own group.
+
+          They are separate from the six above because they answer a different question: the six are
+          what the engine priced from, and these are what the certificate says about the *place*.
+          Mixing them would suggest the elevation moves the price, which it does not — but an
+          engineer checking a quote against its rating needs them, and the desktop showed them under
+          "show more parameters".
+        */}
+        {check !== null && check.site !== null && (
+          <details className="rounded-md border border-sq-line px-sq-2 py-sq-2">
+            <summary className="cursor-pointer text-sq-micro font-medium text-sq-ink">
+              Site readings
+            </summary>
+            <dl className="mt-sq-2 grid gap-sq-2 sm:grid-cols-2">
+              {[
+                ['Shielding', value(check.site.shielding)],
+                ['Topographic factor', value(check.site.topographicFactor)],
+                ['Snow region', value(check.site.snowLoadRegion)],
+                ['Earthquake hazard factor', value(check.site.earthquakeHazardFactor)],
+                ['Elevation', value(check.site.elevation, ' m')],
+                [
+                  'Coordinates',
+                  check.site.latitude === null || check.site.longitude === null
+                    ? 'Not calculated yet'
+                    : `${check.site.latitude}, ${check.site.longitude}`,
+                ],
+                [
+                  'Rainfall 100 / 20 year',
+                  check.site.rainfallIntensity100Years === null ||
+                  check.site.rainfallIntensity20Years === null
+                    ? 'Not calculated yet'
+                    : `${check.site.rainfallIntensity100Years} / ${check.site.rainfallIntensity20Years} mm/h`,
+                ],
+                ['Rainfall town', value(check.site.rainfallIntensityTown)],
+              ].map(([label, shown]) => (
+                <div
+                  key={String(label)}
+                  className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1"
+                >
+                  <dt className="text-sq-body text-sq-ink">{String(label)}</dt>
+                  <dd className="sq-numeric text-sq-body text-sq-ink">{String(shown)}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+
         {message !== null && (
           <p
             role={message.tone === 'danger' ? 'alert' : 'status'}
@@ -234,7 +310,22 @@ export function SiteCheckPanel({
         )}
 
         {configured && canWrite && (
-          <div className="flex flex-wrap items-center gap-sq-2">
+          <div className="flex flex-wrap items-end gap-sq-2">
+            {/*
+              Who the check is for. Sent to ShedSafe, which shows it on its own screen — so a
+              franchise with several salespeople can tell whose site visit this was. Optional: the
+              desktop sent an empty string and let the operator decide.
+            */}
+            <label className="flex flex-col gap-sq-1">
+              <span className="text-sq-micro font-medium text-sq-ink">Salesperson</span>
+              <input
+                type="text"
+                value={salesman}
+                onChange={(event) => setSalesman(event.target.value.slice(0, 200))}
+                placeholder="Who is doing the check"
+                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body text-sq-ink"
+              />
+            </label>
             <Button loading={busy === 'pinning'} onClick={() => void pin()}>
               {check === null ? 'Pin the site' : 'Pin again'}
             </Button>
