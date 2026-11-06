@@ -1088,6 +1088,65 @@ Ghi chú khi port:
 
 ---
 
+## 13.0 Enquiry → mail: `ENQUIRY_TO` cộng một bản cho platform admin (2026-11-06)
+
+`ENQUIRY_TO` từng nằm trong `turbo.json` và **không ai đọc**. Enquiry chỉ vào bảng `enquiries`,
+tức một cái queue mà **không có gì nhắc ai mở nó**. Một lead đã ghi nhưng không ai biết = lead mất.
+
+### Ai nhận
+
+| Người nhận | Vì sao |
+|---|---|
+| Mỗi địa chỉ trong `ENQUIRY_TO` (cho phép dấu phẩy) | Đây là hộp thư trả lời khách — người vận hành chỉ định |
+| Mỗi `platform_admin` đang hoạt động (`disabled_at IS NULL`) | Bản để quản lý, như bạn yêu cầu |
+
+**Khử trùng lặp, không phân biệt hoa thường.** Máy nhỏ thường đặt `ENQUIRY_TO` trùng chính địa chỉ
+admin — hai mail giống nhau là cách một thông báo bị lọc vào thư mục rác.
+
+**`Reply-To` = email người hỏi.** Đây là chỗ duy nhất địa chỉ người hỏi thuộc về envelope: bấm
+Reply là trả lời thẳng khách, không phải copy tay từ thân mail. Chi tiết vẫn nằm trong body vì mail
+bị forward sẽ mất envelope.
+
+**Người hỏi không nhận bản nào.** Một mail "chúng tôi đã nhận" là một cam kết trả lời mà sản phẩm
+không biết ai sẽ giữ; form chỉ hứa `received: true`.
+
+### Bốn quyết định, và cái sai đã sửa
+
+**1. Row trước, mail sau — mail KHÔNG BAO GIỜ làm hỏng request.** Enquiry là lead. Mọi lỗi trong
+khâu gửi đều bị nuốt: relay từ chối, relay treo, chưa cấu hình mail. Route vẫn 201. Người điền form
+không sửa được mail server, và báo "enquiry thất bại" khi nó đã nằm trong DB là nói sai ở đúng chỗ
+khách đang nghi ngờ không ai nghe.
+
+**2. Bot và rate-limit không gửi mail.** Honeypot trả 201 giả rồi **dừng trước khi build message** —
+không được biến nó thành đường gửi mail miễn phí.
+
+**3. Mỗi người một mail riêng, không Cc.** Địa chỉ admin nội bộ không nên lộ sang hộp thư sales.
+
+**4. Trả lời trước, gửi nền — và đây là chỗ tôi đã sai rồi đo lại.**
+Bản đầu `await` khâu gửi với ngân sách **4 giây**. Đo SMTP2GO thật từ máy này:
+
+```
+SENT in 6476 ms
+```
+
+**Mọi** notification thật đều bị huỷ ở giây thứ 4 trong khi form báo thành công — dạng hỏng tệ nhất
+của tính năng này. Đổi sang gửi nền:
+
+- route trả lời ngay (`trackEnquiryNotification`), **0,41 s** thay vì 4,3 s;
+- promise được **giữ trong một `Set`**, không `void` — để test chờ được (`settleEnquiryNotifications`)
+  và shutdown không làm rơi;
+- ngân sách 30 s chỉ còn để chặn relay **treo**, không phải để chặn relay bình thường;
+- `server.ts` chờ hết notification đang bay trước khi thoát.
+
+**Kiểm chứng live** (2026-11-06, relay thật): hai enquiry gửi vào
+`hello@martechsky.com`; log `sent: true` cho **cả hai** người nhận, `Reply-To` = `hello@martechsky.com`.
+
+### Cấu hình
+
+`.env` / `.env.example`: `ENQUIRY_TO=` (rỗng = chỉ admin nhận). `.env.example` giải thích đầy đủ.
+
+---
+
 ## 13.1 Nối các route mồ côi vào UI (2026-11-06)
 
 Sáu route đã chạy và đã có test, nhưng **không có màn hình nào gọi tới** — chúng chỉ tồn tại
@@ -1148,7 +1207,7 @@ Trên trình duyệt, cùng một kiểm chứng:
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
-| `@sq/api` | 219 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, template file flags, body limit, pricing) |
+| `@sq/api` | 240 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |

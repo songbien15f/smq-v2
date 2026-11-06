@@ -165,7 +165,12 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       registerPriceImport(scope, db);
       registerPriceOverrides(scope, db);
       registerQuoteFile(scope, db);
-      registerEnquiries(scope, db);
+      /*
+       * Enquiries take `mail` because an enquiry is a lead that must reach somebody. The copy the
+       * route sends is not the record — the row is — but "somebody answered it" only happens if
+       * somebody sees it, and until now nothing did.
+       */
+      registerEnquiries(scope, db, mail);
       registerPlaces(scope);
       registerShedSafe(scope, db);
       registerPlatform(scope, db);

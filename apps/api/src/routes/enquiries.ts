@@ -26,6 +26,14 @@
  * The limit needs a stable key per source; the record does not need to know who the person is. A
  * hash gives the first without storing an address, and the table's `ip_hash` column is nullable for
  * exactly this reason.
+ *
+ * ## Why the notification comes after the insert, and cannot fail it
+ *
+ * The row is the lead. The email is a copy of it, sent so somebody actually answers — until this
+ * was wired, an enquiry reached a queue that nothing prompted anybody to open. Every failure inside
+ * the send is swallowed and the request still answers 201: a person filling in a contact form cannot
+ * fix a mail server, and telling them their enquiry failed when it is stored would be a lie in the
+ * one place a customer is already unsure whether anyone is listening.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -35,6 +43,8 @@ import { z } from 'zod';
 import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { consume } from '../lib/rateLimit.js';
 import { hashIp } from '../lib/tokens.js';
+import type { TransactionalDeps } from '../lib/mail/transactional.js';
+import { sendEnquiryNotifications, trackEnquiryNotification } from '../lib/mail/enquiryMail.js';
 
 /**
  * What a person may send. Limits are generous for a real enquiry and small for a script.
@@ -65,7 +75,45 @@ const enquiryRequest = z
 const LIMIT = 3;
 const WINDOW_MS = 60 * 60 * 1000;
 
-export function registerEnquiries(app: FastifyInstance, db: Db): void {
+/**
+ * Who can answer an enquiry: the address an operator nominated, plus every platform administrator.
+ *
+ * Read per request rather than captured at boot because `ENQUIRY_TO` is configuration a deployment
+ * may set in its environment, and a test sets it around one request. The administrator list is a
+ * query for the same reason a disabled account must not keep receiving leads: the row says
+ * `disabled_at`, and a boot-time capture would go on writing to somebody who has left.
+ *
+ * A query failure answers an empty list rather than throwing. The notification is not the lead; the
+ * lead is already stored, and losing the notification is a smaller harm than losing the enquiry.
+ */
+async function notificationRecipients(
+  db: Db,
+): Promise<{ enquiryTo: string; adminEmails: string[] }> {
+  const enquiryTo = (process.env.ENQUIRY_TO ?? '').trim();
+  try {
+    const rows = await db.all<{ email: string }>(
+      `SELECT email FROM users
+        WHERE platform_role IS NOT NULL AND disabled_at IS NULL
+        ORDER BY created_at, email`,
+    );
+    return { enquiryTo, adminEmails: rows.map((row) => row.email) };
+  } catch {
+    return { enquiryTo, adminEmails: [] };
+  }
+}
+
+export function registerEnquiries(
+  app: FastifyInstance,
+  db: Db,
+  /**
+   * Mail, or `null` when this server has none.
+   *
+   * `null` is a normal state — a demo, a fresh install — and the route treats it as "no
+   * notification" rather than as an error, because the enquiry is still recorded and still appears
+   * in the admin queue.
+   */
+  mail: TransactionalDeps | null = null,
+): void {
   app.post('/enquiries', async (request, reply) => {
     const ip = hashIp(clientIp(request.headers as Record<string, unknown>, request.ip));
 
@@ -92,11 +140,56 @@ export function registerEnquiries(app: FastifyInstance, db: Db): void {
       return sendOk(reply, { received: true }, 201);
     }
 
+    const at = now();
     await db.run(
       `INSERT INTO enquiries (id, name, email, phone, message, source, handled, handled_by, handled_at, ip_hash, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?)`,
-      [newId(), body.name, body.email, body.phone ?? null, body.message, body.source, ip, now()],
+      [newId(), body.name, body.email, body.phone ?? null, body.message, body.source, ip, at],
     );
+
+    /*
+     * The notification: started, not awaited.
+     *
+     * The row above is the lead, and this is a copy of it — so the answer does not wait on the
+     * relay. It used to, with a four-second cap, and a live measurement of the real relay showed the
+     * send takes ~6.5 s: **every** notification was being abandoned while the form reported
+     * success, which is the worst version of this feature. Awaiting without a cap trades that for a
+     * seven-second spinner on a form that has already done its job.
+     *
+     * `trackEnquiryNotification` keeps the promise in a set rather than dropping it: a test can wait
+     * for the whole batch, shutdown can refuse to lose it, and a `void`ed promise (which Node may
+     * simply abandon) is exactly what this avoids.
+     */
+    if (mail !== null) {
+      const recipients = await notificationRecipients(db);
+      const notification = sendEnquiryNotifications(
+        mail,
+        {
+          name: body.name,
+          email: body.email,
+          phone: body.phone ?? null,
+          message: body.message,
+          source: body.source,
+          createdAt: at,
+        },
+        {
+          ...recipients,
+          onResult: (result) => {
+            // Logged rather than silent: nobody is watching the form, so this is the only trace.
+            request.log.info(
+              {
+                enquiry: body.email,
+                recipient: result.to,
+                sent: result.ok,
+                ...(result.reason === undefined ? {} : { reason: result.reason }),
+              },
+              'enquiry notification',
+            );
+          },
+        },
+      );
+      trackEnquiryNotification(notification);
+    }
 
     // A fixed acknowledgement, never the stored row: the answer must not confirm what was recorded.
     return sendOk(reply, { received: true }, 201);

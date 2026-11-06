@@ -234,8 +234,16 @@ to pass binary through, since `.sqd` and `.vqu` are downloads and a UTF-8 round 
 
 **Still built but unwired:** AI shed-description parsing (`domain/schema.ts` extraction +
 `fallbackParser.ts`; `AI_*` env vars never read) and `exportPng()` (`PlanPanel` renders `<Render2D />`
-with no ref). `ENQUIRY_TO` is read by nothing, so an enquiry only reaches the admin queue and never
-an inbox — an operator decision, not a bug.
+with no ref).
+
+**Closed 2026-11-06: an enquiry now reaches an inbox.** `ENQUIRY_TO` was declared in `turbo.json` and
+read by nothing, so a lead landed in a queue that nothing prompted anybody to open. The route now
+emails one copy to each `ENQUIRY_TO` address and one to every active platform administrator,
+deduplicated, with `Reply-To` set to the enquirer so a reply reaches the customer. The send runs
+**after** the response: a measured send through the real relay takes ~6.5 s, and the first version
+awaited it under a 4 s cap — which abandoned every notification while the form reported success.
+The promise is tracked rather than dropped, so a test can await it and shutdown cannot lose it.
+Detail and the measurement are in `smartquote-quote-editor-reference.md` §13.0.
 
 ---
 

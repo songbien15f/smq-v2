@@ -24,6 +24,7 @@ import { buildApp } from './app.js';
 import { closeAllBooks } from './lib/priceBook.js';
 import { createSmtpTransport, mailIsConfigured, smtpConfigFromEnv } from './lib/mail/smtp.js';
 import type { TransactionalDeps } from './lib/mail/transactional.js';
+import { settleEnquiryNotifications } from './lib/mail/enquiryMail.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -74,6 +75,13 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
     await app.close();
+    /*
+     * An enquiry notification is still on its way, because the route answers before it finishes
+     * (a real send through the relay takes several seconds). Dropping it here would lose the only
+     * trace a lead ever reached anybody, so the restart waits — bounded by the budget inside, which
+     * is generous but finite.
+     */
+    await settleEnquiryNotifications();
     // Price books are held open for the process's life; releasing them here is what makes a
     // clean shutdown remove the temp directory a deployment may have put them in.
     closeAllBooks();
