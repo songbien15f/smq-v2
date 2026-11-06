@@ -41,6 +41,7 @@ export default async function QuotesPage() {
           name: string;
           typeName: string;
           description: string | null;
+          hasFile: boolean;
           config: Record<string, number> | null;
         }[];
       }>('/templates')

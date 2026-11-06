@@ -23,7 +23,7 @@
  * separate explicit route rather than a side effect.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 import { z } from 'zod';
@@ -100,6 +100,64 @@ export function registerPriceOverrides(app: FastifyInstance, db: Db): void {
     return sendOk(reply, await overridesFor(db, request.params.tenantId));
   });
 
+  /*
+   * The vendor's three writes, mirroring the company's three.
+   *
+   * These were **missing**, and the admin screen had been calling them since it shipped: it PUTs to
+   * `admin/companies/<id>/prices/overrides`, which answered 404 — measured 2026-11-06 — so "Change",
+   * "Use book price" and "Remove" in `/prices` did nothing at all. The GET beside them existed, so
+   * the screen looked complete and the defect was invisible until somebody tried to save.
+   *
+   * `supersede` already took a `tenantId`; it was only ever passed the session's own. Naming the
+   * company in the path is the whole difference, which is why the company routes below delegate here
+   * rather than restating the transaction.
+   */
+
+  /** Set, change or clear one row's price for a named company. */
+  app.put<{ Params: { tenantId: string } }>(
+    '/admin/companies/:tenantId/prices/overrides',
+    async (request, reply) => {
+      const session = requirePlatformCapability(request, reply, 'platform:companies');
+      if (session === null) return;
+
+      const body = parseBody(setPriceRequest, request.body, reply);
+      if (body === null) return;
+
+      const tenant = await db.get<{ id: string }>('SELECT id FROM tenants WHERE id = ?', [
+        request.params.tenantId,
+      ]);
+      if (tenant === null) return sendFail(reply, 'not_found', 'Not found.');
+
+      return sendOk(
+        reply,
+        await supersede(db, { tenantId: tenant.id, userId: session.userId, change: body }),
+      );
+    },
+  );
+
+  /** Delete one version of a named company's prices, rolling back to the previous one. */
+  app.delete<{ Params: { tenantId: string; versionId: string } }>(
+    '/admin/companies/:tenantId/prices/overrides/:versionId',
+    async (request, reply) => {
+      const session = requirePlatformCapability(request, reply, 'platform:companies');
+      if (session === null) return;
+
+      return deleteVersion(db, reply, request.params.tenantId, request.params.versionId);
+    },
+  );
+
+  /** Return a named company to the shared book. */
+  app.delete<{ Params: { tenantId: string } }>(
+    '/admin/companies/:tenantId/prices/overrides',
+    async (request, reply) => {
+      const session = requirePlatformCapability(request, reply, 'platform:companies');
+      if (session === null) return;
+
+      await clearAllVersions(db, request.params.tenantId);
+      return sendOk(reply, { cleared: true });
+    },
+  );
+
   /**
    * Set, change or clear one row's price.
    *
@@ -128,27 +186,7 @@ export function registerPriceOverrides(app: FastifyInstance, db: Db): void {
     const session = requireCompanyCapability(request, reply, 'price:manage');
     if (session === null) return;
 
-    const tenantId = session.tenantId as string;
-    const row = await db.get<{ version: number }>(
-      'SELECT version FROM price_overrides WHERE id = ? AND tenant_id = ?',
-      [request.params.versionId, tenantId],
-    );
-    if (row === null) return sendFail(reply, 'not_found', 'Not found.');
-
-    await db.transaction(async (tx) => {
-      // The rows cascade on the foreign key, but deleting them explicitly keeps this correct on a
-      // database restored without the constraint.
-      await tx.run('DELETE FROM price_row_overrides WHERE override_id = ? AND tenant_id = ?', [
-        request.params.versionId,
-        tenantId,
-      ]);
-      await tx.run('DELETE FROM price_overrides WHERE id = ? AND tenant_id = ?', [
-        request.params.versionId,
-        tenantId,
-      ]);
-    });
-
-    return sendOk(reply, { deleted: true, version: Number(row.version) });
+    return deleteVersion(db, reply, session.tenantId as string, request.params.versionId);
   });
 
   /** Return the company to the shared book by removing every version it has. */
@@ -156,13 +194,48 @@ export function registerPriceOverrides(app: FastifyInstance, db: Db): void {
     const session = requireCompanyCapability(request, reply, 'price:manage');
     if (session === null) return;
 
-    const tenantId = session.tenantId as string;
-    await db.transaction(async (tx) => {
-      await tx.run('DELETE FROM price_row_overrides WHERE tenant_id = ?', [tenantId]);
-      await tx.run('DELETE FROM price_overrides WHERE tenant_id = ?', [tenantId]);
-    });
-
+    await clearAllVersions(db, session.tenantId as string);
     return sendOk(reply, { cleared: true });
+  });
+}
+
+/**
+ * Delete one override version, for whichever company names it.
+ *
+ * Shared by the company route and the vendor route: the SQL and the rollback semantics are one
+ * thing, and a second copy is how the vendor's version would come to delete without checking the
+ * version belongs to the company it was asked about.
+ */
+async function deleteVersion(
+  db: Db,
+  reply: FastifyReply,
+  tenantId: string,
+  versionId: string,
+): Promise<unknown> {
+  const row = await db.get<{ version: number }>(
+    'SELECT version FROM price_overrides WHERE id = ? AND tenant_id = ?',
+    [versionId, tenantId],
+  );
+  if (row === null) return sendFail(reply, 'not_found', 'Not found.');
+
+  await db.transaction(async (tx) => {
+    // The rows cascade on the foreign key, but deleting them explicitly keeps this correct on a
+    // database restored without the constraint.
+    await tx.run('DELETE FROM price_row_overrides WHERE override_id = ? AND tenant_id = ?', [
+      versionId,
+      tenantId,
+    ]);
+    await tx.run('DELETE FROM price_overrides WHERE id = ? AND tenant_id = ?', [versionId, tenantId]);
+  });
+
+  return sendOk(reply, { deleted: true, version: Number(row.version) });
+}
+
+/** Return a company to the shared book by removing every version it has. */
+async function clearAllVersions(db: Db, tenantId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.run('DELETE FROM price_row_overrides WHERE tenant_id = ?', [tenantId]);
+    await tx.run('DELETE FROM price_overrides WHERE tenant_id = ?', [tenantId]);
   });
 }
 

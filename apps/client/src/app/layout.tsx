@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { PageViewRecorder } from '@/components/workspace/PageViewRecorder';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -33,7 +34,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {/* Records that a screen was opened. Silent, and mounted once here rather than per page,
+            so a new page cannot forget it. */}
+        <PageViewRecorder />
+        {children}
+      </body>
     </html>
   );
 }

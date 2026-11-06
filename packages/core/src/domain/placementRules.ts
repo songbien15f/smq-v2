@@ -9,12 +9,20 @@
  * ## What this module can and cannot see
  *
  * It works on the plan model this build has: walls with a run in millimetres, and
- * openings with a width, a height and an offset along their wall. Three desktop rules
- * depend on a model that does not exist here — gable infill columns (R3/R5), track
- * segment lengths (R11) and the roof-sheet grid (R12) — so they are not implemented
- * and are recorded as gaps in the slice plan rather than approximated. A rule that
- * guesses is worse than a rule that is absent, because the operator cannot tell which
- * one just refused their door.
+ * openings with a width, a height and an offset along their wall.
+ *
+ * Two of the three rules that once needed a model have one now:
+ *
+ * - **gable infill columns (R3/R5)** — `infillOverrideRefusal()` takes the infill
+ *   positions the caller computed (`infillPositions`), because a door landing on a post
+ *   is a refusal a wall run alone cannot express.
+ * - **the roof-sheet grid (R12)** — `skylightSnap.ts` owns the sheet layout, so the rule
+ *   reads it there instead of guessing a pitch.
+ *
+ * What is still absent is **track segment lengths (R11)**: a sliding door's track is not
+ * an object in this model, so a rule about how it is cut has nothing to look at. It stays
+ * a recorded gap rather than an approximation — a rule that guesses is worse than a rule
+ * that is absent, because the operator cannot tell which one refused their door.
  *
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */

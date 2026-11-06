@@ -5,6 +5,7 @@ import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { CompanyLimits } from '@/components/CompanyLimits';
+import { CompanyStatus } from '@/components/CompanyStatus';
 import { CompanyCreator } from '@/components/CompanyCreator';
 
 /**
@@ -114,6 +115,21 @@ export default async function CompanyPage() {
                     seats={company.seats}
                     seatsInUse={company.seatsInUse}
                     subscriptionEndsAt={company.subscriptionEndsAt}
+                  />
+                )}
+
+                {/*
+                  Ending access. The API has had `PATCH /admin/companies/:id/status` and its
+                  seat-and-session revocation since the control plane was built, with no control
+                  anywhere — so the only way to suspend a customer was a request by hand. The
+                  capability is the same one that governs the company record itself.
+                */}
+                {canCreate && (
+                  <CompanyStatus
+                    tenantId={company.id}
+                    name={company.name}
+                    status={company.status}
+                    seatsInUse={company.seatsInUse}
                   />
                 )}
               </div>

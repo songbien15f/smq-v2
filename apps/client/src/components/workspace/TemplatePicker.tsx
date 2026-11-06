@@ -27,6 +27,8 @@ interface TemplateItem {
   typeName: string;
   /** One line saying what the building is for, written by whoever authored it. */
   description: string | null;
+  /** Whether the vendor attached a `.sqd` this company can download. */
+  hasFile: boolean;
   config: {
     span?: number;
     length?: number;
@@ -91,9 +93,25 @@ export function TemplatePicker({ templates }: { templates: TemplateItem[] }) {
                 )}
                 <span className="block sq-numeric text-sq-micro text-sq-ink-muted">{size}</span>
               </div>
-              <Button loading={busy === template.id} onClick={() => void start(template)}>
-                Start a quote
-              </Button>
+              <div className="flex flex-wrap items-center gap-sq-2">
+                {/*
+                  The vendor's `.sqd`, when there is one. Cloning inside this product needs only the
+                  stored config; the file is what a company needs to open the same building in the
+                  desktop app, which is the transition path away from it. Offered only when it
+                  exists — a link that answers 404 on half the rows reads as a broken catalogue.
+                */}
+                {template.hasFile && (
+                  <a
+                    href={`/api/sq/templates/${template.id}/file`}
+                    className="inline-flex min-h-11 items-center rounded-md border border-sq-line px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
+                  >
+                    Download .sqd
+                  </a>
+                )}
+                <Button loading={busy === template.id} onClick={() => void start(template)}>
+                  Start a quote
+                </Button>
+              </div>
             </li>
           );
         })}

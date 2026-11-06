@@ -71,11 +71,16 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
   /** The company a template now has to belong to. */
   let tenantId: string;
   const originalBooks = process.env.PRICE_BOOKS;
+  const originalTemplates = process.env.TEMPLATE_FILES;
+  let templatesDir: string;
 
   beforeAll(async () => {
     booksDir = mkdtempSync(join(tmpdir(), 'sq-usage-books-'));
     process.env.PRICE_BOOKS = booksDir;
     publishPriceBook(DUMP, booksDir);
+    // A scratch file store, so the `hasFile` test writes real bytes without touching `data/`.
+    templatesDir = mkdtempSync(join(tmpdir(), 'sq-usage-templates-'));
+    process.env.TEMPLATE_FILES = templatesDir;
 
     ctx = await makeTestApp(testConfig());
     const seeded = await seedCompany(ctx.db, {
@@ -101,7 +106,10 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
     closeAllBooks();
     if (originalBooks === undefined) delete process.env.PRICE_BOOKS;
     else process.env.PRICE_BOOKS = originalBooks;
+    if (originalTemplates === undefined) delete process.env.TEMPLATE_FILES;
+    else process.env.TEMPLATE_FILES = originalTemplates;
     rmSync(booksDir, { recursive: true, force: true });
+    rmSync(templatesDir, { recursive: true, force: true });
   });
 
   /* -------------------------------------------------------------------- usage */
@@ -281,6 +289,66 @@ describe.skipIf(!hasDump)('usage, releases and templates', () => {
     const items = response.json().data.items as { code: string; config: { span: number } | null }[];
     const template = items.find((item) => item.code === 'gable-9x18');
     expect(template?.config?.span).toBe(9000);
+  });
+
+  it('says whether a template has a .sqd, so the catalogue does not offer a dead link', async () => {
+    /*
+     * The company screen offers a "Download .sqd" link only where a file exists. Answering `hasFile`
+     * from the row rather than letting the link 404 is the difference between "this template has no
+     * file yet" and "the catalogue is broken": with twenty templates and three files, half the
+     * links answering 404 looks like a fault, not like an incomplete template.
+     */
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/templates',
+      headers: { cookie: companyCookie },
+    });
+    const template = (list.json().data.items as { code: string; hasFile: boolean }[]).find(
+      (item) => item.code === 'gable-9x18',
+    );
+    // Authored with no file attached: the flag is false, not absent.
+    expect(template?.hasFile).toBe(false);
+
+    const { storeFile } = await import('../lib/templateFiles.js');
+    const { newId, now } = await import('@sq/db');
+    const id = (list.json().data.items as { id: string; code: string }[]).find(
+      (item) => item.code === 'gable-9x18',
+    )?.id as string;
+
+    const fileId = newId();
+    const bytes = Buffer.from('{"SmartQuoteVersions":[]}', 'utf8');
+    const stored = await storeFile({ templateId: id, fileId, bytes });
+    await ctx.db.run(
+      `INSERT INTO quote_template_files
+         (id, template_id, version_label, sha256, size_bytes, rel_path, note, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, '', 'test', ?)`,
+      [fileId, id, 'v1', stored.sha256, bytes.length, stored.relPath, now()],
+    );
+    await ctx.db.run('UPDATE quote_templates SET active_file_revision_id = ? WHERE id = ?', [fileId, id]);
+
+    const after = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/templates',
+      headers: { cookie: companyCookie },
+    });
+    const withFile = (after.json().data.items as { code: string; hasFile: boolean }[]).find(
+      (item) => item.code === 'gable-9x18',
+    );
+    expect(withFile?.hasFile).toBe(true);
+  });
+
+  it('reports the active file id to the vendor, so an older revision can be fetched', async () => {
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/templates',
+      headers: { cookie: platformCookie },
+    });
+    expect(response.statusCode).toBe(200);
+    const row = (response.json().data.items as { code: string; activeFileId: string | null }[]).find(
+      (item) => item.code === 'gable-9x18',
+    );
+    // The previous test attached one, so the vendor screen can link straight at it.
+    expect(row?.activeFileId).toBeTruthy();
   });
 
   it('shows a template only to the company that owns it', async () => {

@@ -212,12 +212,30 @@ pages — `/company` (with a seat and subscription editor), `/price-books`, `/en
 The site's enquiry form is real: `POST /enquiries` with a per-address rate limit and a honeypot, and
 the submission appears in the admin queue.
 
-**Still missing from the control plane:** quote template catalogue, version/publish channel, usage
-analytics (`usage_events` is never written). `platform:templates` and `platform:versions` are granted
-and checked by no route.
+**Control plane — since closed (2026-11-06).** An earlier version of this section said the template
+catalogue, a version/publish channel and usage analytics were missing, and that `usage:read` was
+granted but checked by no route. That is all now false:
 
-**Dead capabilities:** `usage:read` is granted in `contracts/roles.ts` but **no route checks it**.
-`usage_events` and `invitations` tables are never written.
+- **Template catalogue** — `quote_templates` + `.sqd` file revisions, authored from `/platform`,
+  scoped to one company (there is no shared catalogue), downloadable by that company.
+- **Version/publish channel** — `releases`, exactly one `current`.
+- **Usage analytics** — `usage_events` is written (quote created, revision saved, quote emailed,
+  page viewed), and both `GET /usage` (company) and `GET /admin/usage` (vendor) check `usage:read`
+  and `platform:audit` respectively.
+- **Invitations** — written, for both password reset and team invitations.
+
+**Eight more routes were built, tested and unreachable until 2026-11-06** — the same defect class as
+slice D1, found by grepping for routes with no caller. They are now wired: the frozen steelwork
+schedule and punching detail on the quote page, `.vqu` export, BOM CSV, the company template `.sqd`
+download, the vendor's template download **and** file-revision history, the company usage screen
+(`/activity`), and suspend/reinstate on `/company`. The engine-room detail is in
+`docs/smartquote-quote-editor-reference.md` §13.1 — including why both API bridges had to be taught
+to pass binary through, since `.sqd` and `.vqu` are downloads and a UTF-8 round trip corrupts them.
+
+**Still built but unwired:** AI shed-description parsing (`domain/schema.ts` extraction +
+`fallbackParser.ts`; `AI_*` env vars never read) and `exportPng()` (`PlanPanel` renders `<Render2D />`
+with no ref). `ENQUIRY_TO` is read by nothing, so an enquiry only reaches the admin queue and never
+an inbox — an operator decision, not a bug.
 
 ---
 

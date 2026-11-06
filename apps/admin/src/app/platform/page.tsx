@@ -41,6 +41,9 @@ interface TemplateRow {
   cloneCount: number;
   hasConfig: boolean;
   updatedAt: string;
+  activeFileLabel?: string | null;
+  activeFileId?: string | null;
+  fileRevisions?: number;
 }
 
 export default async function PlatformRoute() {

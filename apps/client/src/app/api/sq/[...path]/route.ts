@@ -75,6 +75,14 @@ const ALLOWED_PREFIXES = [
    */
   'templates',
   /*
+   * Usage: the page-view beacon, and the company's own activity screen.
+   *
+   * The beacon posts every time a screen opens, from every signed-in person — so this entry is what
+   * turns `/usage/page-view` from a route nobody called into the main source of `usage_events`.
+   * Without it the request is answered 404 by this proxy and the admin's "Screens opened" stays 0.
+   */
+  'usage',
+  /*
    * ShedSafe site checks. The credentials stay on the API; the browser only sees our routes.
    */
   'quotes',
@@ -143,10 +151,35 @@ async function forward(
     cache: 'no-store',
   });
 
+  /*
+   * A download is bytes, not text.
+   *
+   * Reading every answer with `.text()` was fine while this bridge carried only JSON. A template
+   * `.sqd` is an attachment and `.vqu` is written as ISO-8859-1; decoding either as UTF-8 and
+   * re-encoding produces a file that is subtly wrong rather than one that fails, and the receiving
+   * tool rejects it with no explanation. So a non-JSON answer is forwarded as an ArrayBuffer, with
+   * the headers a browser needs to save it under the right name.
+   */
+  const contentType = upstream.headers.get('content-type') ?? 'application/json';
+  if (!contentType.includes('json')) {
+    const file = new NextResponse(await upstream.arrayBuffer(), {
+      status: upstream.status,
+      headers: { 'content-type': contentType },
+    });
+    for (const header of ['content-disposition', 'x-content-sha256']) {
+      const value = upstream.headers.get(header);
+      if (value !== null) file.headers.set(header, value);
+    }
+    for (const raw of upstream.headers.getSetCookie?.() ?? []) {
+      file.headers.append('set-cookie', raw);
+    }
+    return file;
+  }
+
   const payload = (await upstream.text()) as string;
   const response = new NextResponse(payload, {
     status: upstream.status,
-    headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json' },
+    headers: { 'content-type': contentType },
   });
 
   // A sign-in through this bridge must set the cookie on *this* origin, which is why the

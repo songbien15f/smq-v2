@@ -71,10 +71,27 @@ async function forward(
     cache: 'no-store',
   });
 
+  /*
+   * A download is bytes, not text. A template's `.sqd` is an attachment; reading it as UTF-8 and
+   * re-encoding would corrupt it silently. Forwarded as an ArrayBuffer with the filename header.
+   */
+  const contentType = upstream.headers.get('content-type') ?? 'application/json';
+  if (!contentType.includes('json')) {
+    const file = new NextResponse(await upstream.arrayBuffer(), {
+      status: upstream.status,
+      headers: { 'content-type': contentType },
+    });
+    for (const header of ['content-disposition', 'x-content-sha256']) {
+      const value = upstream.headers.get(header);
+      if (value !== null) file.headers.set(header, value);
+    }
+    return file;
+  }
+
   const payload = await upstream.text();
   return new NextResponse(payload, {
     status: upstream.status,
-    headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json' },
+    headers: { 'content-type': contentType },
   });
 }
 
@@ -91,5 +108,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ path:
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ path: string[] }> }): Promise<NextResponse> {
+  return forward(request, context);
+}
+
+/**
+ * `PUT`, because a route that needs it exists.
+ *
+ * A Next App Router route module only accepts the methods it **exports**, and PUT was missing here
+ * while `PriceOverridesPanel` had been calling it — so "Change" on `/prices` answered 405 from this
+ * file and never reached the API. The API side was missing its route too; both halves are fixed
+ * together, because either one alone leaves the screen doing nothing.
+ */
+export async function PUT(request: Request, context: { params: Promise<{ path: string[] }> }): Promise<NextResponse> {
   return forward(request, context);
 }

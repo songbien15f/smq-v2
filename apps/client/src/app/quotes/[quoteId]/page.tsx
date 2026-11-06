@@ -5,6 +5,7 @@ import { currentSession, serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { QuoteActions } from '@/components/workspace/QuoteActions';
+import { FrozenSteelwork } from '@/components/workspace/FrozenSteelwork';
 
 /**
  * One quote, with its revisions.
@@ -190,24 +191,36 @@ export default async function QuotePage({ params }: { params: Promise<{ quoteId:
             </p>
           </Panel>
         ) : (
-          <QuoteActions
-            quoteId={quote.data.id}
-            quoteNumber={quote.data.number}
-            status={quote.data.status}
-            customerEmail={customer?.email ?? ''}
-            customerName={customerName}
-            companyName={session.currentTenantName ?? ''}
-            revision={{
-              id: items[0].id,
-              number: items[0].revision,
-              // Issues are not on the revision row; an empty list means the send dialog will not
-              // ask for an acknowledgement it does not need, and a real list comes from the
-              // revision detail when that route exists.
-              issues: [],
-            }}
-            canWrite={session.capabilities.includes('quote:write')}
-            canSend={session.capabilities.includes('quote:send')}
-          />
+          <>
+            <QuoteActions
+              quoteId={quote.data.id}
+              quoteNumber={quote.data.number}
+              status={quote.data.status}
+              customerEmail={customer?.email ?? ''}
+              customerName={customerName}
+              companyName={session.currentTenantName ?? ''}
+              revision={{
+                id: items[0].id,
+                number: items[0].revision,
+                // Issues are not on the revision row, and the *revision*-scoped route that would
+                // carry them does not exist yet — `GET /quotes/:id/revisions` lists them without
+                // issues. An empty list means the send dialog asks for no acknowledgement it does
+                // not need. Passing a hardcoded `[]` is honest here; inventing severities would
+                // make the dialog claim a revision is clean when nobody checked.
+                issues: [],
+              }}
+              canWrite={session.capabilities.includes('quote:write')}
+              canSend={session.capabilities.includes('quote:send')}
+            />
+
+            {/*
+              The sheets a workshop builds from, for the revision that is current. They sit below the
+              customer document because they are the other half of the same record: the customer was
+              sent a price, and this is the steel that price was made of. A role without `cost:read`
+              gets nothing back from either route, and the component renders nothing.
+            */}
+            <FrozenSteelwork quoteId={quote.data.id} revision={items[0].revision} />
+          </>
         )}
       </div>
     </ShellFrame>

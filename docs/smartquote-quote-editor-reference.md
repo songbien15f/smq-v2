@@ -1088,11 +1088,68 @@ Ghi chú khi port:
 
 ---
 
+## 13.1 Nối các route mồ côi vào UI (2026-11-06)
+
+Sáu route đã chạy và đã có test, nhưng **không có màn hình nào gọi tới** — chúng chỉ tồn tại
+cho một `curl`. Một route không có người dùng là một tính năng chưa có; đây là chỗ nối chúng.
+
+| Route | Nối vào đâu | Ghi chú |
+|---|---|---|
+| `GET /quotes/:id/revisions/:rev/members` | `FrozenSteelwork` trên trang báo giá | Đọc `members_json` của revision, **không** tính lại |
+| `GET /quotes/:id/revisions/:rev/punchings` | cùng component | Trang punching cùng nguồn đông lạnh |
+| `GET /quotes/:id/revisions/:rev/export/vqu` | nút "Export .vqu" trong `DocumentActions` | Qua bridge, không trỏ thẳng API |
+| `GET /quotes/:id/revisions/:rev/bom?format=csv` | nút "Materials as CSV" | Desktop có cả hai dạng |
+| `GET /templates/:id/file` | "Download .sqd" trong `TemplatePicker` | Chỉ hiện khi `hasFile` |
+| `GET /admin/templates/:id/file` + `?revisionId=` | "Download" + bảng lịch sử trong `PlatformPage` | File cũ tải được theo id |
+| `GET /usage` + `GET /usage/kinds` | trang `/activity` (mới) | Nav rail, capability `usage:read` |
+| `PATCH /admin/companies/:id/status` | `CompanyStatus` trên `/company` | Gõ đúng tên công ty mới bấm được |
+
+### Bốn quyết định đáng ghi lại
+
+**1. Bridge phải truyền nhị phân.** Cả hai bridge (`/api/sq/[...path]`) đọc mọi câu trả lời bằng
+`.text()` rồi ghi lại. Với JSON thì không sao; với `.sqd` (attachment) và `.vqu` (ISO-8859-1) thì
+việc decode UTF-8 rồi encode lại tạo ra một file **sai một cách tinh vi** — tool nhận file từ chối
+mà không nói tại sao. Sửa: kiểm `content-type`, nếu không chứa `json` thì `arrayBuffer()` và copy
+`content-disposition` + `x-content-sha256`.
+
+**2. `.vqu` đi qua bridge, các link cũ trỏ thẳng API.** Các link PDF/plan/elevations trỏ thẳng
+`NEXT_PUBLIC_API_BASE`; chúng chạy được ở dev vì cookie theo domain chứ không theo port. Hỏng ngay
+khi API và app khác host — đúng hình dạng một deployment của khách. Link mới đi bridge để không
+phải sửa sau. **Các link cũ vẫn là một khoản nợ.**
+
+**3. `hasFile` là cờ, không phải id file.** Công ty không có việc gì biết id revision của file;
+route tải tự tìm file đang hoạt động. Nếu không có cờ này, màn hình mời tải cho **mọi** template và
+trả 404 cho những cái chưa có file — đọc thành "catalogue hỏng" chứ không phải "template chưa đủ".
+
+**4. Suspend cần gõ tên công ty, và huỷ phiên ngay.** `PATCH …/status` đã huỷ toàn bộ ghế + session
+trong cùng transaction từ trước, nhưng không có control nào. Hộp xác nhận "are you sure" bị bấm
+theo phản xạ; gõ tên là điều nhỏ nhất buộc người ta đọc **công ty nào**. Lý do được ghi vào audit
+log cạnh tên người thao tác.
+
+### Một điều học được khi kiểm chứng
+
+Panel khoá thép **rỗng** trên báo giá `Q-2026-0006` dù báo giá đó 8,090 kg thép: `members_json` là
+`"[]"`. Nguyên nhân không phải route hỏng mà là **dữ liệu cũ** — revision lưu ngày 02/11, trước khi
+bảng cắt được đóng băng vào `members_json`. Một báo giá lưu mới qua đúng đường API cho 5 dòng
+(`main_column`, `main_rafter`, `end_column`, `end_rafter`, `knee_brace`). Bài học: **cột mới + dữ
+liệu cũ = màn hình trông như hỏng**, và cách phân biệt là lưu một bản mới rồi so.
+
+Trên trình duyệt, cùng một kiểm chứng:
+- `/activity` hiện 2 dòng `page_view` của chính phiên đang xem (beacon ghi thật);
+- tab Templates có `probe-gable-9x18 / v1 / Download / History (1)`; bấm History ra
+  `v1 a198b343cee1… 0.9 KB Served` + link tải theo `revisionId`;
+- tải qua bridge: `.vqu` 727 bytes `text/plain; charset=iso-8859-1`, `.sqd` 901 bytes
+  `application/octet-stream` với `x-content-sha256` khớp hash đã lưu;
+- nút "Suspend this company" **disabled** cho tới khi gõ đúng `Demo Sheds Pty Ltd`.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
-| `@sq/api` | 211 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, body limit, pricing) |
+| `@sq/api` | 219 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, template file flags, body limit, pricing) |
+| `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 8 (form + category dock) |
 

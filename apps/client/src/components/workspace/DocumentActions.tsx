@@ -86,6 +86,17 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
   const planHref = `${API}/quotes/${quoteId}/revisions/${revision}/plan`;
   /** The four walls, drawn from the same wall geometry the model uses. */
   const elevationsHref = `${API}/quotes/${quoteId}/revisions/${revision}/elevations`;
+  /**
+   * The legacy `.vqu`, through **this app's** bridge rather than the API's origin.
+   *
+   * The other links above point straight at the API, which works in development because a cookie
+   * is scoped by domain and not by port. It stops working the moment the two are on different
+   * hosts, which is what a customer's own deployment looks like. A download this product adds now
+   * goes through the same-origin bridge so there is nothing to fix later.
+   */
+  const vquHref = `/api/sq/quotes/${quoteId}/revisions/${revision}/export/vqu`;
+  /** The BOM as CSV — the desktop's "BOM to CSV", for a supplier who wants a spreadsheet. */
+  const bomCsvHref = `/api/sq/quotes/${quoteId}/revisions/${revision}/bom?format=csv`;
 
   /**
    * Load the links already issued for this quote.
@@ -147,8 +158,10 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
   return (
     <div className="flex flex-col gap-sq-2">
       {/*
-        The desktop's print menu. Five kinds here; elevations and the plan view are drawings rather
-        than documents and are not built yet.
+        The desktop's print menu. Five **documents** here — a quotation, a contract, an order and
+        the two supplier copies. The plan and the elevations are drawings rather than documents:
+        they carry no price and are opened in their own tab from the buttons below, not printed
+        from this menu.
       */}
       <label className="flex flex-wrap items-center gap-sq-2">
         <span className="text-sq-micro font-medium text-sq-ink">Document</span>
@@ -210,6 +223,16 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
           Download materials list
         </a>
         {/*
+          The same list as CSV. The desktop offered both, and the workbook is not always the shape
+          somebody needs: a supplier asking for a spreadsheet wants rows, not a formatted sheet.
+        */}
+        <a
+          href={bomCsvHref}
+          className="inline-flex min-h-11 items-center rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
+        >
+          Materials as CSV
+        </a>
+        {/*
           The legacy `.sqd` file. It exists so a quote is not trapped in this product: the desktop
           app opens it, and so does any future export. Plain JSON, which is the one shape both
           readers accept without sharing a hardcoded key.
@@ -219,6 +242,18 @@ export function DocumentActions({ quoteId, revisionId, revision, canSend, onSend
           className="inline-flex min-h-11 items-center rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
         >
           Export .sqd
+        </a>
+        {/*
+          The `.vqu` the external BOM tool reads.
+          It is built from the same frozen revision — customer, site, colours by name — so it
+          describes the quote the customer was sent and not the draft on screen. It is cost-gated
+          for the same reason the materials list is: the tool prices the building.
+        */}
+        <a
+          href={vquHref}
+          className="inline-flex min-h-11 items-center rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
+        >
+          Export .vqu
         </a>
         {onSend !== undefined && (
           <Button variant="primary" onClick={onSend}>

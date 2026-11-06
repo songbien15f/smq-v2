@@ -16,9 +16,9 @@
  *
  * ## Not a punch list
  *
- * Hole positions belong to the factory's punching detail, which this build does not model. Showing
- * a length and a count is what a steel order needs; inventing hole offsets would put a number on a
- * drawing that nobody calculated.
+ * Hole positions are a **different sheet** — `PunchingPanel`, fed from the price book's connector
+ * tables. This panel stays a length and a count, which is what a steel order needs; mixing the two
+ * would put hole offsets where a buyer reads quantities.
  */
 
 import type { FrameMemberView } from '@sq/contracts';

@@ -57,6 +57,12 @@ function navFor(capabilities: readonly string[]): { href: string; label: string 
   const links = [{ href: '/quotes', label: 'Quotes' }];
   if (capabilities.includes('settings:manage')) links.push({ href: '/settings', label: 'Settings' });
   if (capabilities.includes('members:manage')) links.push({ href: '/team', label: 'Team' });
+  /*
+   * Last, because it is the least-used screen: an owner checks activity occasionally, and a link
+   * that competes for attention with Quotes is a link in the wrong order. `usage:read` today is
+   * `company_admin` only, so an estimator sees no entry point — the server refuses the page too.
+   */
+  if (capabilities.includes('usage:read')) links.push({ href: '/activity', label: 'Activity' });
   return links;
 }
 

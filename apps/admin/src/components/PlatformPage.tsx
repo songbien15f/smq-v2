@@ -50,6 +50,20 @@ interface TemplateRow {
   /** How many `.sqd` file revisions this template has, and which one is served. */
   fileRevisions?: number;
   activeFileLabel?: string | null;
+  /** The active file's id, so an older revision can be fetched by id from the history. */
+  activeFileId?: string | null;
+}
+
+/** One `.sqd` revision of a template, as `/admin/templates/:id/files` reports it. */
+interface TemplateFileRow {
+  id: string;
+  versionLabel: string;
+  sha256: string;
+  sizeBytes: number;
+  note: string;
+  createdBy: string | null;
+  createdAt: string;
+  active: boolean;
 }
 
 /** How a usage kind reads. */
@@ -103,14 +117,18 @@ export function PlatformPage({
   const [templateRows, setTemplateRows] = useState(templates);
   const [templateBusy, setTemplateBusy] = useState<string | null>(null);
   /**
-   * The `.sqd` being attached to a template, per template id.
+   * The `.sqd` revision history of one template, or `null` when no history is open.
    *
-   * Held as one record rather than per-row state because only one upload runs at a time — the
-   * button that starts it is the same button for every row.
+   * Loaded on demand rather than for every row: a catalogue of twenty templates would otherwise
+   * make twenty requests to draw a table where the interesting column is "which version is
+   * active". Only one history is open at a time, because the question it answers — "what did this
+   * template look like before" — is asked about one template at a time.
    */
-  const [upload, setUpload] = useState<{ templateId: string; name: string; base64: string } | null>(
-    null,
-  );
+  const [fileHistory, setFileHistory] = useState<{
+    templateId: string;
+    rows: TemplateFileRow[];
+    error: string | null;
+  } | null>(null);
 
   const publish = async (): Promise<void> => {
     setBusy(true);
@@ -232,6 +250,31 @@ export function PlatformPage({
     });
     const refreshed = await api<{ items: TemplateRow[] }>('admin/templates');
     if (refreshed.ok) setTemplateRows(refreshed.data.items);
+  };
+
+  /**
+   * Show or hide one template's `.sqd` history.
+   *
+   * The route returns every revision with its hash, because the hash is the only thing that proves
+   * two rows differ. A history without it is a list of names a person made up.
+   */
+  const toggleHistory = async (templateId: string): Promise<void> => {
+    if (fileHistory !== null && fileHistory.templateId === templateId) {
+      setFileHistory(null);
+      return;
+    }
+
+    setTemplateBusy(templateId);
+    const result = await api<{ activeFileId: string | null; items: TemplateFileRow[] }>(
+      `admin/templates/${templateId}/files`,
+    );
+    setTemplateBusy(null);
+
+    setFileHistory({
+      templateId,
+      rows: result.ok ? result.data.items : [],
+      error: result.ok ? null : result.message,
+    });
   };
 
   return (
@@ -502,19 +545,104 @@ export function PlatformPage({
                       <span className="ml-sq-2 text-sq-micro text-sq-ink-muted">
                         {row.activeFileLabel ?? 'none yet'}
                       </span>
+                      {/*
+                        Downloading the active file is how a vendor checks what a company actually
+                        received — and how a template survives a deployment, because the bytes are
+                        on this server and nowhere else. The link goes through this app's bridge,
+                        which forwards the attachment unchanged.
+                      */}
+                      {row.activeFileId !== undefined && row.activeFileId !== null && (
+                        <a
+                          href={`/api/sq/admin/templates/${row.id}/file`}
+                          className="ml-sq-2 text-sq-micro text-sq-brand underline underline-offset-2"
+                        >
+                          Download
+                        </a>
+                      )}
                     </td>
                     <td className="px-sq-3 py-sq-2">
-                      <Button
-                        loading={templateBusy === row.id}
-                        onClick={() => void setTemplateStatus(row.id, row.status === 'active' ? 'archived' : 'active')}
-                      >
-                        {row.status === 'active' ? 'Archive' : 'Reactivate'}
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-sq-1">
+                        <Button
+                          loading={templateBusy === row.id}
+                          onClick={() => void setTemplateStatus(row.id, row.status === 'active' ? 'archived' : 'active')}
+                        >
+                          {row.status === 'active' ? 'Archive' : 'Reactivate'}
+                        </Button>
+                        <Button onClick={() => void toggleHistory(row.id)}>
+                          {fileHistory !== null && fileHistory.templateId === row.id
+                            ? 'Hide history'
+                            : `History (${row.fileRevisions ?? 0})`}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/*
+          The open history. Rendered under the table rather than inside it: a nested table in a
+          cell is unreadable at the width this screen is used at, and the question — "what did this
+          template look like before, and is the old bytes still here" — is about one template, so
+          it does not need to line up with the catalogue columns.
+        */}
+        {fileHistory !== null && (
+          <div className="border-t border-sq-line bg-sq-ground px-sq-3 py-sq-3">
+            <h3 className="text-sq-body font-semibold text-sq-ink">
+              {templateRows.find((row) => row.id === fileHistory.templateId)?.name ?? 'Template'} — .sqd revisions
+            </h3>
+            {fileHistory.error !== null ? (
+              <p role="alert" className="mt-sq-1 text-sq-body text-sq-danger">
+                {fileHistory.error}
+              </p>
+            ) : fileHistory.rows.length === 0 ? (
+              <p className="mt-sq-1 text-sq-body text-sq-ink-muted">
+                No file has been attached yet. An upload adds the first revision.
+              </p>
+            ) : (
+              <table className="mt-sq-2 w-full border-collapse text-sq-body">
+                <thead>
+                  <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
+                    <th scope="col" className="py-sq-1 pr-sq-2 font-medium">Version</th>
+                    <th scope="col" className="py-sq-1 pr-sq-2 font-medium">SHA-256</th>
+                    <th scope="col" className="py-sq-1 pr-sq-2 text-right font-medium">Size</th>
+                    <th scope="col" className="py-sq-1 pr-sq-2 font-medium">Attached</th>
+                    <th scope="col" className="py-sq-1 pr-sq-2 font-medium">State</th>
+                    <th scope="col" className="py-sq-1 font-medium">—</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fileHistory.rows.map((file) => (
+                    <tr key={file.id} className="border-b border-sq-line last:border-0">
+                      <td className="py-sq-1 pr-sq-2">{file.versionLabel}</td>
+                      <td className="py-sq-1 pr-sq-2 font-mono text-sq-micro text-sq-ink-muted">
+                        {file.sha256.slice(0, 12)}…
+                      </td>
+                      <td className="sq-numeric py-sq-1 pr-sq-2 text-right text-sq-ink-muted">
+                        {(file.sizeBytes / 1024).toFixed(1)} KB
+                      </td>
+                      <td className="py-sq-1 pr-sq-2 text-sq-micro text-sq-ink-muted">
+                        {file.createdAt.slice(0, 10)}
+                        {file.createdBy === null ? '' : ` · ${file.createdBy}`}
+                      </td>
+                      <td className="py-sq-1 pr-sq-2">
+                        {file.active ? <StatusPill tone="ok" label="Served" /> : <span className="text-sq-micro text-sq-ink-muted">Earlier</span>}
+                      </td>
+                      <td className="py-sq-1">
+                        <a
+                          href={`/api/sq/admin/templates/${fileHistory.templateId}/file?revisionId=${file.id}`}
+                          className="text-sq-micro text-sq-brand underline underline-offset-2"
+                        >
+                          Download
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </Panel>

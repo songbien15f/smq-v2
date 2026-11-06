@@ -81,6 +81,7 @@ interface TemplateRow {
   updated_at: string;
   active_file_label: string | null;
   file_revisions: number;
+  active_file_revision_id: string | null;
   sort_order: number;
   tenant_id: string | null;
   tenant_name: string | null;
@@ -174,6 +175,7 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
               ty.code AS type_code, ty.name AS type_name,
               tn.name AS tenant_name,
               f.version_label AS active_file_label,
+              t.active_file_revision_id,
               (SELECT COUNT(*) FROM quote_template_files c WHERE c.template_id = t.id) AS file_revisions
          FROM quote_templates t
          JOIN template_types ty ON ty.id = t.type_id
@@ -197,6 +199,8 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
         tenantName: row.tenant_name,
         hasConfig: row.config_json !== null,
         activeFileLabel: row.active_file_label,
+        /** The id is needed here so the vendor can download an *older* revision, not only the active one. */
+        activeFileId: row.active_file_revision_id,
         fileRevisions: Number(row.file_revisions ?? 0),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
@@ -312,7 +316,8 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
     const rows = await db.all<TemplateRow>(
       `SELECT t.id, t.code, t.name, t.status, t.description, t.config_json, t.clone_count,
               t.created_at, t.updated_at,
-              ty.code AS type_code, ty.name AS type_name
+              ty.code AS type_code, ty.name AS type_name,
+              t.active_file_revision_id
          FROM quote_templates t
          JOIN template_types ty ON ty.id = t.type_id
         WHERE t.status = 'active' AND t.tenant_id = ?
@@ -329,6 +334,15 @@ export function registerPlatform(app: FastifyInstance, db: Db): void {
         description: row.description,
         // The building, ready to seed an editor. `null` for a template authored without one.
         config: row.config_json === null ? null : JSON.parse(row.config_json),
+        /*
+         * Whether there is a `.sqd` to download.
+         *
+         * A flag rather than the file's identity: the company has no business knowing a revision
+         * id, and the download route resolves the active file itself. Without this the screen
+         * would offer a link for every template and answer 404 for the ones with no file, which
+         * reads as a broken catalogue rather than as an incomplete template.
+         */
+        hasFile: row.active_file_revision_id !== null,
       })),
     });
   });
