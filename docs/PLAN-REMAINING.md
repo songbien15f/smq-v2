@@ -90,8 +90,13 @@ right-click empty-canvas menu, derived from the same catalogue.
 **Out of scope, deliberately:** the desktop's `ProposeAdd` **rule engine** (add validation, cascade
 on removal, interaction rules between options) is *not* ported. `normaliseOption` still clamps every
 kind to physical bounds, and adding a gable infill a second time is still a silent no-op. C2 as
-written (a rule engine) is a separate architectural slice; C1/C3 are done. Mobile `ControlSheet`
-also remains unbuilt.
+written (a rule engine) is a separate architectural slice; C1/C3 are done.
+
+**Mobile `ControlSheet` — built 2026-11-06.** It was declared (`sheetOpen`, `objectDragging` in the
+store) and described in three comments, but never written, so below 1024 px the wrench appeared and
+did nothing. The bottom sheet now renders the same `SelectionFields` the desktop card does. Three
+browser-only defects were found and fixed while verifying it; see
+`smartquote-quote-editor-reference.md` §13.2.
 
 **Verified by:** `OPTION_KIND_OPTIONS` tests in `selection.test.ts` (every kind, distinct labels,
 group coverage, and the label `describeSelection` gives a placed option); and a browser run — all

@@ -21,6 +21,7 @@ import { useMemo } from 'react';
 import { describeSelection } from '@sq/core/domain';
 import { Render2D } from './Render2D';
 import { Render3D } from './Render3D';
+import { ControlSheet } from './ControlSheet';
 import { useShedStore } from '@/store/useShedStore';
 
 export interface PlanViewProps {
@@ -75,6 +76,17 @@ export function PlanView({ interactive = true }: PlanViewProps) {
       >
         {view === '2d' ? <Render2D /> : <Render3D />}
       </div>
+
+      {/*
+        The phone's object editor. It renders nothing above the `lg` breakpoint — the floating card
+        on the canvas is that layout's editor — so mounting it here unconditionally is what keeps
+        the two from ever being decided by different conditions.
+
+        Mounted on the view rather than inside `Render2D` because the sheet is `position: fixed`:
+        inside the canvas's `overflow-hidden` wrapper it would be clipped to the plan, which is the
+        one place it must not be confined to.
+      */}
+      <ControlSheet />
 
       <p className="text-sq-micro text-sq-ink-muted">
         {!interactive ? (

@@ -651,18 +651,20 @@ export const useShedStore = create<ShedState>()((set, get) => ({
       set({ sheetOpen: true });
       return;
     }
-    // Closing the sheet also lets go of the edited object (the mobile "out
-    // focus"): the editor closes and, when it was the *editor* that was showing,
-    // the selection clears so the wrench goes away too. A sheet closed while
-    // showing the plain form (opened via "Details") leaves the selection alone.
-    // One choke point covers every dismissal — drag down, overlay tap, Escape,
-    // and the Close control.
-    const editing = get().editorOpen;
-    set({
-      sheetOpen: false,
-      editorOpen: false,
-      selection: editing ? { kind: 'none' } : get().selection,
-    });
+    /*
+     * Closing the sheet closes the **editor** and keeps the selection.
+     *
+     * An earlier version also cleared the selection here — "the mobile out focus" — and that was
+     * wrong in two ways. It made the same gesture behave differently on two screens: closing the
+     * desktop card leaves the object selected with its wrench showing, so closing the phone's sheet
+     * has to mean the same thing or the operator cannot build one habit. And it left focus nowhere
+     * to go: the sheet moved focus in, the wrench it came from had vanished, and focus fell back to
+     * `<body>`, which is where a screen reader loses its place.
+     *
+     * One choke point still covers every dismissal — backdrop tap, Escape, and the Close control —
+     * so no dismissal path can forget to close the editor.
+     */
+    set({ sheetOpen: false, editorOpen: false });
   },
 
   setStatus(status) {

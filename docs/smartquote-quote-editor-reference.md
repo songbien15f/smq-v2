@@ -1203,6 +1203,65 @@ Trên trình duyệt, cùng một kiểm chứng:
 
 ---
 
+## 13.2 `ControlSheet` — sửa cửa/option trên điện thoại (2026-11-06)
+
+### Lỗ hổng
+
+Dưới 1024 px, plan đặt và kéo được cửa, **wrench hiện ra**, nhưng bấm vào **không có gì xảy ra**:
+`SelectionPopover` chỉ render khi `isDesktop`, và cái bottom sheet mà ba file comment mô tả —
+`ControlSheet` — **chưa từng được viết**. Tệ nhất là kiểu điều khiển nhận tap rồi im lặng: người
+dùng kết luận *tính năng không có*, chứ không phải *mình bấm hụt*.
+
+Store thì đã có sẵn `sheetOpen` và `objectDragging` — khai báo từ đầu, chưa ai đọc. Đúng kiểu "đã
+thiết kế, chưa ai viết".
+
+### Thiết kế
+
+**Bottom sheet, không phải dialog giữa màn hình.** Plan là thứ đang được sửa, nên editor phải để lộ
+nhiều plan nhất có thể; che ở **đáy** là chỗ ngón tay đặt và chỗ không có gì quan trọng được vẽ.
+Một modal giữa màn hình 375 px che mất toà nhà.
+
+**Dùng lại `SelectionFields`, không viết lại control.** `SelectionFields` đã sở hữu toàn bộ ánh xạ
+từ `FieldSpec` về `patchOpening` / `patchOption` / `applyPartial` — kể cả key có dấu chấm
+`panels.left` và giá trị chuỗi rỗng "open" của carry beam. `ControlSheet` chỉ cung cấp phần khung.
+
+**Target 44 px.** WCAG cho web là 24 px, nhưng sản phẩm này đã dùng 44 cho wrench và các nút của
+plan; một nút Close 20 px là chi tiết làm editor mobile *cảm giác* hỏng. Đo trên viewport 390×844:
+**8/8 control ≥ 44 px**, sheet cao 69% màn hình, còn 259 px plan nhìn thấy phía trên, không tràn ngang.
+
+**`objectDragging` làm sheet thu lại, không đóng.** Kéo cửa diễn ra dưới sheet; kéo xong sheet hiện
+lại, `editorOpen` và selection không đổi.
+
+### Ba bug chỉ trình duyệt mới thấy (jsdom không)
+
+**1. Focus không đi vào sheet.** Phải `focus()` trên container (`tabIndex={-1}`), không phải ô nhập
+đầu tiên — focus ô nhập trên điện thoại bật bàn phím, che đúng phần plan mà sheet được đẩy xuống để lộ.
+
+**2. Không nhớ được phần tử để trả focus.** Wrench **bị unmount khi editor mở** (nó chỉ render lúc
+editor đóng), và bỏ phần tử đang focus là thứ đẩy focus về `<body>` — trước khi effect của sheet kịp
+chạy. Nên `document.activeElement` lúc đó **đã là `<body>`**. Sửa: tìm lại theo **accessible name**
+(`[aria-label="Edit selected object"]`), danh tính sống qua lần re-render.
+
+**3. `requestAnimationFrame` không chạy.** Đo được: `document.hasFocus()` là `false` trong tab
+không có OS focus, nên callback rAF **không bao giờ bắn** — focus kẹt ở `<body>`. Đổi sang
+`setTimeout(0)`.
+
+Cả ba đều lọt qua test viết bằng tay tạo `<button>` vì cái nút đó không bao giờ unmount.
+
+### Một chỗ làm khác spec, có chủ ý: giữ selection
+
+Comment store cũ nói đóng sheet là "mobile out focus" — xoá cả selection. Đổi thành **giữ**: đóng
+card desktop vẫn giữ wrench, nên đóng sheet điện thoại phải nghĩa giống hệt, nếu không người dùng
+không xây được phản xạ nào. Và nó còn là điều kiện để bug 2 tồn tại: nếu selection bị xoá thì không
+còn wrench để trả focus về.
+
+### Ảnh hưởng phụ
+
+`apps/client/vitest.config.ts` thêm alias `@` → `src`. Thiếu nó, test import
+`@/store/useShedStore` không resolve trong khi component thì build bình thường.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -1210,7 +1269,7 @@ Trên trình duyệt, cùng một kiểm chứng:
 | `@sq/api` | 240 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
-| `@sq/client-app` | 8 (form + category dock) |
+| `@sq/client-app` | 19 (form, category dock, `ControlSheet`) |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

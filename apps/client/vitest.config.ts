@@ -12,9 +12,22 @@
 
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
+  /*
+   * `@/` is the app's own alias, declared in `tsconfig.json` for Next's compiler. Vitest does not
+   * read `tsconfig.paths`, so a test importing `@/store/useShedStore` fails to resolve while the
+   * component importing the same path builds fine — a split where the test is the only thing that
+   * cannot see the module. Declared once here rather than making tests use relative imports, so a
+   * test imports its subject exactly the way the application does.
+   */
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
