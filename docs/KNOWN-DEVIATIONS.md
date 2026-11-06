@@ -44,3 +44,6 @@ revisions that referenced the old bytes simply print the text logo from then on.
 3. Record the price direction, not just the fact.
 4. If it changes a stored number, bump `ENGINE_VERSION`. A saved revision carries the engine
    that priced it, so "this quote was priced by engine 2" stays a fact.
+5. **A row may only be added after the three checks in `CLAIM-DISCIPLINE.md`.** Five "this is
+   missing" claims were wrong in one session because an earlier note was trusted over the source;
+   a row here is a decision about real behaviour, not a place to record a suspicion.

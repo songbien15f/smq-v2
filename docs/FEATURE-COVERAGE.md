@@ -1,5 +1,14 @@
 # Feature coverage — what is converted, what is not
 
+> **This file was measured 2026-11-01 and has been corrected twice since.** Three of its
+> "missing" claims were wrong when re-checked on 2026-11-06: the `POST /enquiries` route exists,
+> revisions can be named, and the option rule engine is built. Each correction is marked inline
+> with its date rather than deleted, because the pattern matters — the list was written from a
+> plan and not re-read from the code.
+>
+> **For the live inventory, use `smartquote-quote-editor-reference.md` (§6 rule table, §12
+> remaining work).** This file is the older, wider survey.
+
 Measured 2026-11-01 by reading the routes and pages that exist, not the plans. Every "have" below
 is a file you can open; every "missing" is a count of zero.
 
@@ -10,14 +19,16 @@ specs) plus `smq-code-license/` (24 controllers).
 
 ## The honest headline
 
-**The conversion is feature-complete.** The quotation engine, the editor (openings, all eleven
+**The conversion is feature-complete for the desktop's quoting workflow** (not for the licence
+server's extras — see §5). The quotation engine, the editor (openings, all twelve
 option kinds, amending a saved quote, charges, **2D and 3D**), the customer document, sending it by
 email, the company's own settings, the price list import, `.sqd` export/import, the admin screens, the
-public enquiry form, **Google Places addresses**, **ShedSafe site checks**, **credentials an operator
-can set from the admin app**, the **option placement rules**, **usage analytics**, **releases** and the
+public enquiry form, **Google Places addresses**, **ShedSafe site checks**, **credentials in `.env` only,
+by the operator's instruction**, the **option placement rules**, **usage analytics**, **releases** and the
 **template catalogue**, **price editor**, **seats across companies** and **template authoring** are
-done. Every screen the desktop and the licence server had now has a replacement; what remains is the
-operator's own golden-test quotes.**
+done. Every screen the desktop had now has a replacement. **The licence server's extras are not all
+there** — the four unbuilt slices are listed in §5 — and the operator's own golden-test quotes are
+still owed.**
 
 Three amendments since this was measured:
 
@@ -27,7 +38,7 @@ Three amendments since this was measured:
   workbook, and company settings + team. **A defect was fixed with them**: the BOM workbook was
   gated by `quote:read`, so a viewer could download the one route that carries unit costs; it is now
   `cost:read`.
-- **Slice C landed** (2026-11-02): the eleven option kinds can now be **created** in the editor — a
+- **Slice C landed** (2026-11-02): the twelve option kinds can now be **created** in the editor — a
   "Place option" catalogue, an Options list with select/duplicate/remove, and an "Add option" canvas
   menu. Only creation was missing; the domain, BOM, 2D, and store CRUD already supported every kind.
   See `docs/PLAN-REMAINING.md`.
@@ -107,17 +118,21 @@ becomes a page a customer can open, and the page is emailed to them.
 
 ## What is missing, and why each one matters
 
-### 1. The option **rule engine** (not the kinds)
+### 1. The option **rule engine** — **DONE** (corrected 2026-11-06)
 
-All eleven kinds can now be **placed** in the editor (Slice C, 2026-11-02): the domain, schema, BOM
-pricing, 2D drawing and store CRUD already existed; the missing piece was a way to create one.
+All twelve kinds can be placed, **and every rule R1–R12 in the desktop's rule engine is ported**:
 
-What is still absent is the desktop's **rules** around them — the `ProposeAdd` layer that refuses,
-coerces or cascades a placement (adding a carry beam re-opens a column, removing one restores it,
-two options that cannot coexist, a dimension change that invalidates an option). Today a placement is
-only **clamped** to physical bounds (`normaliseOption`), and adding a second gable infill is a silent
-no-op. This is real but modest: it needs a place to say *why* a placement was refused, and a policy
-per kind.
+| Where | What |
+|---|---|
+| `domain/placementRules.ts` | R1 margin, R2 overlap, R3 infill displacement, R4 `GO WITH …` proposals, R7 carry beam span, R10 roller minimum, R11 track segment |
+| `domain/optionRules.ts` | R6 (the meaningful half — removing a door clears its beam pointer), R7, R9/R8 mezzanine headroom over doors, whole-wall duplicates |
+| `domain/skylightSnap.ts` | R12 — the sheet grid, the snap, and an overlap test on footprints |
+
+Every refusal carries a sentence naming what is in the way, which is what the desktop's
+`Msg2D.GenShowMessageEvent` produced. The one rule **deliberately not ported** is R6's "a track
+another door has taken is refused", because the desktop charges nothing for track — every
+`DOOR_TRACK` line is commented out (`SLDQuote.cs:552,581,612,632`) and the only live producer's
+call site is commented out too (`:781`). See `KNOWN-DEVIATIONS.md` row 20.
 
 ### 2. 3D — done
 
@@ -150,15 +165,16 @@ list changed nothing. It is wired now — see `docs/PLAN-REMAINING.md` slice I.
 
 ### 5. Revision manager, enquiry form, licence control plane
 
-- Revisions are **readable** (`/quotes/[id]` lists them) but cannot be named, described or compared.
-  The API **accepts** `revisionName`/`revisionDescription` and stores them; the editor never sends
-  them.
-- The site's enquiry form says it is not enabled. **That sentence is accurate but the reason is not
-  in the copy**: there is no `POST` enquiry route at all — only `GET /admin/enquiries` — and nothing
-  in the repo inserts into the `enquiries` table.
-- The licence server's version/publish/update channel and salesman/building records are absent
-  entirely. The conversion replaces the licence *server*, so those become admin features that are
-  not built yet.
+- ~~Revisions cannot be named~~ — **corrected 2026-11-06: they can.** `PATCH
+  /quotes/:id/revisions/:revision` renames one (the append-only trigger from migration 010 was
+  narrowed to the frozen columns for exactly this), and the quote page has a Rename control.
+- ~~There is no `POST` enquiry route~~ — **corrected 2026-11-06: there is.**
+  `apps/api/src/routes/enquiries.ts:69` posts one, and the public form on the site uses it.
+- **Still true (re-checked 2026-11-06):** the licence server's **salesman** records are absent —
+  no `salesmen` table, no route, no UI. There is also no `.sqd` template file store (the
+  `quote_template_files` table exists and nothing reads it) and no `Integrity` block in exported
+  files. These are the four unbuilt slices of the multi-company spec, listed in
+  `superpowers/specs/2026-11-03-multi-company-and-template-files-design.md` §"Ranh giới từng slice".
 
 ---
 
@@ -228,5 +244,5 @@ Each step makes the product usable by one more person:
 4. **The option rule engine** (add/cascade/interaction rules) — when an option should be refused or
    adjusted because of the others, not just clamped.
 
-Mail, quote status, the materials workbook, company settings, team, and **all eleven option kinds
+Mail, quote status, the materials workbook, company settings, team, and **all twelve option kinds
 being placeable in the editor** are now done (see above).

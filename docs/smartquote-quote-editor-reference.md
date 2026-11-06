@@ -471,10 +471,11 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
 | 5 | Hướng outrigger (left/right) | Chỉ là field hiển thị; `wall` đã bao trùm ngữ nghĩa |
 
-> **Ba lần tôi kết luận "bị chặn" và cả ba lần đều sai:** Punchings (§12.4), R12 skylight, và R9.
-> Mỗi lần nguyên nhân giống nhau — tôi tin một ghi chú cũ của chính mình thay vì đọc code desktop.
-> Khi một mục có vẻ bị chặn, việc đầu tiên là **tra bảng dữ liệu và đọc hàm desktop**, không phải
-> viết "cần model mới".
+> **Năm lần tôi kết luận "bị chặn" và cả năm lần đều sai:** Punchings (§12.4), R12 skylight, R9,
+> R6 (track không có giá trong desktop), và "phiếu DM/DH cần model mới". Mỗi lần nguyên nhân giống
+> nhau — tôi tin một ghi chú cũ của chính mình thay vì đọc code desktop. Quy tắc rút ra nằm ở
+> [`CLAIM-DISCIPLINE.md`](CLAIM-DISCIPLINE.md): **ba lần kiểm tra trước khi được ghi "bị chặn"**,
+> và nếu chưa kiểm thì ghi "chưa kiểm", không phải "bị chặn".
 
 **Outrigger height: đã có** — `height` (mm), mặc định 2000, không vượt chiều cao tường; bracket
 được vẽ đúng cao độ gắn chứ không phải ở eave.
@@ -507,9 +508,9 @@ toàn giả (không kiểm soát được lịch, nơi lưu, hay khôi phục).
 > sách giá đang dùng (8 / 61 / 108 dòng), và `cost_frame` có cột `web` để chọn đúng connector.
 > Tôi chỉ chưa tra. Từ đó: dựng §12.4 và không còn mục nào bị chặn.
 
-**Còn một phần chưa làm của form gốc:** `PunchingDetailForm` cũng in phiếu cho **infill column**,
-**roller-door column** và **roller-door header**. Ba loại này cần model cột infill (R3/R5) — xem
-bảng "Chưa có" ở §6. Phiếu cho **C1/R1/C2/R2** thì đã đủ, và đó là 4 thanh của mọi khung.
+**Cả năm loại phiếu đã có:** `C1`/`R1`/`C2`/`R2`, `M` (infill), `DM` (mullion) và `DH` (header).
+Đoạn trước ở đây nói ba loại sau cần model mới — **đó là claim thứ năm hoá ra sai**: model cột infill
+(`f480ad8`) và `DM`/`DH` từ bảng structure (`fc8fac3`) đều có sẵn.
 
 ### Đã xong (ghi để khỏi làm lại)
 
