@@ -254,7 +254,15 @@ export function createShedSafeTransport(
         method: 'POST',
         body: JSON.stringify({
           Reference: input.reference,
-          Salesman: input.client.email,
+          /*
+           * The **salesperson**, never the customer's email.
+           *
+           * This read `input.client.email` until 2026-11-06, so the person who asked for a site
+           * check appeared at ShedSafe as the customer, and nobody at the company could tell whose
+           * visit it was. The desktop sends an empty string here and carries the name on the site
+           * link instead; this sends the typed name when there is one.
+           */
+          Salesman: input.salesman ?? '',
           SiteAddress: {
             AddressLine1: input.siteAddress.addressLine1,
             SuburbName: input.siteAddress.suburb,

@@ -77,6 +77,8 @@ async function pinned(
     payload: {
       siteAddress: { addressLine1: '1 Test Rd', suburb: 'Brisbane', state: 'QLD', postcode: '4000' },
       client: { firstName: 'A', lastName: 'B', email: 'a@b.com' },
+      // ShedSafe refuses an empty salesman, so the route requires one.
+      salesman: 'Dana Nguyen',
       heightMm: 4200,
       spanMm: 12000,
       lengthMm: 24000,
@@ -91,7 +93,7 @@ async function pinned(
 }
 
 describe('importing a site check', () => {
-  it('refuses a site ShedSafe has not Auto Calculated, and stores no rating', async () => {
+  it('reads a site ShedSafe has not Auto Calculated, and prices nothing from it', async () => {
     /*
      * The defect this guard exists for: ShedSafe answers with the wind fields before Auto Calc has
      * run, and those values are raw. The desktop's own comment records the consequence —
@@ -100,6 +102,10 @@ describe('importing a site check', () => {
      *
      * `windRegion` is set here deliberately: it is populated before Auto Calc, so a check that
      * keyed on it would let this through.
+     *
+     * **The answer is 200, not 409.** Refusing the call left the operator looking at "not
+     * calculated" with no idea whether ShedSafe had even been reached. The readings come back as
+     * `provisional` so a screen can show them, and the six columns that price the quote stay null.
      */
     const { ctx, cookie } = await signedIn();
     const checkId = await pinned(ctx, cookie);
@@ -119,13 +125,26 @@ describe('importing a site check', () => {
       headers: { cookie },
     });
 
-    expect(response.statusCode).toBe(409);
-    const body = response.json() as { code: string; message: string };
-    expect(body.code).toBe('conflict');
+    expect(response.statusCode).toBe(200);
+    const check = response.json().data.check as {
+      calculated: boolean;
+      status: string;
+      lastError: string | null;
+      provisional: { windRegion: string | null; designWindSpeed: number | null } | null;
+      values: { windRegion: string | null };
+    };
+    // The one property that answers "has it been calculated".
+    expect(check.calculated).toBe(false);
+    expect(check.status).not.toBe('imported');
     // The message names the one action that fixes it.
-    expect(body.message).toMatch(/Auto Calc/i);
+    expect(check.lastError).toMatch(/Auto Calc/i);
+    // The raw readings are visible…
+    expect(check.provisional?.windRegion).toBe('C');
+    expect(check.provisional?.designWindSpeed).toBe(12.3);
+    // …and the priced fields are still empty.
+    expect(check.values.windRegion).toBeNull();
 
-    // And nothing was written: a wind region in the row is what prices the quote.
+    // Nothing was written to the columns that price the quote.
     const row = await ctx.db.get<{ wind_region: string | null; status: string }>(
       'SELECT wind_region, status FROM site_checks WHERE id = ?',
       [checkId],
@@ -134,7 +153,7 @@ describe('importing a site check', () => {
     expect(row?.status).not.toBe('imported');
   });
 
-  it('refuses when ShedSafe reported an error, whatever the flag says', async () => {
+  it('reports a ShedSafe error without pricing anything, whatever the flag says', async () => {
     const { ctx, cookie } = await signedIn();
     const checkId = await pinned(ctx, cookie);
 
@@ -149,9 +168,17 @@ describe('importing a site check', () => {
       url: `/api/v1/site-checks/${checkId}/import`,
       headers: { cookie },
     });
-    expect(response.statusCode).toBe(409);
+    expect(response.statusCode).toBe(200);
+    const check = response.json().data.check as { calculated: boolean; lastError: string | null };
+    expect(check.calculated).toBe(false);
     // ShedSafe's own words reach the operator, because they say what to fix.
-    expect(response.json().message).toMatch(/could not be geocoded/i);
+    expect(check.lastError).toMatch(/could not be geocoded/i);
+
+    const row = await ctx.db.get<{ wind_region: string | null }>(
+      'SELECT wind_region FROM site_checks WHERE id = ?',
+      [checkId],
+    );
+    expect(row?.wind_region).toBeNull();
   });
 
   it('imports a calculated site, and keeps the geographic readings apart from the rating', async () => {
@@ -199,25 +226,26 @@ describe('importing a site check', () => {
     expect(check.site?.rainfallIntensityTown).toBe('Brisbane');
   });
 
-  it('goes through the same guard on the quote-linked route', async () => {
+  it('applies the same rule on the check route and the quote route', async () => {
     /*
      * Two routes import a check — one from a quote, one from the check itself. They share one
-     * implementation **because of this guard**: a second copy is how one of them would come to skip
-     * it. This test exists to prove the quote route is not the one that skips.
+     * implementation, and this proves the shared rule reaches the quote-less route too: an
+     * uncalculated site comes back read-but-not-priced there as well.
      */
     const { ctx, cookie } = await signedIn();
     const checkId = await pinned(ctx, cookie);
 
-    // The quote does not exist yet, so the route answers "pin first" — which is the *other*
-    // refusal, not the guard. Proving the guard needs a quote, so this asserts the check route
-    // and the shared implementation are the same function by behaviour: both refuse.
+    stubShedSafe({ autoCalc: false, windRegion: 'C', vSite1: 12.3 });
+
     const uncalculated = await ctx.app.inject({
       method: 'POST',
       url: `/api/v1/site-checks/${checkId}/import`,
       headers: { cookie },
     });
-    expect(uncalculated.statusCode).toBe(409);
-    expect(uncalculated.json().message).toMatch(/Auto Calc|no building|not been/i);
+    expect(uncalculated.statusCode).toBe(200);
+    const check = uncalculated.json().data.check as { calculated: boolean; lastError: string | null };
+    expect(check.calculated).toBe(false);
+    expect(check.lastError).toMatch(/Auto Calc/i);
   });
 
   it('keeps the salesman it recorded at pin time when the rating is imported', async () => {
@@ -245,9 +273,15 @@ describe('importing a site check', () => {
     });
     expect(response.statusCode).toBe(200);
 
-    const site = response.json().data.check.site as Record<string, unknown>;
-    // Both survive: the name from the pin, and the readings from the import.
-    expect(site.salesman).toBe('Dana Nguyen');
-    expect(site.elevation).toBe(12);
+    const check = response.json().data.check as {
+      salesman: string | null;
+      site: Record<string, unknown>;
+    };
+    // The name from the pin survives…
+    expect(check.salesman).toBe('Dana Nguyen');
+    // …and the readings arrive as their own named fields, not as part of a blob.
+    expect(check.site.elevation).toBe(12);
+    expect(check.site).not.toHaveProperty('salesman');
+    expect(check.site).not.toHaveProperty('provisional');
   });
 });

@@ -1016,9 +1016,69 @@ ShedSafe trả **đủ** các trường gió **kể cả khi chưa bấm Auto Ca
 |---|---|
 | Cờ dùng | **`autoCalc === true`** **và** `message.errorMessage` rỗng |
 | Cờ KHÔNG dùng | `windRegion` — **nó có trước Auto Calc**, nên kiểm nó là guard giả |
-| Khi chưa tính | **409**, không ghi gì vào DB, câu nói rõ việc cần làm |
+| Khi chưa tính | **200, không phải 409** — đọc được dữ liệu, nhưng **không ghi cột giá** (xem §19.1) |
 
-Có test dựng đúng ca này: `windRegion: 'C'` đã có, `autoCalc: false` → phải từ chối.
+Có test dựng đúng ca này: `windRegion: 'C'` đã có, `autoCalc: false` → cột giá phải rỗng.
+
+### 19.1 Chưa Auto Calc thì **vẫn đọc** — nhưng cảnh báo rõ và không dùng để tính giá
+
+Bản đầu từ chối bằng **409**, và operator nhìn thấy "Not calculated" mà **không biết ShedSafe đã
+được gọi tới chưa**. Nay tách làm hai:
+
+| | |
+|---|---|
+| Sáu cột định giá (`wind_region`, `terrain_category`, …) | **vẫn NULL** — engine không được đọc số thô |
+| `detail_json.provisional` | **lưu số thô** ShedSafe đang giữ, để hiện cho người dùng xem |
+| HTTP | **200** — lời gọi thành công, nó chỉ không có *rating* |
+| `calculated: false` + `lastError` | hai thứ nói rằng rating chưa được cấp |
+
+**Vì sao 200 chứ không 409:** mã trạng thái không chở được sự khác biệt "đã đọc được building" với
+"chưa có rating". Một 409 làm màn hình coi trạng thái bình thường là lỗi và nuốt luôn dữ liệu vừa đọc.
+
+**UI** (`SiteCheckPanel`): banner vàng `role="status"` với **4 bước đánh số** (mở ShedSafe → pin vị trí →
+bấm Auto Calc → quay lại đây), câu nói thẳng *"they are not used to price this quote"*, và khối
+`provisional` gấp lại ghi rõ *"provisional — not a rating"*.
+
+### 19.2 Ba lỗi thật tìm được khi gọi ShedSafe thật (2026-11-06)
+
+Kiểm chứng bằng cách gọi API ShedSafe thật, không phải bằng mock. Cả ba đều là **lỗi của v2**, và cái
+thứ ba là lỗi **của desktop** mà v2 copy lại.
+
+**1. `Salesman` gửi email khách hàng.** `shedsafe.ts:257` vẫn là `Salesman: input.client.email` dù
+commit trước đó **tuyên bố đã sửa** — thực ra chỉ sửa tham số `salesman` của `getsalesmansitelink`,
+không sửa body `/building/create`. Nay gửi `input.salesman`.
+
+**2. ShedSafe từ chối `Salesman` rỗng.** Gọi thật trả về:
+
+```
+An invalid argument was supplied. The Salesman field is required.
+```
+
+Nghĩa là **desktop gửi `Salesman = ""` là lỗi của desktop**, site check của nó không thể chạy với API
+hiện tại. Nay: route **bắt buộc** `salesman` (min 1, câu lỗi nói rõ), và UI mặc định điền **người đang
+đăng nhập** (`session.displayName`), vẫn sửa được. Nút bị khoá khi ô rỗng.
+
+**3. ShedSafe từ chối `SuburbName` rỗng.**
+
+```
+An invalid argument was supplied. The SuburbName field is required.
+```
+
+Đo được: có suburb → pin OK; không suburb → lỗi trên. Câu này nêu tên **field wire** (`SuburbName`) mà
+màn hình gọi là "Suburb". Nay route required `suburb`, và UI chặn trước khi gọi với câu dùng đúng từ
+của form.
+
+**Đo thêm:** `state`, `postcode`, `addressLine1`, `client.email` đều **không** bắt buộc (pin vẫn OK khi
+rỗng) — nên chúng vẫn optional, không siết thêm.
+
+### 19.3 "Go to ShedSafe" — một hành động, như desktop
+
+Desktop: bấm **GO TO SITECHECK** → pin → `Process.Start(mapUrl)`. v2 trước đây: bấm "Pin the site" →
+**không mở gì** → phải tìm link "Open ShedSafe" ở chỗ khác. Nay pin xong **tự `window.open(siteLink)`**,
+và câu xác nhận nói rõ đã mở tab mới — hoặc rằng trình duyệt đã chặn, kèm link dự phòng.
+
+Nút check lại đổi nhãn theo trạng thái: **"Check again after Auto Calc"** khi chưa tính,
+**"Check and import the rating"** khi đã có — vì bước người ta quên là *quay lại*.
 
 ### Bảy trường địa lý
 
@@ -1033,25 +1093,27 @@ tính giá, và thêm một cột mỗi lần cơ quan cấp chứng nhận thê
 **Hai nhóm trong API, cố ý tách:** `values` là sáu trường engine đã định giá từ, `site` là những gì
 chứng nhận nói về **địa điểm**. Gộp chúng sẽ gợi rằng độ cao ảnh hưởng giá — nó không.
 
+**`detail_json` giờ có ba loại khoá** (`salesman`, `provisional`, các reading). `toView` chỉ đưa các
+reading ra `site` và đưa `salesman` ra riêng — đưa cả blob ra làm màn hình in *"Shielding: undefined"*,
+đúng lỗi đã thấy trên trình duyệt.
+
 **Một lỗi tôi tự tạo khi làm:** `importIntoCheck` ghi `detail_json` mới, **xoá salesman** đã lưu lúc
 pin — mất đúng lúc người ta cần biết ai đã yêu cầu kiểm tra. Nay **merge**, và có test
-`keeps the salesman it recorded at pin time`.
+`keeps the salesman it recorded at pin time`. Khi import thành công, khoá `provisional` được **bỏ** —
+để lại một số thô cạnh số chứng nhận là mời người ta tin nhầm cái sau.
 
 ### Salesman — làm khác spec, và nhỏ hơn nhiều
 
 Spec §4.8 nói "bảng `salesmen` theo tenant + đồng bộ `createsalesman`/`updatesalesman`".
 
 **Kiểm chứng lại thì không đáng:**
-- Desktop đặt **`Salesman = ""`** — chuỗi rỗng, literal (`QuoteDetailsView.Events.cs:2391`).
-- Salesman là khái niệm của **licence server**: bảng 72 cột (`SSId`, `FranchiseName`, `FranchiseId`…),
-  phục vụ màn hình "Building Management" theo franchise — thứ operator đã nói không cần.
+- Bảng 72 cột của licence server (`SSId`, `FranchiseName`, `FranchiseId`…) phục vụ màn hình "Building
+  Management" theo franchise — operator đã nói không cần.
 - Không có tác dụng lên giá.
 
-**Đã làm thay:** một ô **chuỗi tự do** trên site check, gửi lên ShedSafe qua tham số `salesman` của
-`getsalesmansitelink`, lưu trong `detail_json`. Đúng chỗ desktop có nó (rỗng, người dùng tự điền).
-
-**Một lỗi cũ sửa luôn:** v2 gửi **`client.email`** làm `salesman` — tức email **khách hàng** xuất hiện
-như người đi kiểm tra site. Nay là trường riêng.
+**Đã làm thay:** một ô **chuỗi tự do** trên site check, mặc định là người đang đăng nhập, gửi lên qua
+**cả hai** chỗ: `Salesman` trong `/building/create` và tham số `salesman` của `getsalesmansitelink`;
+lưu trong `detail_json`.
 
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
@@ -1390,14 +1452,48 @@ acknowledgement. **Kiểm tra một phần tử có tồn tại trước khi k�
 
 ---
 
+## 13.5 Editor: thanh điều hướng, và cảnh báo mất dữ liệu (2026-11-06)
+
+### Editor không có đường ra
+
+`QuoteEditor` tự dựng layout riêng và **không dùng `ShellFrame`** — rail 232 px của nó ăn mất chỗ
+plan. Nhưng "tự dựng chrome" hoá ra là **không có chrome**: mở `/quotes/new` thì không có link nào về
+danh sách báo giá, Settings, Team hay đăng xuất. Muốn thoát phải sửa thanh địa chỉ. Đo trong trình
+duyệt: `nav a` = `[]`.
+
+**Sửa:** một strip navy mảnh phía trên `StepRail`, lấy link từ **`navFor` của `ShellFrame`** (đã export)
+— cùng một danh sách với phần còn lại của workspace, không phải bản sao thứ hai để lệch.
+
+### F5 giữa lúc điền thì mất sạch
+
+Không có `beforeunload` nào trong client. Nay `useUnsavedChangesWarning(dirty)`:
+
+| Đường | Cơ chế | Ghi chú |
+|---|---|---|
+| F5 / đóng tab | `beforeunload` + `preventDefault` | Chữ của hộp thoại **do trình duyệt** quyết định, không sửa được — giới hạn nền tảng |
+| Link nội bộ | capture-phase click listener + `window.confirm` | Next App Router chưa có navigation blocker |
+| Trang ngoài | không chặn | `beforeunload` đã lo |
+| `mailto:`/`tel:`/`#hash`/`download` | bỏ qua | Không rời trang |
+| Link có `data-allow-navigation` | bỏ qua | Để màn hình tự chọn link được thoát |
+
+**Một bug tìm ra ngay khi kiểm chứng:** trang **mới tinh** cũng bị chặn. Nguyên nhân: với báo giá mới
+`buildingBaseline = ''`, nên `buildingDirty` luôn `true`. Cảnh báo bắn trên form trống sẽ dạy người
+dùng bấm "OK" mà không đọc. Nay baseline của báo giá mới là **toà nhà lúc mở**
+(`normaliseShedConfig(template ?? STARTING_BUILDING)`).
+
+Đo lại: sạch → `defaultPrevented: false`; sửa một trường → `true`; bấm Settings khi dirty → hỏi 1 lần,
+không điều hướng.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
-| `@sq/api` | 240 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
+| `@sq/api` | 242 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
-| `@sq/client-app` | 19 (form, category dock, `ControlSheet`) |
+| `@sq/client-app` | 28 (form, category dock, `ControlSheet`, unsaved-changes guard) |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

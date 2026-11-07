@@ -44,6 +44,21 @@ interface SiteCheck {
   lastError: string | null;
   pinnedAt: string;
   importedAt: string | null;
+  /**
+   * True only when ShedSafe has Auto Calculated the building and reported no error.
+   *
+   * The **one** property that answers "is there a rating". `windRegion` is populated before Auto
+   * Calc, so a screen that inferred this from a non-empty wind region would be wrong on exactly the
+   * sites that matter. Matches `data.AutoCalc && noError` in the desktop.
+   */
+  calculated: boolean;
+  /**
+   * The raw readings ShedSafe returns before Auto Calc.
+   *
+   * Shown, never priced: the six `values` stay null until the site is calculated, because a quote
+   * priced from a raw `topographicFactor` is a quote against a rating nobody issued.
+   */
+  provisional: Record<string, unknown> | null;
   values: SiteCheckValues;
   /**
    * The site's geographic readings, or `null` for a check imported before they were stored.
@@ -74,6 +89,16 @@ export interface SiteCheckPanelProps {
   spanMm: number;
   lengthMm: number;
   importanceLevel: number;
+  /**
+   * Who is signed in, as the default salesperson.
+   *
+   * ShedSafe **requires** a salesman and refuses an empty one — "The Salesman field is required",
+   * measured against the live API. The desktop sent a literal empty string, so its own site check
+   * cannot have worked against the API as it stands today; copying that would have shipped the same
+   * failure. The person at the keyboard is the honest default, and they can still type somebody
+   * else's name.
+   */
+  defaultSalesman: string;
   canWrite: boolean;
   /** Called when a rating is imported, so the design fields can take the certified values. */
   onImported?: (values: SiteCheckValues) => void;
@@ -85,6 +110,22 @@ function value(value: number | string | null, suffix = ''): string {
   return `${value}${suffix}`;
 }
 
+/**
+ * A number out of the provisional block, or `null`.
+ *
+ * The block is `Record<string, unknown>` because it is ShedSafe's own JSON, so every read has to be
+ * checked. A cast would compile and then print `undefined` on screen the first time the upstream
+ * renamed a field.
+ */
+function num(raw: unknown): number | null {
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
+}
+
+/** A string out of the provisional block, or `null`. */
+function str(raw: unknown): string | null {
+  return typeof raw === 'string' && raw !== '' ? raw : null;
+}
+
 export function SiteCheckPanel({
   quoteId,
   site,
@@ -93,6 +134,7 @@ export function SiteCheckPanel({
   spanMm,
   lengthMm,
   importanceLevel,
+  defaultSalesman,
   canWrite,
   onImported,
 }: SiteCheckPanelProps) {
@@ -102,11 +144,12 @@ export function SiteCheckPanel({
   /**
    * Who is doing the check, as ShedSafe shows it on their side.
    *
-   * Remembered in a ref-less piece of state rather than derived from the signed-in user, because
-   * the salesperson who arranged a site visit is often not the person at the keyboard. The desktop
-   * sent an empty string here and let the operator type a name; so does this.
+   * Defaults to the signed-in person but stays editable, because the salesperson who arranged a site
+   * visit is often not the person at the keyboard. It must never be **empty**: ShedSafe refuses that
+   * with "The Salesman field is required", so the button is disabled until there is something to
+   * send rather than letting the pin fail on their side.
    */
-  const [salesman, setSalesman] = useState('');
+  const [salesman, setSalesman] = useState(defaultSalesman);
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const setSiteCheckId = useDraftStore((state) => state.setSiteCheckId);
 
@@ -124,6 +167,26 @@ export function SiteCheckPanel({
   }, [load]);
 
   const pin = async (): Promise<void> => {
+    /*
+     * What ShedSafe will refuse, refused here first.
+     *
+     * Both requirements were measured against the live API on 2026-11-06 rather than assumed: it
+     * answers an empty salesperson with *"The Salesman field is required"* and an empty suburb with
+     * *"The SuburbName field is required"*. Those sentences name wire fields, and the second names
+     * one that does not appear on this screen at all — so the check happens before the call, in the
+     * form's own words.
+     */
+    const missing: string[] = [];
+    if (salesman.trim() === '') missing.push('who is doing the check');
+    if (site.suburb.trim() === '') missing.push('the site suburb');
+    if (missing.length > 0) {
+      setMessage({
+        tone: 'danger',
+        text: `ShedSafe needs ${missing.join(' and ')}. Fill it in above, then pin the site again.`,
+      });
+      return;
+    }
+
     setBusy('pinning');
     setMessage(null);
 
@@ -158,9 +221,29 @@ export function SiteCheckPanel({
       if (quoteId === null && result.data.check !== null) {
         setSiteCheckId(result.data.check.id);
       }
+
+      /*
+       * Open ShedSafe straight away, as the desktop does.
+       *
+       * The desktop's "GO TO SITECHECK" pins and then calls `Process.Start(mapUrl)` — one action,
+       * because the operator's next step is always the same and making them find a link afterwards
+       * is a step that gets missed. `window.open` is the browser's equivalent; it is called
+       * synchronously inside the click's async continuation, which is what keeps it from being
+       * treated as a popup.
+       *
+       * A blocked popup is not an error: the link stays on the panel, and the message says so.
+       */
+      const link = result.data.check?.siteLink ?? null;
+      const opened = link === null || link === '' ? false : window.open(link, '_blank', 'noopener') !== null;
+
       setMessage({
         tone: 'ok',
-        text: 'Pinned. Open ShedSafe to finish the check, then import the rating.',
+        text:
+          link === null || link === ''
+            ? 'Pinned. ShedSafe did not return a site link — pin again, or open ShedSafe yourself.'
+            : opened
+              ? 'Pinned, and ShedSafe is open in a new tab. Pin the location, run Auto Calc, then come back and check the rating.'
+              : 'Pinned. Your browser blocked the new tab — use “Open ShedSafe” above, then come back and check the rating.',
       });
     } else {
       setMessage({ tone: 'danger', text: result.message });
@@ -183,9 +266,20 @@ export function SiteCheckPanel({
 
     setBusy(null);
     if (result.ok) {
-      setCheck(result.data.check);
-      setMessage({ tone: 'ok', text: 'The certified rating was imported.' });
-      onImported?.(result.data.check.values);
+      const next = result.data.check;
+      setCheck(next);
+      if (next.calculated) {
+        setMessage({ tone: 'ok', text: 'The certified rating was imported.' });
+        onImported?.(next.values);
+      } else {
+        /*
+         * Read, but not calculated. The readings on screen are ShedSafe's current values for a
+         * building it has not finished, so they are **shown and not applied** — the design fields
+         * keep whatever they had. Saying "imported" here would be the lie this whole guard exists to
+         * prevent, and the panel below explains what to do next.
+         */
+        setMessage(null);
+      }
     } else {
       setMessage({ tone: 'danger', text: result.message });
     }
@@ -209,9 +303,13 @@ export function SiteCheckPanel({
         {check !== null && (
           <div className="flex flex-wrap items-center gap-sq-2">
             <StatusPill
-              tone={check.status === 'imported' ? 'ok' : stale ? 'danger' : 'attention'}
+              tone={check.calculated ? 'ok' : stale ? 'danger' : 'attention'}
               label={
-                check.status === 'imported' ? 'Imported' : stale ? 'Last attempt failed' : 'Pinned, not calculated'
+                check.calculated
+                  ? 'Rating imported'
+                  : stale
+                    ? 'Last attempt failed'
+                    : 'Pinned — not Auto Calculated yet'
               }
             />
             <span className="text-sq-micro text-sq-ink-muted">Reference {check.reference}</span>
@@ -228,13 +326,101 @@ export function SiteCheckPanel({
           </div>
         )}
 
-        {check !== null && check.lastError !== null && (
+        {/*
+          The warning, when the site has been read but not calculated.
+
+          It is a **banner, not a line of red text**, because this is the state an operator lands in
+          every time they pin a site and come back too early — and the consequence of ignoring it is
+          a quote priced against a rating nobody issued. The three steps are numbered because "run
+          Auto Calc" alone does not say where, and the last one is the step people forget: coming
+          back here.
+
+          `role="status"` rather than `alert`: it appears as the result of the operator's own action,
+          so it should be announced without interrupting.
+        */}
+        {check !== null && !check.calculated && (
+          <div
+            role="status"
+            className="rounded-lg border border-sq-attention/40 bg-sq-attention/5 p-sq-3"
+          >
+            <p className="text-sq-body font-semibold text-sq-attention">
+              This site has not been Auto Calculated yet
+            </p>
+            <p className="mt-sq-1 text-sq-body text-sq-ink">
+              ShedSafe has the building, but its wind rating is not issued until Auto Calc runs. The
+              figures below are what ShedSafe currently holds — <strong>they are not used to price
+              this quote</strong>.
+            </p>
+            <ol className="mt-sq-2 flex list-decimal flex-col gap-sq-1 pl-sq-4 text-sq-body text-sq-ink">
+              <li>
+                Open the site in ShedSafe
+                {check.siteLink !== null && check.siteLink !== '' ? (
+                  <>
+                    {' '}
+                    —{' '}
+                    <a
+                      href={check.siteLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-sq-brand underline underline-offset-2"
+                    >
+                      open it now
+                    </a>
+                  </>
+                ) : null}
+                .
+              </li>
+              <li>Pin the location on the map.</li>
+              <li>
+                Press <strong>Auto Calc</strong> and wait for it to finish.
+              </li>
+              <li>Come back here and press “Check and import the rating”.</li>
+            </ol>
+            {check.lastError !== null && check.lastError !== '' && (
+              <p className="mt-sq-2 text-sq-body text-sq-danger">{check.lastError}</p>
+            )}
+          </div>
+        )}
+
+        {check !== null && check.calculated && check.lastError !== null && (
           <p role="alert" className="text-sq-body text-sq-danger">
             {check.lastError}
           </p>
         )}
 
-        {check !== null && (
+        {/*
+          The provisional readings, in their own block and visibly marked.
+
+          Shown because "not calculated" alone leaves the operator wondering whether ShedSafe was
+          even reached. Marked because a number on a screen is a number somebody will quote from.
+        */}
+        {check !== null && !check.calculated && check.provisional !== null && (
+          <details className="rounded-md border border-sq-line px-sq-2 py-sq-2">
+            <summary className="cursor-pointer text-sq-micro font-medium text-sq-ink">
+              What ShedSafe currently holds (provisional — not a rating)
+            </summary>
+            <dl className="mt-sq-2 grid gap-sq-2 sm:grid-cols-2">
+              {[
+                ['Importance level', value(num(check.provisional.importanceLevel))],
+                ['Wind region', value(str(check.provisional.windRegion))],
+                ['Terrain category', value(num(check.provisional.terrainCategory))],
+                ['Building class', value(str(check.provisional.buildingClass))],
+                ['Ground snow load', value(num(check.provisional.snowLoad), ' kPa')],
+                ['Design wind speed', value(num(check.provisional.designWindSpeed), ' m/s')],
+              ].map(([label, shown]) => (
+                <div
+                  key={String(label)}
+                  className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1"
+                >
+                  <dt className="text-sq-body text-sq-ink-muted">{String(label)}</dt>
+                  <dd className="sq-numeric text-sq-body text-sq-ink-muted">{String(shown)}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+
+        {check !== null && check.calculated && (
           <dl className="grid gap-sq-2 sm:grid-cols-2">
             {[
               ['Importance level', value(check.values.importanceLevel)],
@@ -261,7 +447,12 @@ export function SiteCheckPanel({
           engineer checking a quote against its rating needs them, and the desktop showed them under
           "show more parameters".
         */}
-        {check !== null && check.site !== null && (
+        {/*
+          Only when the check is calculated. Before that ShedSafe has no readings for the place —
+          the provisional block above shows what it holds, and printing a list of "not calculated"
+          rows beside it would say the same thing twice.
+        */}
+        {check !== null && check.calculated && check.site !== null && (
           <details className="rounded-md border border-sq-line px-sq-2 py-sq-2">
             <summary className="cursor-pointer text-sq-micro font-medium text-sq-ink">
               Site readings
@@ -323,15 +514,30 @@ export function SiteCheckPanel({
                 value={salesman}
                 onChange={(event) => setSalesman(event.target.value.slice(0, 200))}
                 placeholder="Who is doing the check"
+                required
                 className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body text-sq-ink"
               />
             </label>
-            <Button loading={busy === 'pinning'} onClick={() => void pin()}>
-              {check === null ? 'Pin the site' : 'Pin again'}
+            {/*
+              Disabled while empty, with the reason beside it. ShedSafe refuses an empty salesman, so
+              a working button here would only produce a rejection in somebody else's words.
+            */}
+            <Button
+              loading={busy === 'pinning'}
+              disabled={salesman.trim() === ''}
+              onClick={() => void pin()}
+            >
+              {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
             </Button>
+            {salesman.trim() === '' && (
+              <span className="text-sq-micro text-sq-attention">
+                ShedSafe requires a salesperson name.
+              </span>
+            )}
             {check !== null && (
               <Button variant="primary" loading={busy === 'importing'} onClick={() => void importRating()}>
-                Import the rating
+                {/* The step people forget: coming back. The label says so. */}
+                {check.calculated ? 'Check and import the rating' : 'Check again after Auto Calc'}
               </Button>
             )}
           </div>

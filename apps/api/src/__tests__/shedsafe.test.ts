@@ -142,6 +142,60 @@ describe('pin', () => {
     expect((body.SiteAddress as Record<string, unknown>).State).toBe('QLD');
   });
 
+  it('sends the salesperson as the salesman, never the customer', async () => {
+    /*
+     * This read `input.client.email` until 2026-11-06, so the person who asked for a site check
+     * appeared at ShedSafe as the customer and nobody could tell whose visit it was. A commit
+     * message claimed it was fixed; only the site *link* was. This pins the wire value.
+     */
+    const { fetch, calls } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/create': () => new Response(JSON.stringify({ buildingId: 'B-9' }), { status: 200 }),
+      '/building/getsalesmansitelink': () => new Response('https://sitecheck.test/B-9', { status: 200 }),
+    });
+
+    await createShedSafeTransport(config, fetch).pin({
+      reference: 'SC-9',
+      siteAddress: { addressLine1: 'x', suburb: '', state: '', postcode: '' },
+      client: { firstName: 'Jo', lastName: 'Bloggs', email: 'customer@example.com' },
+      salesman: 'Dana Nguyen',
+      height: 4.2,
+      span: 12,
+      length: 24,
+      importanceLevel: 2,
+    });
+
+    const create = calls.find((call) => call.url.includes('/building/create'));
+    const body = JSON.parse(String(create?.init?.body)) as Record<string, unknown>;
+    expect(body.Salesman).toBe('Dana Nguyen');
+    // The customer's address belongs in Client, and nowhere in Salesman.
+    expect(body.Salesman).not.toBe('customer@example.com');
+    expect((body.Client as Record<string, unknown>).Email).toBe('customer@example.com');
+  });
+
+  it('sends an empty salesman when nobody typed one, as the desktop does', async () => {
+    const { fetch, calls } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/create': () => new Response(JSON.stringify({ buildingId: 'B-10' }), { status: 200 }),
+      '/building/getsalesmansitelink': () => new Response('https://sitecheck.test/B-10', { status: 200 }),
+    });
+
+    await createShedSafeTransport(config, fetch).pin({
+      reference: 'SC-10',
+      siteAddress: { addressLine1: 'x', suburb: '', state: '', postcode: '' },
+      client: { firstName: '', lastName: '', email: 'c@example.com' },
+      height: 3,
+      span: 9,
+      length: 18,
+      importanceLevel: 2,
+    });
+
+    const body = JSON.parse(
+      String(calls.find((call) => call.url.includes('/building/create'))?.init?.body),
+    ) as Record<string, unknown>;
+    expect(body.Salesman).toBe('');
+  });
+
   it('accepts a bare-text site link, which the endpoint sometimes returns', async () => {
     const { fetch } = fakeFetch({
       '/authenticate': authOk,

@@ -41,7 +41,19 @@ const pinRequest = z
   .object({
     siteAddress: z.object({
       addressLine1: z.string().trim().min(1).max(255),
-      suburb: z.string().trim().max(100).default(''),
+      /*
+       * Required, because ShedSafe requires it.
+       *
+       * Measured against the live API on 2026-11-06: an empty suburb comes back as *"An invalid
+       * argument was supplied. The SuburbName field is required."* — a sentence that names a field
+       * by its wire spelling, on a screen that shows "Suburb". So the refusal happens here, in words
+       * that match the form.
+       */
+      suburb: z
+        .string()
+        .trim()
+        .min(1, 'ShedSafe needs the site suburb. Fill it in above, then pin the site.')
+        .max(100),
       state: z.string().trim().max(10).default(''),
       postcode: z.string().trim().max(10).default(''),
     }),
@@ -58,11 +70,19 @@ const pinRequest = z
     /**
      * Who is doing the check, as ShedSafe shows it on their side.
      *
-     * Free text on purpose: the licence server kept a 72-column `Salesman` table because it managed
-     * buildings by franchise, and none of that survives into a quoting product. The desktop sent an
-     * empty string and let the operator type a name — this does the same.
+     * **Required, and that is not a preference of ours.** ShedSafe answers an empty value with
+     * *"The Salesman field is required."* — measured against the live API on 2026-11-06, after this
+     * route passed the desktop's literal `Salesman = ""` straight through and the pin failed with a
+     * message that named nothing on our screen.
+     *
+     * Free text rather than an account: the licence server kept a 72-column `Salesman` table because
+     * it managed buildings by a franchise's staff, and none of that survives into a quoting product.
      */
-    salesman: z.string().trim().max(200).default(''),
+    salesman: z
+      .string()
+      .trim()
+      .min(1, 'Who is doing the site check? ShedSafe requires a salesperson name.')
+      .max(200),
     /** Reuse an existing check rather than pinning a second building for the same site. */
     reference: z.string().trim().min(1).max(80).optional(),
   })
@@ -90,6 +110,19 @@ interface SiteCheckRow {
 
 /** What a screen gets back. camelCase, and the six fields grouped so a UI can label them together. */
 function toView(row: SiteCheckRow) {
+  const detail = row.detail_json === null ? null : (JSON.parse(row.detail_json) as Record<string, unknown>);
+  /*
+   * The raw readings ShedSafe returned before Auto Calc, kept apart from the six that price.
+   *
+   * They are shown so an operator can see the site was reached and what ShedSafe currently thinks,
+   * and they are **never** written into the pricing columns — a quote priced from a raw
+   * `topographicFactor` is a quote against a rating nobody issued.
+   */
+  const provisional =
+    detail !== null && typeof detail.provisional === 'object' && detail.provisional !== null
+      ? (detail.provisional as Record<string, unknown>)
+      : null;
+
   return {
     id: row.id,
     buildingId: row.building_id,
@@ -99,6 +132,16 @@ function toView(row: SiteCheckRow) {
     lastError: row.last_error,
     pinnedAt: row.pinned_at,
     importedAt: row.imported_at,
+    /**
+     * True only when ShedSafe has Auto Calculated the building and reported no error.
+     *
+     * The one property that answers the question. `windRegion` is populated **before** Auto Calc, so
+     * a screen that inferred "calculated" from a non-empty wind region would be wrong on exactly the
+     * sites that matter.
+     */
+    calculated: row.status === 'imported',
+    /** The raw readings, when a check has been read but not calculated. `null` otherwise. */
+    provisional,
     values: {
       importanceLevel: row.importance_level === null ? null : Number(row.importance_level),
       windRegion: row.wind_region,
@@ -114,10 +157,27 @@ function toView(row: SiteCheckRow) {
      * `site` is what the certificate says about the place. A screen that mixed them would suggest
      * the elevation affects the price, which it does not.
      *
-     * `null` for a check imported before the readings were stored — the values were never fetched,
-     * which is different from a site at sea level with no rain.
+     * `detail_json` also carries `salesman` and `provisional`, which are **not** readings — passing
+     * the whole blob through made the screen print "Shielding: undefined", because it read keys that
+     * were never there. Only the readings come out here; the other two are surfaced by name.
      */
-    site: row.detail_json === null ? null : (JSON.parse(row.detail_json) as Record<string, unknown>),
+    site:
+      detail === null
+        ? null
+        : {
+            shielding: detail.shielding ?? null,
+            topographicFactor: detail.topographicFactor ?? null,
+            snowLoadRegion: detail.snowLoadRegion ?? null,
+            earthquakeHazardFactor: detail.earthquakeHazardFactor ?? null,
+            elevation: detail.elevation ?? null,
+            latitude: detail.latitude ?? null,
+            longitude: detail.longitude ?? null,
+            rainfallIntensity100Years: detail.rainfallIntensity100Years ?? null,
+            rainfallIntensity20Years: detail.rainfallIntensity20Years ?? null,
+            rainfallIntensityTown: detail.rainfallIntensityTown ?? null,
+          },
+    /** Who asked for the check, as recorded at pin time. */
+    salesman: typeof detail?.salesman === 'string' ? detail.salesman : null,
   };
 }
 
@@ -190,16 +250,47 @@ async function importIntoCheck(
     }
 
     if (!result.calculated) {
+      /*
+       * **Read, but do not price.** The operator asked for the site's data and ShedSafe has some —
+       * refusing the whole call left them staring at "not calculated" with no idea whether the
+       * building had even been reached. So the raw readings are stored under `provisional` and
+       * returned, and the six columns that price the quote stay **null**.
+       *
+       * That split is the whole point. `windRegion` and `terrainCategory` are populated before Auto
+       * Calc, so writing them here would price the building against a rating nobody issued — the
+       * exact defect the desktop's own comment records. A screen can show a provisional number; the
+       * engine must not read one.
+       */
       const message =
         result.errorMessage !== null && result.errorMessage !== ''
           ? `ShedSafe reported a problem with this building: ${result.errorMessage}`
           : 'This site has not been Auto Calculated in ShedSafe yet, so its wind rating is not issued. ' +
-            'Open the site link, pin the location and run Auto Calc, then import again.';
-      await db.run(
-        "UPDATE site_checks SET status = 'pinned', last_error = ?, updated_at = ? WHERE id = ?",
-        [message, at, check.id],
+            'Open the site link, pin the location and run Auto Calc, then check again.';
+
+      const prior = await db.get<{ detail_json: string | null }>(
+        'SELECT detail_json FROM site_checks WHERE id = ?',
+        [check.id],
       );
-      return sendFail(reply, 'conflict', message);
+      const existingDetail: Record<string, unknown> =
+        prior?.detail_json == null ? {} : (JSON.parse(prior.detail_json) as Record<string, unknown>);
+
+      await db.run(
+        "UPDATE site_checks SET status = 'pinned', last_error = ?, detail_json = ?, updated_at = ? WHERE id = ?",
+        [
+          message,
+          JSON.stringify({ ...existingDetail, provisional: result.values }),
+          at,
+          check.id,
+        ],
+      );
+
+      const row = await db.get<SiteCheckRow>('SELECT * FROM site_checks WHERE id = ?', [check.id]);
+      /*
+       * 200, not 409. The call succeeded: it read the building and reported what ShedSafe says. The
+       * *rating* is not issued, and `calculated: false` plus `lastError` say so — a status code
+       * cannot carry that distinction, and a 409 made the screen treat a normal state as a failure.
+       */
+      return sendOk(reply, { check: row === null ? null : toView(row) });
     }
 
     const v = result.values;
@@ -245,6 +336,12 @@ async function importIntoCheck(
     await db.run('UPDATE site_checks SET detail_json = ? WHERE id = ?', [
       JSON.stringify({
         ...existingDetail,
+        /*
+         * The provisional block is **dropped** here, because it is no longer provisional: the six
+         * columns above now hold the certified figures. Keeping it would leave a screen free to show
+         * a stale raw number beside a real one and invite somebody to trust the wrong one.
+         */
+        provisional: undefined,
         shielding: v.shielding,
         topographicFactor: v.topographicFactor,
         snowLoadRegion: v.snowLoadRegion,

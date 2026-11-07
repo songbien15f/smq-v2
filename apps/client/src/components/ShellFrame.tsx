@@ -52,8 +52,14 @@ export interface ShellFrameProps {
   actions?: React.ReactNode;
 }
 
-/** The links a set of capabilities may reach, in the order they matter. */
-function navFor(capabilities: readonly string[]): { href: string; label: string }[] {
+/**
+ * The links a set of capabilities may reach, in the order they matter.
+ *
+ * Exported because the quote editor draws its own chrome — a 232 px rail would take the width the
+ * plan needs — and it must offer the **same** links. A second list is how the editor came to have no
+ * way back to the quote list at all.
+ */
+export function navFor(capabilities: readonly string[]): { href: string; label: string }[] {
   const links = [{ href: '/quotes', label: 'Quotes' }];
   if (capabilities.includes('settings:manage')) links.push({ href: '/settings', label: 'Settings' });
   if (capabilities.includes('members:manage')) links.push({ href: '/team', label: 'Team' });

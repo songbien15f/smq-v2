@@ -50,7 +50,10 @@ import type { DraftIssue } from './validation';
 import { useShedStore } from '@/store/useShedStore';
 import { useDraftStore, STARTING_BUILDING } from '@/store/useDraftStore';
 import { api, newIdempotencyKey } from '@/lib/sq';
+import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
+import { navFor } from '@/components/ShellFrame';
 import type { DisplayUnit } from '@sq/core/domain';
+import { normaliseShedConfig } from '@sq/core/domain';
 
 export interface QuoteEditorProps {
   session: SessionView;
@@ -138,6 +141,20 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
    * and print a number that belongs to no quote.
    */
   const [draftReady, setDraftReady] = useState(initial === undefined);
+
+  /**
+   * The building as it was when the screen opened or last saved, so an edit can be told apart.
+   *
+   * `useDraftStore.isDirty()` fingerprints only the customer, the site and the money — the building
+   * lives in `useShedStore` and the draft store never sees it. So an edit that moved a span or added
+   * an option left the draft "clean", and the save gate refused with "nothing has been changed yet"
+   * while the plan plainly showed the change.
+   *
+   * Set by the open effect below for **both** cases. A new quote's baseline is the building it
+   * opened with; leaving it `''` made every new quote dirty before anything was typed.
+   */
+  const buildingBaseline = useRef<string | null>(null);
+
   useEffect(() => {
     if (opened.current) return;
     opened.current = true;
@@ -167,9 +184,26 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
        */
       const fromTemplate = templateFromFragment();
       applyConfig(fromTemplate ?? STARTING_BUILDING);
+      /*
+       * A new quote's baseline is the building it opened with, not `''`.
+       *
+       * Leaving it empty made `buildingDirty` true on the first render — every new quote was "dirty"
+       * before anything was typed, so "leave and lose your changes" fired for an empty form and the
+       * warning would have taught an operator to dismiss it without reading. Found by opening
+       * `/quotes/new` and dispatching `beforeunload`: it was cancelled with nothing changed.
+       */
+      buildingBaseline.current = JSON.stringify(normaliseShedConfig(fromTemplate ?? STARTING_BUILDING));
     }
     setDraftReady(true);
   }, [initial, loadDraft, applyConfig]);
+
+  /*
+   * Opening a saved quote sets its baseline, and so does a later `initial` — the server re-render
+   * after a save carries the revision it just wrote.
+   */
+  useEffect(() => {
+    if (initial !== undefined && opened.current) buildingBaseline.current = JSON.stringify(initial.config);
+  }, [initial]);
 
   const issues = useMemo(
     () => validateDraft({ config, customer, site }),
@@ -257,31 +291,16 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   const dirty = useDraftStore((state) => state.isDirty());
   const pricedStale = useDraftStore((state) => state.priceIsStale(priceInputs));
 
-  /**
-   * Whether the **building** has changed since the quote was opened or last saved.
-   *
-   * `useDraftStore.isDirty()` fingerprints only the customer, the site and the money — the building
-   * lives in `useShedStore` and the draft store never sees it. So an edit that moved a span or added
-   * an option left the draft "clean", and `evaluateGate` refused the save with "nothing has been
-   * changed yet" while the plan plainly showed the change. A revision that can only be saved when
-   * the customer's name changed is not an editor.
-   *
-   * Kept here rather than in the store because it is a comparison of two stores, and the editor is
-   * the only place that owns both.
-   */
-  const buildingBaseline = useRef<string | null>(null);
-  if (buildingBaseline.current === null) {
-    // The first render after the open effect: the baseline is whatever the quote was opened with.
-    // (`initial` is set before the effect runs, so this captures the saved building, not the default.)
-    buildingBaseline.current = initial === undefined ? '' : JSON.stringify(initial.config);
-  }
-  useEffect(() => {
-    if (initial !== undefined && opened.current) buildingBaseline.current = JSON.stringify(initial.config);
-  }, [initial]);
   const buildingDirty = buildingBaseline.current !== JSON.stringify(config);
 
   /** A save is meaningful when the building or the draft moved. */
   const anyChange = dirty || buildingDirty;
+
+  /*
+   * Warn before a refresh, a closed tab, or a link out of the editor takes unsaved work with it.
+   * The editor is one page with the quote list one click away, so both paths matter.
+   */
+  useUnsavedChangesWarning(anyChange);
 
   /**
    * Only the money moved; the building is untouched.
@@ -440,6 +459,51 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-sq-ground">
+      {/*
+        The editor's own shortcuts, above the steps.
+
+        The editor does not use `ShellFrame`: its 232 px rail would take the width the plan needs,
+        and the product's working surface is a drawing. But building its own chrome meant it offered
+        **no way out** — a person who opened `/quotes/new` had no link back to the quote list, to
+        Settings, or to sign out, and had to edit the address bar. This strip is the missing exit,
+        and it takes its links from `navFor` so the set is the same one the rest of the workspace
+        shows rather than a second list that can drift.
+      */}
+      <div className="border-b border-sq-line bg-sq-brand text-white">
+        <div className="mx-auto flex min-h-11 max-w-[1400px] flex-wrap items-center gap-sq-3 px-sq-3 py-sq-1">
+          <a href="/quotes" className="flex min-h-11 items-center gap-sq-2 no-underline">
+            <span className="text-sq-body font-semibold text-white">SmartQuote</span>
+          </a>
+          <nav aria-label="Workspace" className="flex flex-wrap items-center gap-sq-1">
+            {navFor(session.capabilities).map((link) => {
+              const here = link.href === '/quotes';
+              return (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  aria-current={here ? 'page' : undefined}
+                  className={[
+                    'inline-flex min-h-11 items-center rounded-md px-sq-2 text-sq-body no-underline transition-colors duration-sq-fast',
+                    here ? 'bg-white/15 font-medium text-white' : 'text-white/85 hover:bg-white/10',
+                  ].join(' ')}
+                >
+                  {link.label}
+                </a>
+              );
+            })}
+          </nav>
+          <span className="ml-auto flex items-center gap-sq-2 text-sq-micro text-white/80">
+            {session.currentTenantName ?? 'No company'}
+          </span>
+          <a
+            href="/change-password"
+            className="inline-flex min-h-11 items-center rounded-md px-sq-2 text-sq-micro text-white/85 no-underline hover:bg-white/10"
+          >
+            Password
+          </a>
+        </div>
+      </div>
+
       <StepRail
         current={step}
         reachable={(target) => (target === 'details' ? true : evaluation !== null)}
@@ -500,6 +564,9 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                 spanMm={config.span}
                 lengthMm={config.length}
                 importanceLevel={config.importanceLevel}
+                // ShedSafe refuses an empty salesman, and the person at the keyboard is the honest
+                // default. They can still type somebody else's name.
+                defaultSalesman={session.displayName !== '' ? session.displayName : session.email}
                 canWrite={session.capabilities.includes('quote:write')}
                 onImported={(values) => {
                   // The certified values replace what was typed. Only the ones ShedSafe actually
