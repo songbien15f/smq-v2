@@ -583,8 +583,16 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           building's dimensions and Step 3 negotiates its price; both need the building
           visible. On Options it is the working surface; elsewhere it is a live preview
           with pointer events off.
+
+          **Pinned to the viewport on desktop.** A CSS grid row is as tall as its tallest
+          cell, and the step form beside this one is thousands of pixels tall — so this
+          column was stretched to match it and the canvas inside grew to 934 × 6112.
+          A 3D model drawn into a sheet twelve screens tall is one nobody can see: the
+          camera frames the middle of it and the shed sits in a corner. Sticky plus a
+          viewport height makes the drawing the size of a drawing, and keeps it in view
+          while the form scrolls. Below `lg` the columns stack, so it stays in flow.
         */}
-        <div className="min-h-[320px] min-w-0 lg:min-h-0">
+        <div className="min-h-[320px] min-w-0 lg:sticky lg:top-sq-3 lg:mb-sq-3 lg:h-[calc(100dvh-2rem)] lg:min-h-0">
           <PlanView interactive={step === 'options'} />
         </div>
 

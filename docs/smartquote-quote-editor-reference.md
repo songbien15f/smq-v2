@@ -1262,6 +1262,78 @@ còn wrench để trả focus về.
 
 ---
 
+## 13.3 Báo giá cũ mở ra sửa được — và ba lỗi thật cản nó (2026-11-06)
+
+Yêu cầu: mở một báo giá đã lưu thì phải ra **3 step**, 2D và 3D phải hiện. Đường đi đã có
+(`/quotes/:id/edit` nạp `config` + `pricing` của revision hiện tại); phần lớn là kiểm chứng. Nhưng
+kiểm chứng lộ ra ba lỗi mà chỉ trình duyệt thật mới thấy.
+
+### 1. Cột plan bị CSS grid kéo cao 4892 px
+
+Grid là `grid-cols-[380px_1fr_300px]`; một hàng grid cao bằng **ô cao nhất**, và form step bên trái
+cao 6418 px. Nên cột plan bị kéo theo, và khung vẽ bên trong thành **934 × 6112**.
+
+Hệ quả: 3D vẽ vào một tờ giấy cao mười hai màn hình — camera canh giữa, toà nhà nằm ở một góc, không
+ai thấy. 2D cũng sai tỉ lệ nhưng ít lộ hơn vì Konva tự fit.
+
+**Sửa:** cột plan `lg:sticky lg:top-sq-3 lg:h-[calc(100dvh-2rem)]` — cao bằng viewport và dính khi
+form cuộn. Đo lại: **553 × 836**. Khung 3D đổi từ chiều cao cố định 420 px sang `h-auto` trên desktop,
+để nó lấp đầy cột thay vì nằm trong hộp thư.
+
+### 2. Canvas 3D kẹt ở 300 × 150
+
+R3F đo container qua `react-use-measure`, mà thư viện đó chỉ đọc `getBoundingClientRect` **khi
+`ResizeObserver` gọi nó**. Trong pane nhúng, `ResizeObserver` **không hề bắn** — đo bằng một `<div>`
+trơn: không callback nào, dù đổi `width/height` hay đổi viewport. `rAF` cũng không chạy
+(`setTimeout(100)` nổ sau 921 ms).
+
+Canvas 2D bên cạnh luôn đúng, vì `Render2D` đọc thẳng `clientWidth`/`clientHeight` lúc mount.
+
+**Sửa:** `Render3D` tự đo container giống `Render2D`, rồi **dispatch một `resize` trên `window`** —
+đó chính là đường dự phòng mà `react-use-measure` có sẵn (`window.addEventListener('resize', …)`).
+Không chép lại logic định cỡ của R3F, chỉ đánh thức nó. Đo lại: canvas **670 × 933**, WebGL viewport
+`[0,0,670,838]` khớp.
+
+> `readPixels` trả về một màu duy nhất vì `preserveDrawingBuffer: false` — đó là mặc định đúng của
+> R3F, không phải lỗi. Muốn đọc pixel phải bật cờ đó, và bật chỉ để test là tự làm chậm sản phẩm.
+
+### 3. `env(safe-area-inset-bottom)` trong `calc()` — không có tác dụng phụ
+
+Đã dùng ở `ControlSheet` (§13.2). Không đổi.
+
+### Kiểm chứng
+
+| Việc | Kết quả |
+|---|---|
+| `Q-2026-0006` (2 revision, lưu 02/11) mở ở `/edit` | 3 step, `Q-2026-0006 · revision 2`, nút lưu **bật** |
+| Nạp khách hàng | `Slice Charlie`, `slice.c@example.com` |
+| Step Options | 5 option của báo giá cũ hiện đủ (Skylight, Mezzanine, Awning, Stable, …) |
+| 2D ở cả 3 step | canvas có 11 650 pixel đã vẽ |
+| 3D | canvas 670 × 933, viewport khớp |
+| `Save & next` không bị gate sai | bật, vì báo giá cũ đã có giá |
+
+### Ghi nhận cho sau: `.sqd` cũ **có** toà nhà
+
+Đọc 3 file `.sqd` thật của desktop:
+
+| File | Định dạng | Revision |
+|---|---|---|
+| `VGS@@-00001.sqd` | `aes` | 2 |
+| `mock-test.sqd` | `json` | 1 |
+| `SSA$$-00007.sqd` | `binaryformatter` | 0 — không đọc được, đã có câu từ chối |
+
+Revision AES/JSON có **125 trường**, trong đó `HousePlan` (19 khoá) chứa `BuildingPlan` (Width,
+Height, RoofPitch, Bays, WindRegion, TerrainCategory, FootingType, RoofSheeting, EndWalls, …) và
+`OptionParts` với 15 nhóm option (`RDoorOptions`, `SkylightOptions`, `MezzamineOptions`, …);
+`BuildingParametersData` có Span/Length/Height/RoofPitch; `CustomerData` có 30 trường.
+
+Nghĩa là **import `.sqd` thành báo giá sửa được là khả thi** — màn hình hiện tại cố ý chỉ đọc và báo
+cáo (§ `QuoteFileImport`: dựng thành quote sẽ ghi những con số engine chưa từng tính). Nếu muốn mở
+được file cũ trong editor thì đó là một slice riêng: ánh xạ `HousePlan` → `ShedConfig`, và **tính
+lại giá** bằng sách giá hiện tại thay vì tin `ContractPrice` trong file.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|

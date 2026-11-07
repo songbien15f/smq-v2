@@ -65,6 +65,13 @@ export function PlanView({ interactive = true }: PlanViewProps) {
         className={[
           'min-h-0 flex-1 overflow-hidden rounded-md border border-sq-line bg-white',
           interactive ? '' : 'pointer-events-none',
+          /*
+           * The 3D view keeps a fixed height on a phone — the container there is in flow and
+           * has no height of its own — but on desktop it fills the column, which is now pinned
+           * to the viewport. A fixed 420 px inside a 900 px column would leave the model in a
+           * letterbox with dead space above and below it.
+           */
+          view === '3d' ? 'h-[420px] lg:h-auto' : '',
         ].join(' ')}
         role="img"
         aria-label={
@@ -72,7 +79,6 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             ? `Plan of a ${config.span} by ${config.length} millimetre shed with ${config.openings.length} openings and ${config.options.length} options`
             : `3D view of a ${config.span} by ${config.length} millimetre shed`
         }
-        style={{ height: view === '3d' ? '420px' : undefined }}
       >
         {view === '2d' ? <Render2D /> : <Render3D />}
       </div>
