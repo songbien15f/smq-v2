@@ -1334,6 +1334,62 @@ lại giá** bằng sách giá hiện tại thay vì tin `ContractPrice` trong f
 
 ---
 
+## 13.4 "Lưu quote mới xong, lần sau mở lên sửa không được" — hai lỗi thật (2026-11-06)
+
+Báo cáo từ người vận hành: *"new 1 quote xong > save lại > lần sau mở lên chỉnh sửa tiếp là không
+được à?"*. Đường lưu **vẫn hoạt động** — nhưng có hai lỗi làm nó *trông như* không hoạt động.
+
+### 1. Lưu quote mới xong, URL vẫn là `/quotes/new`
+
+`save()` gọi `router.refresh()` mà không đổi địa chỉ. `quoteId` chỉ nằm trong bộ nhớ của store.
+
+Hệ quả: bấm **F5**, hoặc Back, hoặc đóng tab → form trắng tinh, `firstName` rỗng, không nhãn quote
+number. Quote đã lưu **có** trong DB (`Saved Q-2026-0012 · rev 1` hiện ra), nhưng màn hình nói
+ngược lại. Đây đúng là "lần sau mở lên không được".
+
+**Sửa:** sau lần lưu **đầu tiên** (`quoteId === null`), `router.replace('/quotes/<id>/edit')`.
+`replace` chứ không `push` — form trắng không được là đích của Back sau khi quote đã tồn tại, nếu
+không Back = "vứt cái vừa lưu".
+
+Đo được: `t0=/quotes/new` → `t1=` `/quotes/6e6e9f3e…/edit` → **F5** → vẫn
+`/quotes/6e6e9f3e…/edit`, khách `Url` / `urlfix2@example.com`, nhãn `Q-2026-0014 · revision 1`.
+Trước khi sửa: F5 → `url=/quotes/new`, `firstName=""`.
+
+### 2. Nút ở step 1 ghi "Save & next" nhưng chỉ **điều hướng**
+
+Nút đó `onClick={() => goTo('options')}` — không lưu gì. Nhưng nhãn nói "Save", và dòng chữ ngay
+cạnh nói *"Saves revision 1 and freezes the price shown on the right."* — vì dòng đó mô tả **gate**
+của bước 3, không mô tả nút đang hiện.
+
+Bấm nó, thấy màn hình đổi step, không thấy quote nào trong danh sách → kết luận hợp lý là "lưu không
+được". Đây là lỗi nhãn, không phải lỗi lưu.
+
+**Sửa:** nút đổi thành **"Next: the plan"** / **"Next: cost"**, và dòng dưới nút nói đúng việc:
+- còn trường thiếu → *"N fields still need attention before the next step."*
+- chưa tính giá → *"Calculate the price first."*
+- còn lại → *"The quote is saved on the last step — step 3, Cost and price."*
+
+Dòng mô tả việc lưu (gate) giờ chỉ hiện ở **step 3**, nơi nút Save thật sự ở đó.
+
+### Vòng đời đầy đủ, đã kiểm chứng
+
+| Bước | Kết quả |
+|---|---|
+| New quote → điền đủ → Next → Next | nút đổi nhãn đúng, không còn bẫy |
+| Step 3 → **Save quote** | `Saved Q-2026-0014 · rev 1`, URL đổi sang `/quotes/<id>/edit` |
+| **F5** | form giữ nguyên, `Q-2026-0014 · revision 1` |
+| Mở `/quotes/<id>` → **Edit** | 3 step, khách nạp đúng, nút Save **bật sẵn** |
+| Sửa tên → step 3 → **Save revision** | `Saves revision 2 … Revision 1 stays as it was sent` → `Saved · rev 2` |
+
+### Một điều suýt bị báo sai
+
+`document.getElementById('site-deliveryAcknowledged')` trả `null` khi accordion **Delivery** đang
+đóng — checkbox không có trong DOM. Việc tick của tôi thất bại âm thầm và tôi suýt kết luận "nút
+Save bị khoá oan". Thực ra form đang chờ đúng hai thứ tôi chưa điền: địa chỉ khách và
+acknowledgement. **Kiểm tra một phần tử có tồn tại trước khi kết luận rằng một control bị hỏng.**
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|

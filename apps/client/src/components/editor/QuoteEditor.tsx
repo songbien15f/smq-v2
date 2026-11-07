@@ -400,6 +400,22 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     // quote dirty and offer to save a revision identical to the one just written.
     buildingBaseline.current = JSON.stringify(config);
     setSaved({ number: result.data.quoteNumber, revision: result.data.revision });
+
+    /*
+     * A **first** save moves the screen to the quote's own address.
+     *
+     * It used to stay on `/quotes/new`, with the id only in memory — so a refresh, a Back, or the
+     * browser being closed dropped the operator onto a blank form, and the quote they had just
+     * saved looked lost. Found by saving one and pressing F5: empty form, no quote number. The
+     * editor was working the whole time; the address bar was lying about what was on screen.
+     *
+     * `replace`, not `push`: the blank new-quote form must not be a Back target once the quote
+     * exists, or Back means "throw away what I just saved". A later save of an amendment keeps the
+     * address it already has, and only refreshes the server data behind it.
+     */
+    if (quoteId === null) {
+      router.replace(`/quotes/${result.data.quoteId}/edit`);
+    }
     router.refresh();
   };
 
@@ -537,13 +553,24 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
               )}
 
               {step !== 'cost' ? (
+                /*
+                 * A **navigation** button, not a save — and it used to say "Save & next".
+                 *
+                 * That one word cost a real operator the whole feature: the button was labelled
+                 * "Save & next" while it only moved to the next step, and its adjacent line
+                 * announced "Saves revision 1 and freezes the price" because that line describes
+                 * the *gate*, not this control. Pressing it, seeing the step change with nothing
+                 * saved, and then opening the quote list to find no quote is a reasonable
+                 * conclusion that saving does not work. The label now says what it does, and the
+                 * reason it is disabled says which fields are missing.
+                 */
                 <button
                   type="button"
                   onClick={() => goTo(step === 'details' ? 'options' : 'cost')}
                   disabled={issues.length > 0 || evaluation === null}
                   className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
                 >
-                  {step === 'details' ? 'Save & next' : 'Next: cost'}
+                  {step === 'details' ? 'Next: the plan' : 'Next: cost'}
                 </button>
               ) : (
                 <button
@@ -556,10 +583,27 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                 </button>
               )}
 
-              {gateMessage !== undefined && (
+              {/*
+                The line under the buttons explains whichever one is showing. On the first two
+                steps that is the navigation button, so it names the fields still needed rather
+                than describing a save that cannot happen there.
+              */}
+              {step !== 'cost' ? (
                 <span className="text-sq-micro text-sq-ink-muted" aria-live="polite">
-                  {gateMessage}
+                  {issues.length > 0
+                    ? issues.length === 1
+                      ? 'One field still needs attention before the next step.'
+                      : `${issues.length} fields still need attention before the next step.`
+                    : evaluation === null
+                      ? 'Calculate the price first.'
+                      : `The quote is saved on the last step — step 3, Cost and price.`}
                 </span>
+              ) : (
+                gateMessage !== undefined && (
+                  <span className="text-sq-micro text-sq-ink-muted" aria-live="polite">
+                    {gateMessage}
+                  </span>
+                )
               )}
 
               {saved !== null && (
