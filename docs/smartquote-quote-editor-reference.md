@@ -1691,11 +1691,90 @@ Test: 25 ca trong `legacyPlan.test.ts`, 6 ca màn hình `QuoteFileImport.test.ts
 
 ---
 
+## 13.9 Freight từ delivery scope, và màu trên tài liệu (2026-11-07)
+
+Hai việc còn lại của parity, cộng hai lỗi mà việc đầu tiên làm lộ ra.
+
+### 1. Chọn delivery scope trước đây không có tác dụng gì
+
+Sách giá có 7 scope giao hàng (`delivery_data`) kèm số tiền, và **hai scope trong đó ghi `0`** vì
+desktop không đọc số của chúng — nó tính:
+
+```
+candidate = round50( jobValue × (1 + quoteRate%) × percent / 100 )
+delivery  = max( minimumDollars, candidate )        Quotation.cs:2183–2222
+```
+
+v2 có `deliveryCents` **gõ tay** và `site.deliveryScope` **không ai đọc**: chọn "Delivered to site
+301–400 km" (sách ghi $650) không đổi gì. Nay:
+
+- scope thường → chọn là điền đúng số của sách (có xét `state_value_array` theo bang);
+- hai scope min-fee → **không** điền (số của chúng là % của job, mà bước 1 không biết giá), nhưng
+  select nói rõ *"freight for this scope is the minimum agreed with your distributor — it is set on
+  the Cost step"*, và bước Cost hiện mức tối thiểu kèm cảnh báo khi số gõ vào thấp hơn.
+
+`packages/core/src/domain/delivery.ts` (không phải `lib/pricing/` — xem mục 4). Bốn con số min fee là
+**settings của công ty** (`minimumFees`, mặc định 0 = chưa thoả thuận), sửa ở Settings → *Freight
+minimums*.
+
+**Một khác biệt có chủ ý với desktop:** công thức của nó nhân cả base — gồm engineering và extra
+charges — với `1.1`, tức là **cộng GST lần nữa** lên những khoản mà `price.ts` đã chứng minh (bằng
+một file quote thật) là được lưu **đã gồm GST**. Bản v2 lấy base = giá trị job đã gồm GST
+(`total − delivery`) và không cộng thêm. Ghi ở `KNOWN-DEVIATIONS.md` row 26.
+
+### 2. Tài liệu khách in đủ màu của toà nhà đó
+
+Trước: một dòng `Walls …, roof …, trim …, doors …` — gộp 10 role thành 4. Desktop in **10 tên màu**
+riêng (`QuotationReportHtml.cs:260`). Nay `CustomerDocument.building.colourRows` là danh sách
+`{ label, colour }` theo đúng thứ tự editor, và **chỉ những bề mặt toà nhà thực có**: 5 bề mặt luôn có,
+cộng mỗi loại cửa **đang có**, cộng dividing wall nếu có đặt. Desktop in cả 10 kể cả cửa không tồn tại
+— một dòng về cánh cửa khách không mua.
+
+### 3. Hai lỗi phát hiện khi kiểm
+
+1. **Nút Save ở Settings luôn trả 422.** Form gửi lại nguyên object server trả (`version` nằm trong
+   đó), schema là `.strict()` → *"Unrecognized key: version"* với path `(root)`, nên màn hình báo lỗi
+   và **không tô đỏ field nào**. Không lưu được settings nào cả. Sửa: bỏ `version` khỏi patch.
+2. **Mở một quote đã lưu bị coi là "có thay đổi"** → cảnh báo mất dữ liệu bật khi rời trang dù chưa
+   sửa gì. Hai nguyên nhân, cả hai đã sửa:
+   - `buildingBaseline` lưu `JSON.stringify(initial.config)` **thô**, còn store giữ bản đã
+     `normaliseShedConfig` → hai biểu diễn khác nhau. Nay baseline cũng normalise.
+   - `CostPanel` tự điền đơn giá lao động từ bảng rate khi mount, kể cả trên quote đã lưu → ghi vào
+     `pricing` → fingerprint lệch baseline. Nay chỉ điền khi `quoteId === null` (quote mới).
+
+   Để kiểm được từ ngoài, editor giờ có `data-dirty` và `data-dirty-building` trên phần tử gốc: cờ
+   này chính là thứ guard sẽ dùng. Đo được: mở quote chưa sửa → `false/false`, rời trang **không**
+   hỏi; sửa một field → hỏi.
+
+### 4. `delivery.ts` phải nằm ở `domain/`, không phải `lib/pricing/`
+
+Đặt nó trong `lib/pricing` làm **sập cả client**: barrel `@sq/core/pricing` re-export `publish.ts` và
+`sqliteRuntime.ts` (dùng `node:fs`/`crypto`), nên mọi client component import từ đó kéo `fs` vào bundle
+trình duyệt → *"Can't resolve 'fs'"*, cả app trả 500. `domain/` là tầng cả server và browser đều import
+được; `import type { DeliveryScope }` từ pricing là type-only nên bị xoá khi build.
+
+Bài học: **một hàm thuần nằm trong barrel server-only là một cái bẫy cho client.** Nếu lần sau cần
+dùng chung, đặt ở `domain/` ngay từ đầu.
+
+### Đo trong trình duyệt
+
+| Việc | Kết quả |
+|---|---|
+| Settings → *Freight minimums*, đặt 300 / 10% | lưu được; `GET /settings/rates` trả `distributorDollarCents: 30000, distributorPercent: 10` |
+| Chọn *Delivered to site 301-400 km* | bước Cost: **Delivery = $650.00** (số của sách) |
+| Chọn *Delivered to Distributor* | bước 1 hiện câu chỉ sang Cost; Cost hiện **"minimum of $3,100.00. At $650.00 the company pays the difference."** (`role="alert"`) |
+| Tài liệu khách | `Colours` in `Walls, Roof, Barge and fascia, Downpipes, Gutters` + `Windows`, `Roller doors` — không có `Sliding doors` vì nhà đó không có |
+| Mở quote đã lưu rồi rời trang | **không** cảnh báo (`data-dirty=false`); sửa rồi rời → cảnh báo |
+
+Sau khi đo, cấu hình demo được trả về 0 như lúc đầu — không để lại số bịa trên công ty mẫu.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 966 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import) |
-| `@sq/api` | 247 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route) |
+| `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
+| `@sq/api` | 252 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |

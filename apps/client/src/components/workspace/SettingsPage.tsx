@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Field, Panel } from '@sq/ui';
 import { DEFAULT_PROFILE_ID, FACTORY_PROFILES } from '@sq/core/bom';
+import { NO_MINIMUMS, type FreightMinimums } from '@sq/core/domain';
 import { api } from '@/lib/sq';
 
 interface Assumption {
@@ -24,6 +25,16 @@ interface Assumption {
 }
 
 interface SettingsForm {
+  /**
+   * The version the server last wrote.
+   *
+   * Carried because the GET answers it and the screen shows "Saved as version N" — but it is the
+   * **server's** to assign, so it is stripped from the patch. It used to travel back inside the body,
+   * and the API's schema is `.strict()`: every save answered 422 "Unrecognized key: version" with the
+   * error pinned to `(root)` — which is no field at all, so the screen reported a failure and
+   * highlighted nothing. Settings could not be saved at all.
+   */
+  version: number;
   name: string;
   abn: string | null;
   margin: number | null;
@@ -47,6 +58,13 @@ interface SettingsForm {
     labour: { concreter: number; electrician: number; labourer1: number; labourer2: number };
     defaultCosts: { council: number; engineering: number; rubbish: number; delivery: number; concrete: number };
   } | null;
+  /**
+   * The freight minimums agreed with the distributor and the nominated carrier.
+   *
+   * Cents and percent; the larger of the two applies to a quote whose delivery scope is one of those
+   * two. Zero means nothing was agreed, which is the desktop's own default.
+   */
+  minimumFees: FreightMinimums;
 }
 
 /** The rates, with zeros where nothing has been stored yet. */
@@ -60,6 +78,7 @@ function ratesOrZero(form: SettingsForm): NonNullable<SettingsForm['rates']> {
 }
 
 const EMPTY: SettingsForm = {
+  version: 0,
   name: '',
   abn: null,
   margin: null,
@@ -74,6 +93,7 @@ const EMPTY: SettingsForm = {
   logoText: null,
   terms: [],
   rates: null,
+  minimumFees: NO_MINIMUMS,
 };
 
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; version: number } | { kind: 'failed'; message: string };
@@ -108,10 +128,21 @@ export function SettingsPage() {
     setForm({ ...form, rates: next as SettingsForm['rates'] });
   };
 
-  const save = async (): Promise<void> => {    setState({ kind: 'saving' });
+  /** Set one freight minimum. Dollars arrive from the input; cents are stored. */
+  const setMinimumFees = (next: FreightMinimums): void => {
+    setForm({ ...form, minimumFees: next });
+  };
+
+  const save = async (): Promise<void> => {
+    setState({ kind: 'saving' });
+    /*
+     * `version` stays behind: the server assigns it, and the API's schema refuses a body that carries
+     * a key it does not own. Sending the whole form back is what made every save a 422.
+     */
+    const { version: _version, ...patch } = form;
     const result = await api<{ version: number }>('settings', {
       method: 'PATCH',
-      body: form,
+      body: patch,
     });
     if (result.ok) {
       setState({ kind: 'saved', version: result.data.version });
@@ -311,6 +342,67 @@ export function SettingsPage() {
             })}
           </fieldset>
         </div>
+      </Panel>
+
+      <Panel
+        title="Freight minimums"
+        description="The floor your distributor and nominated carrier charge. Used when a quote's delivery scope is one of those two."
+      >
+        <div className="grid gap-sq-3 sm:grid-cols-2">
+          {(
+            [
+              ['distributor', 'Distributor'],
+              ['carrier', 'Nominated carrier'],
+            ] as const
+          ).map(([who, label]) => {
+            const dollarKey = who === 'distributor' ? 'distributorDollarCents' : 'carrierDollarCents';
+            const percentKey = who === 'distributor' ? 'distributorPercent' : 'carrierPercent';
+            return (
+              <fieldset key={who} className="flex flex-col gap-sq-2">
+                <legend className="text-sq-micro font-medium text-sq-ink">{label}</legend>
+                <label className="flex items-center justify-between gap-sq-2 text-sq-body">
+                  <span>Minimum</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={form.minimumFees[dollarKey] / 100}
+                    onChange={(e) =>
+                      setMinimumFees({
+                        ...form.minimumFees,
+                        [dollarKey]: Math.round(Math.max(0, Number(e.target.value)) * 100),
+                      })
+                    }
+                    aria-label={`${label} minimum in dollars`}
+                    className="min-h-9 w-28 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-right text-sq-body"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-sq-2 text-sq-body">
+                  <span>or % of the job</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={form.minimumFees[percentKey]}
+                    onChange={(e) =>
+                      setMinimumFees({
+                        ...form.minimumFees,
+                        [percentKey]: Math.min(100, Math.max(0, Number(e.target.value))),
+                      })
+                    }
+                    aria-label={`${label} minimum as a percentage`}
+                    className="min-h-9 w-28 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-right text-sq-body"
+                  />
+                </label>
+              </fieldset>
+            );
+          })}
+        </div>
+        <p className="mt-sq-2 text-sq-micro text-sq-ink-muted">
+          The larger of the two is what a quote is held to, rounded to the nearest $50. Zero means nothing
+          was agreed — the freight stays whatever the operator types.
+        </p>
       </Panel>
 
       <Panel title="Payment details" description="Printed on the quote's payment schedule.">

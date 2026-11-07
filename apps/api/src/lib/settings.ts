@@ -15,6 +15,7 @@
 
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
+import { NO_MINIMUMS, type FreightMinimums } from '@sq/core/domain';
 
 /** The company's own rates, from the desktop's Administration screen. Cents. */
 export interface CompanyRates {
@@ -35,6 +36,14 @@ export interface CompanySettings {
    * table the operator types every line by hand.
    */
   rates: CompanyRates | null;
+  /**
+   * The freight minimums agreed with the distributor and the nominated carrier.
+   *
+   * Never `null`: zero is a meaningful value — "nothing agreed" — and it is the desktop's own default
+   * (`MAllSetting.cs:252`). Two of the book's seven delivery scopes have no figure of their own
+   * precisely because the desktop computes them from these numbers (`pricing/delivery.ts`).
+   */
+  minimumFees: FreightMinimums;
   /** The company's own margin, overriding the book's table for **every** building family. */
   margin: number | null;
   /** Deposit and progress as percentages. GST is not here: it is 10% by law. */
@@ -139,6 +148,7 @@ export function normaliseSettings(
     name: text('name', fallbackName),
     abn: orNull('abn'),
     rates: readRates(raw),
+    minimumFees: readMinimumFees(value),
     // A margin outside 1–10 is a typo, not a strategy. Refused by becoming the default rather
     // than by throwing: a company with a bad stored value should still be able to open a quote.
     margin: margin !== null && margin >= 1 && margin <= 10 ? margin : null,
@@ -192,6 +202,30 @@ function readRates(input: Record<string, unknown> | null): CompanyRates | null {
   if (values.some((value) => value === null)) return null;
 
   return read as CompanyRates;
+}
+
+/**
+ * Read the freight minimums, tolerating a blob written before the block existed.
+ *
+ * Absent is `NO_MINIMUMS`, not "unset": a company that has never configured a minimum has none, which
+ * is exactly what zero means here. Nothing downstream has to distinguish the two.
+ */
+function readMinimumFees(raw: Record<string, unknown>): FreightMinimums {
+  const block = raw.minimumFees;
+  if (block === null || typeof block !== 'object' || Array.isArray(block)) return NO_MINIMUMS;
+
+  const fees = block as Record<string, unknown>;
+  const cents = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : 0;
+  const percent = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 0;
+
+  return {
+    distributorDollarCents: cents(fees.distributorDollarCents),
+    distributorPercent: percent(fees.distributorPercent),
+    carrierDollarCents: cents(fees.carrierDollarCents),
+    carrierPercent: percent(fees.carrierPercent),
+  };
 }
 
 /** A percentage inside 0–100, or the fallback when the stored value is nonsense. */
@@ -260,6 +294,7 @@ export async function saveSettings(
           name: next.name,
           abn: next.abn,
           rates: next.rates,
+          minimumFees: next.minimumFees,
           margin: next.margin,
           depositPct: next.depositPct,
           progressPct: next.progressPct,

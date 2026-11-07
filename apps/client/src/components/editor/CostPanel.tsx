@@ -30,7 +30,8 @@ import type { AdditionLine } from '@sq/core/domain';
 import { Button, money, percent, Panel, StatusPill } from '@sq/ui';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
-import { useCompanyRates } from '@/hooks/useCompanyRates';
+import { useCompanyPricing } from '@/hooks/useCompanyRates';
+import { freightScope, minimumFreightCents } from '@sq/core/domain';
 import { MoneyField } from './MoneyField';
 import { deriveStages } from './stages';
 
@@ -62,7 +63,37 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
   const addCharge = useShedStore((state) => state.addCharge);
   const patchCharge = useShedStore((state) => state.patchCharge);
   const removeCharge = useShedStore((state) => state.removeCharge);
+  const site = useDraftStore((state) => state.site);
+  /*
+   * Whether this is a saved quote, read at the moment the effect runs.
+   *
+   * A selector, not `getState()` in the effect body: the store is a module singleton whose value at
+   * mount is what matters here, and subscribing keeps the dependency honest.
+   */
+  const quoteId = useDraftStore((state) => state.quoteId);
+  const { rates, minimumFees } = useCompanyPricing();
   const [showDerivation, setShowDerivation] = useState(false);
+
+  /*
+   * What the chosen delivery scope is held to.
+   *
+   * The base is `total − delivery`, which is the GST-inclusive value of the job without freight and is
+   * available to every role — `kitCents` is only sent to a `cost:margin` holder, and an estimator is
+   * exactly who types the freight. Subtract rather than recompute, so the minimum moves with the quote
+   * rate the operator set but never with the delivery figure they are editing.
+   */
+  const freightKind = freightScope(site.deliveryScope);
+  const freightMinimum =
+    freightKind === null || price === null
+      ? 0
+      : minimumFreightCents({
+          scope: freightKind,
+          minimums: minimumFees,
+          baseCents: Math.max(0, price.totalCents - price.deliveryCents),
+          quoteRatePct: pricing.quoteRatePct,
+        });
+  const heldToMinimum = freightMinimum > 0;
+  const belowMinimum = heldToMinimum && pricing.deliveryCents < freightMinimum;
 
   /*
    * Additions: the desktop's itemised block. Labour and equipment carry `+GST`; the fees
@@ -77,15 +108,20 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
   };
 
   /*
-   * Fill the labour rates from the company's table.
+   * Fill the labour rates from the company's table — **on a new quote only**.
    *
    * The desktop multiplied hours by an Administration rate; here the line's unit price starts at
    * zero, and a rate the company has set is used instead of asking the operator to remember it.
    * Only zero prices are touched, so a figure the operator typed is never overwritten.
+   *
+   * A **saved** quote is left exactly as it was saved. Filling it here looked harmless and was not:
+   * the write changes `pricing`, the draft's fingerprint stops matching its baseline, and the quote
+   * opened "with unsaved changes" that nobody had made — the unsaved-changes guard then fired on the
+   * first click away from a page the operator had only looked at. It also quietly changed the numbers
+   * a re-save would freeze, which is a decision, not a default.
    */
-  const rates = useCompanyRates();
   useEffect(() => {
-    if (rates === null) return;
+    if (rates === null || quoteId !== null) return;
     const byId: Record<string, number> = {
       concreter: rates.labour.concreter,
       electrician: rates.labour.electrician,
@@ -104,7 +140,7 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
         : line;
     });
     setPricing({ additionLines: next, additionsCents: additionsTotalCents(next) });
-  }, [rates, additionLines, setPricing]);
+  }, [rates, additionLines, setPricing, quoteId]);
 
   if (price === null) {
     return (
@@ -295,13 +331,30 @@ export function CostPanel({ price, stale, calculating, onRecalculate, canSeeMarg
 
       <Panel title="Charges">
         <div className="grid gap-sq-3 sm:grid-cols-2">
-          <MoneyField
-            id="cost-delivery"
-            label="Delivery"
-            valueCents={pricing.deliveryCents}
-            onChange={(cents) => setPricing({ deliveryCents: cents })}
-            hint="Delivery is typed, not looked up: what a truck costs depends on the load and the road."
-          />
+          <div className="flex flex-col gap-sq-1">
+            <MoneyField
+              id="cost-delivery"
+              label="Delivery"
+              valueCents={pricing.deliveryCents}
+              onChange={(cents) => setPricing({ deliveryCents: cents })}
+              hint={
+                heldToMinimum
+                  ? undefined
+                  : 'Delivery is typed, not looked up: what a truck costs depends on the load and the road.'
+              }
+            />
+            {heldToMinimum && (
+              <p
+                id="cost-delivery-minimum"
+                role={belowMinimum ? 'alert' : undefined}
+                className={`text-sq-micro ${belowMinimum ? 'text-sq-danger' : 'text-sq-ink-muted'}`}
+              >
+                {belowMinimum
+                  ? `This delivery scope has a minimum of ${money(freightMinimum)}. At ${money(pricing.deliveryCents)} the company pays the difference.`
+                  : `The scope “${site.deliveryScope}” is held to a minimum of ${money(freightMinimum)}.`}
+              </p>
+            )}
+          </div>
           <MoneyField
             id="cost-engineering"
             label="Engineering"

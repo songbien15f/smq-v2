@@ -70,6 +70,21 @@ const settingsPatch = z
         }),
       })
       .nullable(),
+    /**
+     * The freight minimums agreed with the distributor and the nominated carrier.
+     *
+     * A dollar floor **and** a percentage of the job; the larger of the two is what the quote is held
+     * to (`@sq/core/pricing` `delivery.ts`). Zero means nothing was agreed, which is the desktop's
+     * default rather than an error.
+     */
+    minimumFees: z
+      .object({
+        distributorDollarCents: z.number().int().min(0).max(10_000_000),
+        distributorPercent: z.number().min(0).max(100),
+        carrierDollarCents: z.number().int().min(0).max(10_000_000),
+        carrierPercent: z.number().min(0).max(100),
+      })
+      .strict(),
   })
   .partial()
   .strict();
@@ -123,7 +138,12 @@ export function registerSettings(
     if (session === null) return;
 
     const settings = await loadSettings(db, session.tenantId as string);
-    return sendOk(reply, { rates: settings.rates });
+    /*
+     * The freight minimums travel with the rates because an estimator prices the freight: without them
+     * the Delivery field cannot say what the chosen scope is held to, and the one place that needs the
+     * number is the Cost step.
+     */
+    return sendOk(reply, { rates: settings.rates, minimumFees: settings.minimumFees });
   });
 
   app.patch('/settings', async (request, reply) => {

@@ -19,11 +19,60 @@
  */
 
 import { buildPlanGeometry } from '@/domain/plan';
-import type { ShedConfig } from '@/domain/types';
+import type { ShedColors, ShedConfig } from '@/domain/types';
+import { COLOUR_ROLES } from '@/domain/colors';
 import { assumptionsFor, type AssumptionNote } from './assumptions';
 import { colourLabel } from './colours';
 import { customerNoteFor } from './customerNotes';
 import type { FrozenRevision } from './types';
+
+/**
+ * The name a customer reads for each colour role.
+ *
+ * "Downpipes" and "Barge and fascia" rather than the code's `downpipe`/`barge`: this sheet is read by
+ * the person paying for the shed, and it is also what a supplier builds from.
+ */
+const COLOUR_LABEL: Record<keyof ShedColors, string> = {
+  wall: 'Walls',
+  roof: 'Roof',
+  barge: 'Barge and fascia',
+  downpipe: 'Downpipes',
+  gutter: 'Gutters',
+  window: 'Windows',
+  paDoor: 'PA doors',
+  rollerDoor: 'Roller doors',
+  slidingDoor: 'Sliding doors',
+  dividingWall: 'Dividing wall',
+};
+
+/**
+ * The colours a customer document prints, in the order the editor shows them.
+ *
+ * The five surfaces a shed always has, plus each opening kind **the building actually has**, plus the
+ * dividing wall when one is placed. The desktop printed all ten regardless, so a quote with no roller
+ * door still read "Roller door: Monument" — a line about a door nobody is buying, in a document a
+ * customer reads as the list of what they get.
+ */
+function colourRows(config: ShedConfig): { label: string; colour: string }[] {
+  const openings = new Set(config.openings.map((opening) => opening.type));
+  const used: Record<keyof ShedColors, boolean> = {
+    wall: true,
+    roof: true,
+    barge: true,
+    downpipe: true,
+    gutter: true,
+    window: openings.has('window'),
+    paDoor: openings.has('pa_door'),
+    rollerDoor: openings.has('roller_door'),
+    slidingDoor: openings.has('sliding_door'),
+    dividingWall: config.options.some((option) => option.kind === 'dividing_wall'),
+  };
+
+  return COLOUR_ROLES.filter((role) => used[role]).map((role) => ({
+    label: COLOUR_LABEL[role],
+    colour: colourLabel(config.colors[role]),
+  }));
+}
 
 /** What a customer document may contain. Nothing else exists in this type. */
 export interface CustomerDocument {
@@ -67,7 +116,8 @@ export interface CustomerDocument {
     terrainCategory: number;
     importanceLevel: number;
     stateCode: string;
-    colours: { wall: string; roof: string; trim: string; door: string };
+    /** The surfaces this building has, in the order the editor shows them. */
+    colourRows: { label: string; colour: string }[];
   };
   inclusions: string[];
   price: {
@@ -293,15 +343,7 @@ export function toCustomerDocument(revision: FrozenRevision): CustomerDocument {
       terrainCategory: config.terrainCategory,
       importanceLevel: config.importanceLevel,
       stateCode: config.stateCode,
-      colours: {
-        wall: colourLabel(config.colors.wall),
-        roof: colourLabel(config.colors.roof),
-        // The document template still names these two rows "trim" and "door".
-        // They map onto the roles the customer actually sees: the barge/fascia
-        // and the doors-and-windows colour.
-        trim: colourLabel(config.colors.barge),
-        door: colourLabel(config.colors.rollerDoor),
-      },
+      colourRows: colourRows(config),
     },
     inclusions: inclusions(config),
     price: {

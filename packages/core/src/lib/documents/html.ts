@@ -223,7 +223,10 @@ ${row('Length', metres(building.lengthMm))}
 ${row('Wall height', metres(building.heightMm))}
 ${row('Roof pitch', `${building.pitchDeg}°`)}
 ${row('Bays', String(building.bays))}
-${row('Colours', `Walls ${building.colours.wall}, roof ${building.colours.roof}, trim ${building.colours.trim}, doors ${building.colours.door}`)}
+
+<h2>Colours</h2>
+${building.colourRows.map((entry) => row(entry.label, entry.colour)).join('\n')}
+<p class="note">Every surface is painted to order, so the colours are part of the specification. The names are the manufacturer&rsquo;s own.</p>
 
 <h2>Inclusions</h2>
 <ul>

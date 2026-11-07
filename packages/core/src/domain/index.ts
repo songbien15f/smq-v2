@@ -3,6 +3,7 @@ export * from "./bays";
 export * from "./charges";
 export * from "./colors";
 export * from "./defaults";
+export * from "./delivery";
 export * from "./fallbackParser";
 export * from "./jsonSchema";
 export * from "./options";

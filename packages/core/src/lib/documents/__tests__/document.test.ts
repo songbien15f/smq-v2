@@ -146,6 +146,43 @@ describe('the projection', () => {
     expect(html).not.toMatch(/#bdbfba/);
   });
 
+  it('prints a colour row for every surface the building actually has', () => {
+    const document = toCustomerDocument(revision());
+    const labels = document.building.colourRows.map((entry) => entry.label);
+
+    // The five surfaces a shed always has...
+    expect(labels).toEqual(
+      expect.arrayContaining(['Walls', 'Roof', 'Barge and fascia', 'Downpipes', 'Gutters']),
+    );
+    // ...plus the two opening kinds this building has.
+    expect(labels).toContain('Roller doors');
+    expect(labels).toContain('Windows');
+  });
+
+  it('does not print a colour for an opening the building does not have', () => {
+    // The desktop printed all ten roles regardless: a quote with no sliding door still read
+    // "Sliding door: Monument", which a customer reads as something they are paying for.
+    const document = toCustomerDocument(revision());
+    const labels = document.building.colourRows.map((entry) => entry.label);
+
+    expect(labels).not.toContain('Sliding doors');
+    expect(labels).not.toContain('PA doors');
+    expect(labels).not.toContain('Dividing wall');
+  });
+
+  it('prints the dividing wall colour only when there is a dividing wall', () => {
+    const base = revision();
+    const document = toCustomerDocument({
+      ...base,
+      config: normaliseShedConfig({
+        ...base.config,
+        options: [{ id: 'dw-1', kind: 'dividing_wall', axis: 'x', at: 4000, height: 3000 }],
+      }),
+    });
+
+    expect(document.building.colourRows.map((entry) => entry.label)).toContain('Dividing wall');
+  });
+
   it('renders the plan from the revision, with its openings', () => {
     const document = toCustomerDocument(revision());
 

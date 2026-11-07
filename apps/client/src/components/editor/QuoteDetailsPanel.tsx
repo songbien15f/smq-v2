@@ -24,6 +24,7 @@ import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
+import { deliveryForScope, freightScope } from '@sq/core/domain';
 import type { DisplayUnit, ShedColors, ShedConfig } from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
@@ -32,6 +33,7 @@ import type { DraftIssue } from './validation';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
 import { useCatalogue } from '@/hooks/useCatalogue';
+import { useCompanyPricing } from '@/hooks/useCompanyRates';
 
 /** A group that can be collapsed, remembering nothing between visits on purpose. */
 function Group({
@@ -117,6 +119,43 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
   const setPricing = useDraftStore((state) => state.setPricing);
   const { catalogue } = useCatalogue();
   const deliveryScopes = catalogue?.deliveryScopes ?? [];
+  const { minimumFees } = useCompanyPricing();
+  /* The state selects this state's freight figure from the book; read it reactively, not once. */
+  const stateCode = useShedStore((state) => state.config.stateCode);
+
+  /*
+   * Picking a delivery scope fills the freight the book states for it.
+   *
+   * This is the half of the desktop's behaviour that was missing entirely: the book lists a figure per
+   * scope ("Delivered to site 301-400 km" is $650), and choosing the scope changed nothing, so the
+   * operator had to go and look the number up.
+   *
+   * The two minimum-fee scopes are **skipped on purpose** — their figure is a percentage of the job,
+   * and the job's value is not known on this step. `baseCents: 0` would compute a minimum of zero, so
+   * the suggestion is only applied when it came from the book. Those two are handled on the Cost step,
+   * where the price is in hand, and the sentence below the select says so.
+   */
+  const chooseDeliveryScope = (value: string): void => {
+    const suggestion = deliveryForScope({
+      scope: value,
+      stateCode,
+      scopes: deliveryScopes,
+      minimums: minimumFees,
+      baseCents: 0,
+      quoteRatePct: pricing.quoteRatePct,
+    });
+    if (suggestion !== null && suggestion.kind === 'book') {
+      setPricing({ deliveryCents: suggestion.cents });
+    }
+  };
+
+  const scopeFreightKind = freightScope(site.deliveryScope);
+  const minimumsConfigured =
+    minimumFees.distributorDollarCents > 0 ||
+    minimumFees.distributorPercent > 0 ||
+    minimumFees.carrierDollarCents > 0 ||
+    minimumFees.carrierPercent > 0;
+  const minimumHeld = scopeFreightKind !== null && minimumsConfigured;
 
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
   const countIn = (paths: string[]): number =>
@@ -354,14 +393,31 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
           onChange={(event) => setSite({ deliveryAddress: event.target.value })}
         />
         {deliveryScopes.length > 0 ? (
-          <SelectField
-            id="site-deliveryScope"
-            label="Delivery scope"
-            value={site.deliveryScope}
-            options={deliveryScopes.map((scope) => ({ value: scope.name, label: scope.name }))}
-            onChange={(value) => setSite({ deliveryScope: value })}
-            hint="From this company's price book."
-          />
+          <>
+            <SelectField
+              id="site-deliveryScope"
+              label="Delivery scope"
+              value={site.deliveryScope}
+              options={deliveryScopes.map((scope) => ({ value: scope.name, label: scope.name }))}
+              onChange={(value) => {
+                setSite({ deliveryScope: value });
+                chooseDeliveryScope(value);
+              }}
+              hint="From this company's price book."
+            />
+            {/*
+              The two minimum-fee scopes carry no figure of their own in the book, so picking one
+              changes nothing here — the freight is computed from the agreed minimum on the Cost step.
+              Saying so is the difference between "the select is broken" and "the number is over there".
+            */}
+            {minimumHeld && (
+              <p className="text-sq-micro text-sq-ink-muted">
+                Freight for this scope is the minimum agreed with your{' '}
+                {freightScope(site.deliveryScope) === 'carrier' ? 'nominated carrier' : 'distributor'}. It is
+                set on the Cost step.
+              </p>
+            )}
+          </>
         ) : (
           <Field
             id="site-deliveryScope"

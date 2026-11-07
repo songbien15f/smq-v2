@@ -189,9 +189,17 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   /*
    * Opening a saved quote sets its baseline, and so does a later `initial` — the server re-render
    * after a save carries the revision it just wrote.
+   *
+   * **Normalised, not raw.** `applyConfig` runs the config through `normaliseShedConfig`, so comparing
+   * the live config against the *stored* JSON compared two different representations. They differ
+   * whenever the store repairs anything the snapshot left alone — and the symptom was a saved quote
+   * that was "dirty" the moment it opened: the unsaved-changes guard fired on a page nobody had
+   * touched, which is how a warning stops being read.
    */
   useEffect(() => {
-    if (initial !== undefined && opened.current) buildingBaseline.current = JSON.stringify(initial.config);
+    if (initial !== undefined && opened.current) {
+      buildingBaseline.current = JSON.stringify(normaliseShedConfig(initial.config));
+    }
   }, [initial]);
 
   const issues = useMemo(
@@ -446,8 +454,20 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           : `Saves revision ${expectedRev + 1} and freezes the price on the right. Revision ${expectedRev} stays as it was sent.`
         : gate.reasons[0];
 
+  /*
+   * `data-dirty` is what the unsaved-changes guard is about to decide, on the element it protects.
+   *
+   * The guard is a `window.confirm` on the way out — invisible until somebody tries to leave, which
+   * made "the warning fired on a page I only looked at" unfalsifiable from outside the component. Two
+   * flags because the halves are independent: a change to the building is a different bug from a
+   * change to the draft, and only the pair says which one moved.
+   */
   return (
-    <div className="flex min-h-dvh flex-col bg-sq-ground">
+    <div
+      className="flex min-h-dvh flex-col bg-sq-ground"
+      data-dirty={anyChange ? 'true' : 'false'}
+      data-dirty-building={buildingDirty ? 'true' : 'false'}
+    >
       {/*
         The editor's own shortcuts, above the steps.
 
