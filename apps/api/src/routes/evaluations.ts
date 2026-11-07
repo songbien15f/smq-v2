@@ -33,6 +33,7 @@ import { profileById } from '@sq/core/bom';
 import type { PriceInput } from '@sq/core/pricing';
 import { isEmptyOverrideSet, withOverrides } from '@sq/core/pricing';
 import { normaliseShedConfig } from '@sq/core/domain';
+import { freightScope, minimumFreightCents, type FreightMinimums } from '@sq/core/domain';
 import { parseBody, sendFail, sendOk } from '../lib/http.js';
 import { recordUsage } from '../lib/usage.js';
 import { loadOverrides } from '../lib/priceOverrides.js';
@@ -472,6 +473,28 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       );
     }
 
+    /*
+     * Refuse a delivery below the freight minimum the chosen scope is held to.
+     *
+     * The Cost step already says this, in red, beside the figure — and a warning on a screen is not a
+     * rule: the same request can come from anything that speaks to the API, and an operator who clicks
+     * past the sentence issues a quote whose freight the company pays out of its margin. The minimum is
+     * a term of trade with the distributor, so it is enforced where the money is frozen.
+     *
+     * The base is `total − delivery`, the GST-inclusive value of the job without freight, taken from
+     * the **evaluation** rather than from the request so that what is checked is what is about to be
+     * saved.
+     */
+    const freightMinimum = minimumFreightFor(settings.minimumFees, body.site.deliveryScope, price);
+    if (freightMinimum !== null && price.deliveryCents < freightMinimum) {
+      return sendFail(
+        reply,
+        'validation_failed',
+        `“${body.site.deliveryScope}” is held to a minimum freight of ${dollars(freightMinimum)}. This quote carries ${dollars(price.deliveryCents)} — the difference is freight the company would pay. Raise the delivery figure, or choose a different delivery scope.`,
+        [{ path: 'cost-delivery', message: `Minimum for this scope is ${dollars(freightMinimum)}.` }],
+      );
+    }
+
     try {
       const result = await db.transaction(async (tx) => {
         let quoteId = body.quoteId;
@@ -767,4 +790,34 @@ async function upsertCustomer(
     ],
   );
   return id;
+}
+
+/** `$1,234.56`, for a message a person reads. */
+function dollars(cents: number): string {
+  return `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * The freight minimum the quote's delivery scope is held to, or `null` when it is held to none.
+ *
+ * Three ways to answer `null`, and they mean different things: the scope is an ordinary distance
+ * band (the book states a figure, which the operator typed), no minimum has been agreed with the
+ * distributor, or the scope is empty. In every one of them the delivery figure is the operator's to
+ * set, so the save is not the place to argue about it.
+ */
+function minimumFreightFor(
+  minimums: FreightMinimums,
+  scope: string | undefined,
+  price: PriceView,
+): number | null {
+  const kind = freightScope(scope ?? '');
+  if (kind === null) return null;
+
+  const minimum = minimumFreightCents({
+    scope: kind,
+    minimums,
+    baseCents: Math.max(0, price.totalCents - price.deliveryCents),
+    quoteRatePct: price.quoteRatePct,
+  });
+  return minimum > 0 ? minimum : null;
 }

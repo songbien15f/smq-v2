@@ -17,9 +17,11 @@
     "install:company": "pnpm --filter @sq/api install:company",
     "publish-book": "pnpm --filter @sq/api publish-book",
     "seats:release": "pnpm --filter @sq/api seats:release",
-    "build:inc": "pnpm --filter @sq/core build:inc && pnpm --filter @sq/contracts build:inc"
+    "build:inc": "pnpm --filter @sq/core build:inc && pnpm --filter @sq/contracts build:inc",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/node": "26.6.4",
     "rimraf": "6.1.2",
     "turbo": "2.11.10",

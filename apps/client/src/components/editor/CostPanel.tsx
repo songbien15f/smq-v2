@@ -30,7 +30,7 @@ import type { AdditionLine } from '@sq/core/domain';
 import { Button, money, percent, Panel, StatusPill } from '@sq/ui';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
-import { useCompanyPricing } from '@/hooks/useCompanyRates';
+import { useCompanyPricing } from '@/hooks/useCompanyPricing';
 import { freightScope, minimumFreightCents } from '@sq/core/domain';
 import { MoneyField } from './MoneyField';
 import { deriveStages } from './stages';

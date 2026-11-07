@@ -1768,16 +1768,50 @@ dùng chung, đặt ở `domain/` ngay từ đầu.
 
 Sau khi đo, cấu hình demo được trả về 0 như lúc đầu — không để lại số bịa trên công ty mẫu.
 
+### 13.10 Smoke Playwright — vì unit test không nhìn thấy ba lỗi đó
+
+Ngày 2026-11-07 ba lỗi đã ship trong khi **988 + 256 + 50 test vẫn xanh**: Save Settings trả 422 vì
+client gửi lại `version`; quote vừa mở bị coi là dirty; `@sq/core/pricing` kéo `node:fs` vào bundle
+làm sập cả client. Cả ba chỉ hiện khi **bấm**, và cả ba lọt qua test render một component với
+dependency mock. Nên có `e2e/` — 7 test, 18 giây.
+
+```
+pnpm dev          # client 3061 + API 3060
+pnpm test:e2e
+```
+
+**Chạy trên app thật**, không mock: trình duyệt → bridge same-origin → API → Postgres. Dùng
+`channel: 'chrome'` (Chrome có sẵn, cùng binary PDF renderer cần) nên **không cần `playwright install`**
+và chạy được offline.
+
+| # | Luồng | Bắt được lỗi gì |
+|---|---|---|
+| setup | đăng nhập bằng company code + username + password, lưu session | 3 field đúng thứ tự; **403 "hết seat" phải báo là hết seat**, không phải sai mật khẩu |
+| 1 | tạo quote → thấy giá → tick delivery acknowledgement → 2 bước → **Save** | URL phải đổi sang `/quotes/<id>/edit` (lỗi 2026-11-06: lưu xong URL vẫn `/quotes/new`); nút step 1–2 là **điều hướng**, không phải lưu |
+| 2 | mở lại quote: khách còn đó, 3 step, plan vẽ, `data-dirty=false` | lỗi "mở quote ra là mất dữ liệu" và lỗi dirty giả |
+| 3 | Settings → đặt minimum → Save → `Saved as version N` (rồi trả về 0) | lỗi 422 `Unrecognized key: version` |
+| 4 | hộp Send: 4 mode, To đã điền, chọn engineering → POST bị **chặn** rồi đọc body | không gửi mail thật, nhưng chứng minh `mode` đi đúng |
+| 5 | quote chưa sửa rời trang **không** hỏi; sửa rồi rời **phải** hỏi | cảnh báo mất dữ liệu — cả hai chiều |
+
+**Một session cho cả suite.** Seat gắn với *session*, không với người: mỗi test một context là mỗi
+test một seat, 6 test ăn 6/5 seat và suite tự chặn chính nó ở lần chạy thứ hai — đã xảy ra thật. Nên
+`setup` đăng nhập một lần, lưu cookie vào `e2e/.auth/state.json` (git-ignored), mọi test dùng lại, và
+`teardown` **đăng xuất** ở cuối. Đo sau 2 lần chạy liên tiếp: `tenant_seats` = 0, session sống = 0.
+
+Suite **có ghi** vào DB dev: mỗi lần chạy thêm một quote "E2E Smoke" và một version settings. Đó là
+chủ ý — smoke mà không ghi được gì thì không chứng minh được save.
+
 ---
 
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 252 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums) |
+| `@sq/api` | 256 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
+| `e2e` (Playwright) | 7 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, sign out) — needs `pnpm dev` |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

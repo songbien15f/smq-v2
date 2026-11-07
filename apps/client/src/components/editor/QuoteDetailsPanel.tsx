@@ -33,7 +33,7 @@ import type { DraftIssue } from './validation';
 import { useDraftStore } from '@/store/useDraftStore';
 import { useShedStore } from '@/store/useShedStore';
 import { useCatalogue } from '@/hooks/useCatalogue';
-import { useCompanyPricing } from '@/hooks/useCompanyRates';
+import { useCompanyPricing } from '@/hooks/useCompanyPricing';
 
 /** A group that can be collapsed, remembering nothing between visits on purpose. */
 function Group({
