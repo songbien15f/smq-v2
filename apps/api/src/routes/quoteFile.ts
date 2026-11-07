@@ -20,13 +20,23 @@
  * A `.sqd` carries a whole building the desktop computed, including prices from a book this build
  * may not have. Importing it as a *quote* would record figures the engine never produced. So the
  * import answers with what the file contains — its revisions, quote number, company and the money
- * the file states — and leaves the decision to a person. Refusing a `BinaryFormatter` file with an
- * explanation is part of that: a half-read quote is worse than a refusal.
+ * the file states — **plus the building converted into this build's vocabulary** (§ `legacyPlan`),
+ * and leaves the decision to a person. Refusing a `BinaryFormatter` file with an explanation is part
+ * of that: a half-read quote is worse than a refusal.
+ *
+ * The converted building is not saved here. It travels to the editor, which prices it from the
+ * current book and saves whatever the operator accepts — so the revision's `engine_version` and
+ * `price_book_hash` always describe a calculation that happened.
  */
 
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
-import { readQuoteFileBytes, writeQuoteFile, type WritableRevision } from '@sq/core/quoteFile';
+import {
+  readNewestLegacyPlan,
+  readQuoteFileBytes,
+  writeQuoteFile,
+  type WritableRevision,
+} from '@sq/core/quoteFile';
 import { parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 
@@ -172,6 +182,13 @@ export function registerQuoteFile(app: FastifyInstance, db: Db): void {
         balance: revision.QuoteBalance ?? null,
         lastEdited: revision.QuoteLastEdited ?? null,
       })),
+      /*
+       * The building, converted into this build's vocabulary, or `null` when the newest revision that
+       * has one is unreadable. `dropped` and `assumed` are part of the answer rather than a log: the
+       * screen has to show them before the operator opens the building, because a skylight this build
+       * did not convert is a shed quoted without its skylight.
+       */
+      building: readNewestLegacyPlan(file.revisions),
     });
   });
 }

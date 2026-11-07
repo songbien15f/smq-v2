@@ -1389,10 +1389,9 @@ Height, RoofPitch, Bays, WindRegion, TerrainCategory, FootingType, RoofSheeting,
 `OptionParts` với 15 nhóm option (`RDoorOptions`, `SkylightOptions`, `MezzamineOptions`, …);
 `BuildingParametersData` có Span/Length/Height/RoofPitch; `CustomerData` có 30 trường.
 
-Nghĩa là **import `.sqd` thành báo giá sửa được là khả thi** — màn hình hiện tại cố ý chỉ đọc và báo
-cáo (§ `QuoteFileImport`: dựng thành quote sẽ ghi những con số engine chưa từng tính). Nếu muốn mở
-được file cũ trong editor thì đó là một slice riêng: ánh xạ `HousePlan` → `ShedConfig`, và **tính
-lại giá** bằng sách giá hiện tại thay vì tin `ContractPrice` trong file.
+Nghĩa là **import `.sqd` thành báo giá sửa được là khả thi** — **đã làm**, xem §13.8. Bốn file
+`.sqd` khác trong `smq-package-smartquote/data` đều là `BinaryFormatter`, nên dữ liệu thật để thử chỉ có
+hai file đọc được ở trên và cả hai gần như trống (một cửa sổ, một dòng catalogue).
 
 ---
 
@@ -1593,14 +1592,113 @@ Ba dòng cộng đúng đến từng xu vì `beforeAdditionsCents = contract −
 
 ---
 
+## 13.8 Mở file `.sqd` cũ thành quote sửa được (2026-11-07)
+
+Trước đây màn hình `quotes/import` chỉ **đọc và báo cáo**. Nay nó dựng toà nhà trong file thành một
+building của v2, đưa sang editor, và **engine tính lại giá** — đúng yêu cầu *"file quote cũ cũng có
+thể mở ra chỉnh sửa được, mở ra là 3 step, có load được 2D/3D"*.
+
+### Đường đi
+
+```
+.sqd (bytes) ─ readQuoteFileBytes ─► RawRevision
+                 │
+                 ├─ readNewestLegacyPlan   (packages/core/src/lib/quoteFile/legacyPlan.ts)
+                 │     → { config, carried[], dropped[], assumed[], customer, site, claimed }
+                 ├─ POST /quotes/import/sqd  trả `building` trong envelope (không ghi gì)
+                 └─ UI: "Open in the editor" → /quotes/new#template=<config>&customer=<…>
+                        → editor applyConfig + load draft + tự động price
+```
+
+**Không có endpoint tạo quote mới.** Toà nhà đi qua **fragment** (không tới server, không vào log
+proxy — cùng lý do template link đã dùng), editor tính giá, rồi người dùng bấm Save như mọi quote
+khác. Nhờ vậy `engine_version` và `price_book_hash` của revision luôn mô tả một phép tính **đã xảy ra**.
+
+### Cái bẫy lớn nhất: hai app xoay plan 90°
+
+| | Desktop (`.sqd`) | v2 |
+|---|---|---|
+| Trục chạy theo **length** | `X` (bays trái→phải) | `y` |
+| Trục chạy theo **span** | `Y` | `x` |
+| Tường dài | `FrontWall`/`RearWall` (`MSideWall`) | `left`/`right` |
+| Tường đầu hồi | `EndWalls[]` (`IsLeft`) | `front`/`back` |
+
+Nên map **theo hình học, không theo tên**: `left`/`right` dài `length`, `front`/`back` dài `span`.
+Đầu nào của plan cũ thành `front` **không suy ra được từ file** (file không lưu toạ độ tuyệt đối cho
+tường đầu) → bảng `SIDE_WALL`/`END_WALL` là **quy ước**, và nó được ghi vào `assumed` để người dùng
+kiểm tra plan có bị lật không.
+
+Vị trí lỗ mở: `RelativeLocation.X` là **mép trái tính từ đầu bay** (`RLDoorAddToSWallCmd` so với
+`bay2D.Width`), `Y` là cao độ bệ. Nên `align='custom'`, `offset = bayStart + X`, và phân biệt bay-local
+với absolute bằng `X <= bayWidth` (một giá trị tuyệt đối ở bay thứ 2+ luôn lớn hơn bề rộng một bay).
+
+### Cái gì qua, cái gì không
+
+Qua: shell (span/height/bays/length/nomBaySpacing/pitch/structure), điều kiện site (wind region, terrain,
+importance, shielding, state), sheeting/downpipe/footing, cờ tường mở, **12 màu** (ưu tiên tên trong
+sách giá hơn hex của file, vì flashing/screw tính giá theo màu), `MiscOptions` → `misc_option` theo
+`option_name` của sách, và **4 loại cửa** (roller/PA/sliding/window) trên mọi tường.
+
+Không qua — và **hiện lên màn hình kèm số lượng**: skylight, mezzanine, awning, stable, outrigger, carry
+beam, track, dividing wall, cantilever, infill column, `EmptyOptions`. Mỗi thứ là hình học riêng trên
+plan cũ; convert mà không có bản vẽ để đối chiếu là đặt sai chỗ rồi báo giá. Im lặng bỏ qua thì thành
+"báo giá thiếu skylight" — lỗi tệ nhất vì trông vẫn đúng.
+
+`ContractPrice` **không bao giờ được dùng**. Nó chỉ được trả về trong `claimed` để màn hình đặt cạnh
+con số mới.
+
+### Ba lỗi mà việc này làm lộ ra
+
+1. **`URLSearchParams` ghi space thành `+`**, mà `decodeURIComponent` không đổi `+` lại. Địa chỉ
+   `222 Margaret St` về form thành `222+Margaret+St`. Sửa ở `fragment.ts` (thay `+`→space trước khi
+   decode). Chỉ test đặt space vào field mới thấy.
+2. **Draft store là singleton cấp module.** Đi từ một quote đã lưu sang `/quotes/new` bằng điều hướng
+   client giữ nguyên `quoteId` + `expectedRev` → lần Save tiếp theo sẽ **ghi revision vào quote cũ**.
+   Nay nhánh quote mới gọi `load(NEW_DRAFT)` trước mọi thứ.
+3. **`<select>` hiện option đầu khi value không có trong danh sách.** File cũ ghi `0.35 TL-5`, sách giá
+   niêm yết `TL-5` → màn hình hiện "Corro" trong khi config là `0.35 TL-5`, và `.vqu` xuất ra chuỗi thật
+   ⇒ màn hình nói dối về chính quote đó. Nay `SelectField` thêm một `<option>` cho giá trị lạ.
+
+### Đo được
+
+`mock-test.sqd` (6000 × 15000, 4 bay 3750, 1 cửa sổ 589×790 ở bay 0, 1 dòng `Eng - Form 15 (QLD)`)
+mở ở `/quotes/new`:
+
+- 3 step, `Details` đang mở; `Span 6000 / height 3000 / length 15000 / 4 bays @ 3750 / pitch 7.5°`;
+- `End wall, right` đã tick (từ `EndWalls[1].IsOpen`);
+- khách **TBA / 123@gmail.com / 222 Margaret St, Brisbane City QLD 4000** — space giải mã đúng;
+- màu: Deep Ocean toàn bộ, downpipe Manor Red (đúng file);
+- plan: `Plan of a 6000 by 15000 millimetre shed with 1 openings and 1 options`;
+- **3D: canvas 535 × 608 CSS, WebGL2 context sống** (sau khi bấm 3D, nút "Save image" biến mất — đúng
+  thiết kế: 3D không có exporter);
+- giá **$30,119.92** do engine mới tính, file ghi $30,118.63.
+
+Kiểm bằng API thật qua cổng same-origin của browser: `POST /api/sq/quotes/import/sqd` → 200, `building`
+có `carried/dropped/assumed` như trên.
+
+### Giới hạn phải nói
+
+- **8/9 file `.sqd` trong dữ liệu mẫu là `BinaryFormatter`** → vẫn bị từ chối kèm giải thích. Convert
+  chúng cần một tool .NET, không phải việc của Node.
+- Hai file đọc được gần như trống, nên phần map **cửa và option chỉ được kiểm bằng fixture dựng theo
+  entity**, không bằng file thật nhiều cửa.
+- Bảng tường (§ trên) là **quy ước**. Nếu plan bị lật, kéo cửa sang đầu kia — giá không đổi với cùng
+  loại tường, nhưng bản vẽ phải khớp bản đã gửi khách.
+
+Test: 25 ca trong `legacyPlan.test.ts`, 6 ca màn hình `QuoteFileImport.test.tsx`, 11 ca `fragment.test.ts`,
+4 ca route `quoteFileRoute.test.ts`, và 1 ca giá end-to-end trong `pricing.test.ts` (building convert
+được **định giá được** bằng sách thật, có dòng roller door + window, 0 dòng `mocked`).
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 941 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
-| `@sq/api` | 242 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
+| `@sq/core` | 966 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import) |
+| `@sq/api` | 247 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
-| `@sq/client-app` | 33 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules) |
+| `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

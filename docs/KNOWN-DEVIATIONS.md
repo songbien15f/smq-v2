@@ -39,6 +39,9 @@ change a number and need the operator's signature before a customer sees a quote
 
 | 24 | **`Salesman` was sent as `input.client.email`**, so the customer's address appeared at ShedSafe as the person who did the site check. The previous entry's commit claimed to fix this; it fixed only the `getsalesmansitelink` parameter and left the `/building/create` body alone. | **Fixed** — the create body sends `input.salesman`; the link parameter already did | Nobody at the company could tell whose site visit a building was, and the customer was named as the inspector on ShedSafe's own screen | None |
 
+
+| 25 | **A `.sqd` carries the whole plan — skylights, mezzanines, awnings, stables, outriggers, carry beams, tracks, dividing walls.** | **The import converts the shell, the site conditions, the colours, the catalogue lines and the four opening kinds, and lists every other group by name and count on the import screen.** Nothing is invented to replace them. | Converting an option means placing a shape the old drawing placed, and the two apps rotate the plan 90° — a mezzanine converted from coordinates without a picture to check against lands somewhere plausible and wrong. A silent drop is worse: the draft prices lower and nothing on screen says why. So the gap is stated before the operator opens the building, and the fix is to add the option in the editor, which is a decision a person makes. | None by itself. A draft opened from an old file is **lower** than the old quote by the value of whatever was listed as not carried — that list is the number to check. |
+
 **Operational consequence of row 10:** changing the platform logo means adding a **new file** and
 pointing `LOGO_FILE` at it, not overwriting the old one. Overwriting does not corrupt anything — the
 revisions that referenced the old bytes simply print the text logo from then on. See

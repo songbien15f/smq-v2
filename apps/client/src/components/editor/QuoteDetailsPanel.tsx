@@ -1146,6 +1146,18 @@ function SelectField({
           invalid ? 'border-sq-danger' : 'border-sq-line',
         ].join(' ')}
       >
+        {/*
+          A stored value the list does not offer gets its own entry.
+          
+          Two ways that happens: a building converted from a legacy `.sqd`, whose sheeting is
+          `0.35 TL-5` where this book lists `TL-5`; and a book revision that dropped a code an old
+          quote still stores. Without this the browser selects the first option, so the screen shows
+          a profile the quote does not have — and the `.vqu` export, which writes the stored string,
+          disagrees with what the operator read here.
+        */}
+        {value !== '' && !options.some((option) => option.value === value) && (
+          <option value={value}>{value}</option>
+        )}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

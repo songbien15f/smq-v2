@@ -3,8 +3,32 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { publishPriceBook } from '@sq/core/pricing';
+import { readLegacyPlan } from '@sq/core/quoteFile';
 import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
+
+/** A roller door as the desktop writes one: a 3 000 × 2 800 series B. */
+function rollerDoor(): Record<string, unknown> {
+  return {
+    OptionPart: { RelativeLocation: { X: 500, Y: 0, Z: 0 }, GroupId: null },
+    RDoorType: 'B',
+    PrepOnly: false,
+    WindLock: true,
+    Height: 2800,
+    Width: 3000,
+  };
+}
+
+/** A window as the desktop writes one: 589 × 790, sill 1 200. */
+function window(): Record<string, unknown> {
+  return {
+    OptionPart: { RelativeLocation: { X: 1581, Y: 1200, Z: 0 }, GroupId: null },
+    WindowType: 'H790xW589 AMI S-Win (N5)',
+    PrepOnly: false,
+    Height: 790,
+    Width: 589,
+  };
+}
 
 /**
  * Pricing and saving, against the **real** licensed price book.
@@ -173,6 +197,87 @@ describe.skipIf(!hasDump)('pricing and saving with the real price book', () => {
     // And it carries a preview id and an expiry, because a preview is not a quote.
     expect(view.evaluationId).toBeTruthy();
     expect(Date.parse(view.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  /**
+   * A building converted from a legacy `.sqd`, priced by this engine.
+   *
+   * The conversion has its own unit tests (`@sq/core`), and the route has its own; what neither can
+   * prove is that the **converted building is a building the book can price**. A mapping that reads
+   * every field correctly and still produces a skillion with no rafter row would pass both and fail
+   * the only thing the operator cares about.
+   */
+  it('prices a building converted from a legacy .sqd file', async () => {
+    const plan = readLegacyPlan({
+      RevisionId: 1,
+      RevisionName: 'Original',
+      HousePlan: {
+        Width: 6000,
+        Height: 3000,
+        BuildingPlan: {
+          StructureType: 'GB_TH64',
+          WindRegion: 'A',
+          TerrainCategory: 2.5,
+          ImportanceLevel: 2,
+          StateCode: 'QLD',
+          RoofPitch: 10,
+          Width: 6000,
+          Height: 3000,
+          NormalBaySize: 4000,
+          Bays: [
+            { Index: 0, Length: 4000, Position: 0 },
+            { Index: 1, Length: 4000, Position: 4000 },
+            { Index: 2, Length: 4000, Position: 8000 },
+            { Index: 2, Length: 0, Position: 12000 },
+          ],
+          EndWalls: [],
+          // A roller door in the first bay of a long side, and a window in the last one.
+          FrontWall: {
+            Direction: 0,
+            SubWalls: [
+              { Index: 0, OptionParts: { RDoorOptions: [rollerDoor()] } },
+              { Index: 1, OptionParts: {} },
+              { Index: 2, OptionParts: { WindowOptions: [window()] } },
+            ],
+          },
+          RearWall: { Direction: 1, SubWalls: [] },
+        },
+      },
+      MiscOptions: [
+        {
+          Item: { Unit: 'm', Size: 'Ausmesh Safety Wire - 1800 per L/M', Price: 1.14 },
+          Quantity: 5,
+        },
+      ],
+    });
+
+    expect(plan).not.toBeNull();
+
+    // Exactly what the editor does with the converted config before it posts it.
+    const converted = normaliseShedConfig(plan?.config) as unknown as Record<string, unknown>;
+
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/evaluate',
+      headers: { cookie },
+      payload: { config: converted, pricing },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const view = response.json().data;
+    expect(view.price.contractCents).toBeGreaterThan(0);
+    expect(view.lines.length).toBeGreaterThan(10);
+    // A placeholder line would mean the converted building asked the book for something it has.
+    expect(view.lines.filter((line: { mocked: boolean }) => line.mocked)).toEqual([]);
+
+    // The door and the window came across as openings the BOM prices, rather than as data on a
+    // config nobody read.
+    const descriptions = view.lines
+      .map((line: { description: string }) => line.description)
+      .join(' | ')
+      .toLowerCase();
+    expect(descriptions).toContain('roller');
+    expect(descriptions).toContain('window');
   });
 
   it('saves the price the operator saw, as an immutable revision', async () => {

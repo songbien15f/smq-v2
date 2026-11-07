@@ -269,3 +269,27 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
 
 /** The building a new quote starts from. Re-exported so a screen does not import from core. */
 export const STARTING_BUILDING = normaliseShedConfig(DEFAULT_SHED);
+
+/**
+ * A blank draft, as `load` takes one.
+ *
+ * Exists because the store is a **module-level singleton**: a client-side navigation from a saved
+ * quote to `/quotes/new` keeps it, so a new quote inherited the previous customer and — worse — its
+ * `quoteId` and `expectedRev`, which would have appended this quote's save as a revision of that one.
+ * The new-quote path loads this before anything else.
+ */
+export const NEW_DRAFT: {
+  customer: DraftCustomer;
+  site: DraftSite;
+  pricing: PricingInput;
+  quoteId: null;
+  quoteNumber: null;
+  expectedRev: number;
+} = {
+  customer: EMPTY_CUSTOMER,
+  site: EMPTY_SITE,
+  pricing: DEFAULT_PRICING,
+  quoteId: null,
+  quoteNumber: null,
+  expectedRev: 0,
+};

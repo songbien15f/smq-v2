@@ -48,7 +48,8 @@ import { deriveStages } from './stages';
 import { evaluateGate, validateDraft } from './validation';
 import type { DraftIssue } from './validation';
 import { useShedStore } from '@/store/useShedStore';
-import { useDraftStore, STARTING_BUILDING } from '@/store/useDraftStore';
+import { useDraftStore, NEW_DRAFT, STARTING_BUILDING } from '@/store/useDraftStore';
+import { customerFromFragment, templateFromFragment } from './fragment';
 import { api, newIdempotencyKey } from '@/lib/sq';
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
 import { navFor } from '@/components/ShellFrame';
@@ -74,29 +75,6 @@ export interface QuoteEditorProps {
      */
     config: unknown;
   };
-}
-
-/**
- * The building a template link carried, or `null`.
- *
- * Read from `location.hash` rather than a query parameter: a fragment is never sent to a server, so a
- * building — which is a customer's specification — stays out of proxy logs and out of the `Referer` of
- * anything the page later loads.
- *
- * Every failure answers `null`. A malformed link must produce the default building, not a crash on the
- * one screen a salesperson opens in front of a customer.
- */
-function templateFromFragment(): unknown | null {
-  if (typeof window === 'undefined') return null;
-
-  const match = /(?:^#|&)template=([^&]+)/.exec(window.location.hash);
-  if (match === null || match[1] === undefined) return null;
-
-  try {
-    return JSON.parse(decodeURIComponent(match[1])) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 export function QuoteEditor({ session, initial }: QuoteEditorProps) {
@@ -173,16 +151,27 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       applyConfig(initial.config);
     } else {
       /*
-       * A new quote, which may have arrived from a template.
+       * A new quote, which may have arrived from a template or from a legacy `.sqd` file.
        *
-       * The building travels in the URL **fragment**, so it never reaches a server or a proxy log —
-       * and it is read here rather than fetched, so the editor opens with the building already in
-       * place instead of flashing the default shed first.
+       * The building and the customer travel in the URL **fragment**, so they never reach a server or
+       * a proxy log — and they are read here rather than fetched, so the editor opens with the
+       * building already in place instead of flashing the default shed first.
        *
        * A fragment that does not parse is ignored: the operator gets the default building, which is
        * what they would have had anyway. A malformed link must not stop them quoting.
        */
       const fromTemplate = templateFromFragment();
+      /*
+       * Reset the draft first. This store is a module singleton, so arriving here from a saved quote
+       * leaves that quote's `quoteId` behind — and a save would then append this building as a
+       * revision of it. `load` also takes the snapshot, so an imported customer counts as the
+       * baseline rather than as an unsaved change.
+       */
+      const imported = customerFromFragment();
+      loadDraft({
+        ...NEW_DRAFT,
+        ...(imported === null ? {} : { customer: imported.customer, site: imported.site }),
+      });
       applyConfig(fromTemplate ?? STARTING_BUILDING);
       /*
        * A new quote's baseline is the building it opened with, not `''`.
