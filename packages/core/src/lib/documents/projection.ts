@@ -72,6 +72,15 @@ export interface CustomerDocument {
   inclusions: string[];
   price: {
     contractCents: number;
+    /**
+     * Labour, fees and other charged items, already inside `contractCents`.
+     *
+     * Zero on an ordinary supply-only quote, which is when the document shows one total and nothing
+     * else — see the price table in `html.ts`.
+     */
+    additionsCents: number;
+    /** `contractCents − additionsCents`: what the building itself came to. */
+    beforeAdditionsCents: number;
     gstCents: number;
     depositCents: number;
     progressCents: number;
@@ -297,6 +306,16 @@ export function toCustomerDocument(revision: FrozenRevision): CustomerDocument {
     inclusions: inclusions(config),
     price: {
       contractCents: price.contractCents,
+      /*
+       * What the contract is made of, for a customer reading a total they did not add up.
+       *
+       * `additionsCents` is labour, fees and other charged items, and it is **already inside**
+       * `contractCents` — so a page that shows only the total quotes a figure the customer cannot
+       * account for, and a salesperson spends the phone call explaining it. Subtracting rather than
+       * recomputing keeps the three rows summing to the penny whatever the quote rate did.
+       */
+      additionsCents: price.additionsCents ?? 0,
+      beforeAdditionsCents: price.contractCents - (price.additionsCents ?? 0),
       gstCents: price.gstCents,
       depositCents: price.depositCents,
       progressCents: price.progressCents,

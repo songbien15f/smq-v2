@@ -1543,10 +1543,60 @@ Nay `PlanView` giữ ref và có nút; nút chỉ hiện ở 2D vì 3D không c�
 
 ---
 
+## 13.7 Ba "loại tài liệu còn thiếu" — đo lại thì chỉ còn **một**, và nó là một dòng giá (2026-11-06)
+
+Tôi từng liệt kê: *"Desktop `EPrintOption` có 13 mục; v2 có 5. Thiếu: Additions, Quotation supply+install,
+Install cost breakdown."* **Đọc source thì hai trong ba đã chết trong chính desktop:**
+
+| Mục | Trạng thái thật trong desktop |
+|---|---|
+| `PRINT_ADDITIONS` | `Enabled = false` — menu item chết (`XModule.cs:396,1383`) |
+| `PRINT_INSTALL_COST_BREAKDOWN` | `case` bị **comment out** (`PrintQuoteSetting.cs:75`), khối `PriceController` cũng comment (`:68`) |
+| `PRINT_QUOTATION_SUPPLY_INSTALL` | **Sống** — `MainForm.cs:1385` gọi được |
+
+Và mục còn sống **không phải một tài liệu riêng**: cùng một template, chỉ đổi `PriceType` thành
+`SUPPLY & INSTALL` hay `SUPPLY KIT ONLY` (`QuotationReportHtml.cs:234-240`), cộng giá có installation.
+
+Nghĩa là port hai mục kia là **phát minh tính năng**, không phải port. Còn phần thật thì v2 **đã** tính
+đúng — `contractFromTotal()` cộng `additionsCents` vào contract — nhưng tài liệu **chỉ in một con số**:
+
+```
+Contract price   $30,118.63
+Includes GST      $2,738.06
+```
+
+Khách nhận con số không tự cộng ra được, và người bán phải giải thích qua điện thoại. Nay, **chỉ khi có
+additions**:
+
+```
+Building, delivered                        $27,380.57
+Additions — labour, fees and other items    $4,200.00
+Contract price                             $31,580.57
+```
+
+Ba dòng cộng đúng đến từng xu vì `beforeAdditionsCents = contract − additions`, **không** tính lại từ
+`totalCents` (quote rate làm phép nhân đó không khôi phục được).
+
+**Bốn quyết định:**
+
+1. **`additionsCents` là optional trong `FrozenPrice`**, không phải `0`. Revision cũ không có trường này
+   thì in **một** tổng như cũ — in *"Additions $0.00"* lên báo giá cũ là khẳng định về nội dung của nó
+   mà không ai ghi lại. `price_json` (`PriceView`) vốn đã có `additionsCents` từ đầu, nên **không cần
+   migration**.
+2. **Không in `kitCents`.** Đó là trường `cost:margin`-gated, nằm trong khối nội bộ mà desktop chỉ cho
+   SuperAdmin xem.
+3. **Supplier copy không có gì**: khối giá đã bị bỏ toàn bộ ở đó, nên phần chia cũng đi.
+4. **Câu chữ không hứa quá dữ liệu**: chỉ có tổng additions, không có từng dòng — revision không đóng
+   băng `additionLines`, nên *"labour, fees and other items"* mô tả đúng cái block đó, không phải liệt kê.
+
+4 test mới trong `printKinds.test.ts`, gồm ca supply-only (không đổi gì) và ca revision cũ (thiếu trường).
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 937 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
+| `@sq/core` | 941 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity) |
 | `@sq/api` | 242 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |

@@ -158,6 +158,11 @@ export async function loadFrozenRevision(
     config: normaliseShedConfig(parse<unknown>(row.config_json, {})),
     price: {
       contractCents: Number(price.contractCents ?? 0),
+      /*
+       * Passed through only when the revision actually stored it. `?? 0` would print
+       * "Additions $0.00" on a quote whose contents nobody recorded — a claim about that quote.
+       */
+      ...(typeof price.additionsCents === 'number' ? { additionsCents: price.additionsCents } : {}),
       gstCents: Number(price.gstCents ?? 0),
       depositCents: Number(price.depositCents ?? 0),
       progressCents: Number(price.progressCents ?? 0),

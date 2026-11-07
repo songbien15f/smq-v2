@@ -268,7 +268,25 @@ ${
     ? ''
     : `<h2>Price</h2>
 <table class="price">
-  <tr class="total"><td>Contract price</td><td class="amount mono">${money(price.contractCents)}</td></tr>
+${
+  /*
+   * The components, when the total is more than the building.
+   *
+   * A contract price already includes labour, fees and other charged items, and a customer quoted a
+   * single figure cannot account for it — which is a phone call, or a lost sale. This is the
+   * desktop's "Additions" block in substance: its own menu entry was `Enabled = false`, so the part
+   * that was reachable is the information, not the report.
+   *
+   * Shown only when there are additions, so an ordinary supply-only quote reads exactly as before.
+   * `beforeAdditionsCents` is `contract − additions`, so the three rows add up to the penny even
+   * when a quote rate was applied on top.
+   */
+  price.additionsCents === 0
+    ? ''
+    : `  <tr><td>Building, delivered</td><td class="amount mono">${money(price.beforeAdditionsCents)}</td></tr>
+  <tr><td>Additions — labour, fees and other items</td><td class="amount mono">${money(price.additionsCents)}</td></tr>
+`
+}  <tr class="total"><td>Contract price</td><td class="amount mono">${money(price.contractCents)}</td></tr>
   <tr><td>Includes GST</td><td class="amount mono">${money(price.gstCents)}</td></tr>
 </table>
 

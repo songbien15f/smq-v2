@@ -22,6 +22,15 @@ import type { ShedConfig } from '@/domain/types';
 /** The money, as frozen in the revision. GST is inside the contract, never added to it. */
 export interface FrozenPrice {
   contractCents: number;
+  /**
+   * Labour, fees and other charged items, **already inside** `contractCents`.
+   *
+   * Optional because it was added after revisions already existed: a revision frozen before this
+   * reads as `undefined`, and the document then prints the single total it was sent with. Absent is
+   * not zero — printing "Additions $0.00" on an old quote would be a claim about that quote's
+   * contents.
+   */
+  additionsCents?: number;
   gstCents: number;
   depositCents: number;
   progressCents: number;
