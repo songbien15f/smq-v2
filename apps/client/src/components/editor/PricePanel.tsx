@@ -193,3 +193,69 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+/**
+ * The price as one line, for the widths where the panel has nowhere to live.
+ *
+ * ## Why this exists
+ *
+ * The editor is three columns above 1280 px, two between 1024 and 1279, and one below 1024. The
+ * price is the **third** grid child, so it dropped to the bottom of the page: measured on
+ * 2026-11-08, its top edge was at 5 092 px on a 1279 px window and 5 996 px on a phone, while the
+ * page itself was 6 515 / 7 528 px tall. A salesperson on a 1280×800 laptop — the commonest laptop
+ * there is — could not see the number they were quoting while filling the form, which is the one
+ * thing this screen exists to show. The module header above has claimed "the price as a sticky
+ * summary at the top" since the screen was written; nothing implemented it.
+ *
+ * So: one line, pinned under the workspace bar, below `xl` only. The full panel keeps its place at
+ * the end of the column, because that is where the payment stages and the allowances are read.
+ *
+ * Two things are deliberately **not** on this line: the payment stages and the allowance list. They
+ * need a paragraph each, and a summary that grows into a second panel has stopped being a summary.
+ * What is here is the number, whether it is out of date, and the way to the step that changes it.
+ */
+export function PriceSummary({
+  evaluation,
+  stale,
+  stages,
+  onOpenCost,
+}: {
+  evaluation: EvaluationView | null;
+  stale: boolean;
+  stages: { contractCents: number };
+  /** Named rather than a `goTo` import: this component renders, it does not navigate. */
+  onOpenCost?: () => void;
+}) {
+  return (
+    <aside
+      aria-label="Price summary"
+      className="flex items-center justify-between gap-sq-2"
+    >
+      <p className="flex min-w-0 items-baseline gap-sq-2">
+        <span className="shrink-0 text-sq-micro font-medium uppercase tracking-wide text-sq-ink-muted">
+          Contract price
+        </span>
+        {evaluation === null ? (
+          <span className="truncate text-sq-body text-sq-ink-muted">No price yet</span>
+        ) : (
+          <span
+            className={`sq-numeric truncate text-sq-body-lg font-semibold ${stale ? 'text-sq-ink-muted' : 'text-sq-ink'}`}
+          >
+            {money(stages.contractCents)}
+          </span>
+        )}
+        {stale && <StatusPill tone="attention" label="out of date" />}
+      </p>
+
+      {onOpenCost !== undefined && (
+        <button
+          type="button"
+          onClick={onOpenCost}
+          className="min-h-11 shrink-0 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
+        >
+          Cost step
+        </button>
+      )}
+    </aside>
+  );
+}

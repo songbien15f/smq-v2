@@ -62,7 +62,15 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
 
   // A price appears without pressing anything — the screen's whole premise.
   await expect(page.getByRole('heading', { name: 'Contract price' })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/\$[\d,]+\.\d\d/).first()).toBeVisible();
+  /*
+   * Scoped to the panel, not the page. The price now renders in **two** places — the third column
+   * above `xl`, and the pinned strip below it — and only one of them is displayed at any width. A
+   * page-wide `.first()` matched the hidden one and failed on a screen that was showing the price
+   * correctly.
+   */
+  await expect(
+    page.locator('aside[aria-label="Price"]').getByText(/\$[\d,]+\.\d\d/).first(),
+  ).toBeVisible();
 
   /*
    * The save lives on step 3, and the two buttons before it are **navigation** — a distinction the

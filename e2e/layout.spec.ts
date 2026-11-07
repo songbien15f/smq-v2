@@ -1,0 +1,115 @@
+import { expect, test } from '@playwright/test';
+
+/**
+ * Layout rules that a component test cannot see, at the widths a person actually uses.
+ *
+ * ## Why these are here and not in a unit test
+ *
+ * Every rule below was **measured** as broken on 2026-11-08 and is invisible to jsdom: a CSS grid
+ * only has columns when a browser computes them, a sticky offset only matters when the page scrolls,
+ * and a table only overflows when a font has been laid out. Each one had shipped, and the audit that
+ * found them was hand-run — which means it would have to be hand-run again after every change.
+ *
+ * These tests state the measured number as the pass condition, so a regression reports the number.
+ *
+ * ## The widths
+ *
+ * 1440 (a desktop), 1279 (a laptop, and the width one pixel below where the third grid column
+ * appears — the exact boundary the price panel fell off), 768 (a tablet) and 390 (a phone). The skill
+ * guidance says test 320/375/414/768/1024/1440; 390 sits between and is what the in-app browser uses.
+ */
+
+/** True when nothing pushes the page wider than the viewport (WCAG 1.4.10 reflow). */
+async function overflowX(page: import('@playwright/test').Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}
+
+test('the price is visible without scrolling at every width', async ({ page }) => {
+  /*
+   * The defect: the price is the third grid child, so below `xl` (1280 px) it dropped to the bottom
+   * of a page 5 092 / 5 996 px tall — top edge at 5 092 px on a 1279 px window. A salesperson on a
+   * 1280×800 laptop, the commonest there is, could not see the number they were quoting.
+   */
+  for (const width of [1440, 1279, 768, 390]) {
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 800 });
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
+    await page.waitForTimeout(1500);
+
+    const visible = await page.evaluate(() => {
+      // Either presentation counts: the third column above `xl`, the pinned strip below it.
+      const panel = document.querySelector('aside[aria-label="Price"]');
+      const strip = document.querySelector('aside[aria-label="Price summary"]');
+      const inView = (el: Element | null): boolean => {
+        if (el === null) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        return rect.bottom > 0 && rect.top < window.innerHeight;
+      };
+      return { panel: inView(panel), strip: inView(strip) };
+    });
+
+    expect(
+      visible.panel || visible.strip,
+      `no price on screen at ${width}px without scrolling (panel ${visible.panel}, strip ${visible.strip})`,
+    ).toBe(true);
+  }
+});
+
+test('the pinned price strip stays put while the form scrolls', async ({ page }) => {
+  // A `sticky` element that shares an offset with the plan above it slid underneath and lost its top
+  // 49 px — the dimensions along the top edge. The strip is measured against the plan, not assumed.
+  await page.setViewportSize({ width: 1279, height: 800 });
+  await page.goto('/quotes/new');
+  await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
+  await page.waitForTimeout(1500);
+
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await page.waitForTimeout(600);
+
+  const geometry = await page.evaluate(() => {
+    const strip = document.querySelector('aside[aria-label="Price summary"]');
+    const stripBox = strip === null ? null : strip.closest('div.sticky');
+    const canvas = document.querySelector('canvas');
+    const planBox = canvas === null ? null : canvas.closest('div[class*="lg:sticky"]');
+    return {
+      stripBottom: stripBox === null ? null : Math.round(stripBox.getBoundingClientRect().bottom),
+      planTop: planBox === null ? null : Math.round(planBox.getBoundingClientRect().top),
+      scrollY: Math.round(window.scrollY),
+    };
+  });
+
+  expect(geometry.scrollY).toBeGreaterThan(1000);
+  expect(geometry.stripBottom, 'the strip left the viewport').not.toBeNull();
+  expect(geometry.planTop, 'the plan left the viewport').not.toBeNull();
+  // The plan must start below the strip, or the strip hides part of the drawing.
+  expect(
+    (geometry.planTop ?? 0) >= (geometry.stripBottom ?? 0),
+    `the plan (top ${geometry.planTop}) is under the strip (bottom ${geometry.stripBottom})`,
+  ).toBe(true);
+});
+
+test('no page scrolls sideways on a phone or a tablet', async ({ page }) => {
+  /*
+   * The defect: the revisions table is seven columns wide and had no scroll wrapper, so at 390 px the
+   * **page** was 154 px wider than the screen. The quotes list had the wrapper; this page did not —
+   * which is why the rule is asserted on every page rather than the one that broke.
+   */
+  const pages = ['/quotes', '/quotes/import', '/settings'];
+
+  for (const width of [390, 768]) {
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 950 });
+    for (const path of pages) {
+      await page.goto(path);
+      await page.waitForTimeout(1200);
+      expect(await overflowX(page), `${path} scrolls sideways at ${width}px`).toBeLessThanOrEqual(0);
+    }
+
+    // A quote with several revisions — the widest table in the product.
+    await page.goto('/quotes');
+    const firstRow = page.getByRole('row').filter({ hasText: /Q-\d{4}-\d{4}/ }).first();
+    await firstRow.getByRole('link').first().click();
+    await expect(page.getByRole('heading', { name: 'Revisions', level: 2 })).toBeVisible({ timeout: 20_000 });
+    expect(await overflowX(page), `a quote detail page scrolls sideways at ${width}px`).toBeLessThanOrEqual(0);
+  }
+});

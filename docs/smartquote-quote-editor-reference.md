@@ -1803,6 +1803,77 @@ chủ ý — smoke mà không ghi được gì thì không chứng minh được
 
 ---
 
+## 13.11 UI/UX pass — đo trước, sửa sau (2026-11-08)
+
+Rà soát bằng cách đo trong trang (Playwright + `evaluate`) trên 5 màn × 4 bề rộng. Tương phản tính
+từ `getComputedStyle` thật rồi blend nền trong suốt lên nền cha, không dựa vào bảng màu giả định.
+
+### Cái đã đúng, ghi lại để không "sửa" hỏng
+
+- **Tương phản 0 lỗi** ở mọi màn, mọi bề rộng. Đo các cặp: `ink/surface` 17.85, `muted/surface` 7.58,
+  `gold on navy` 11.83, `danger` 6.47, `attention` 5.02, `ok` 5.02. Cặp duy nhất fail là
+  `ink-muted on brand` (2.34) và **nó không được dùng ở đâu**.
+- **Target**: toàn app `min-h-11` (44px), cao hơn ngưỡng WCAG web 24px. Vật thể <24px duy nhất là 6
+  checkbox 16×16 **nằm trong `<label>` 36px** → thuộc ngoại lệ, không phải lỗi.
+- **Focus**: `:focus-visible` toàn cục + biến thể gold trên navy; 11 chỗ `outline-none` đều nằm trong
+  wrapper có `focus-within:ring-2`.
+- **Error summary** đúng chuẩn (role, aria-labelledby, `tabIndex=-1` + focus, mỗi lỗi là một nút nhảy
+  tới field, lỗi inline vẫn còn).
+
+### P1 — khối giá không nhìn thấy được ở 1024–1279px và trên điện thoại
+
+Giá là **con thứ ba** của grid, mà grid chỉ khai 2 cột dưới `xl` → nó rớt xuống đáy trang:
+
+| Bề rộng | Cột | `top` khối giá | Thấy mà không cuộn? | Trang cao |
+|---|---|---|---|---|
+| 1440 | 3 | 110 | ✅ | 5 092 |
+| 1280 | 3 | 110 | ✅ | 5 092 |
+| **1279** | 2 | **5 092** | ❌ | 6 515 |
+| 1024 | 2 | 5 092 | ❌ | 6 515 |
+| **390** | 1 | **5 996** | ❌ | 7 528 |
+
+Trên laptop 1280×800 — loại phổ biến nhất — người bán **không thấy giá** trong lúc điền form. Và header
+của module đã **khẳng định** có "sticky summary at the top" từ lúc viết màn hình này; chưa từng có.
+
+**Sửa:** `PriceSummary` — một dòng, `sticky top-0`, chỉ render dưới `xl`. Nội dung: số contract,
+pill "out of date", và nút sang bước Cost. **Không** có deposit/progress/additions: chúng cần một đoạn
+văn mỗi cái, và một summary phình thành panel thứ hai thì đã hết là summary.
+
+Hai chi tiết phải xử lý mới đúng:
+
+1. **`sticky top-0` đặt ngoài grid**, không phải trong một ô — grid là một hàng theo số cột, chiều cao
+   do form quyết định, nên sticky con bên trong bị nhốt trong ô của nó.
+2. **Offset của plan phải đổi.** Dải giá cao 61px; plan cũng `sticky` ở `top: 12px` nên **slide xuống
+   dưới dải** và mất 49px trên cùng — đúng hàng dimension. Nay `lg:top-[4.5rem]` (dưới `xl`) và trả về
+   `sq-3` ở `xl`. Đo sau khi sửa: dải `bottom` 61, plan `top` 72 → không chồng.
+
+`stages` giờ tính **một lần** trong `QuoteEditor` và truyền cho cả hai chỗ, thay vì `deriveStages` gọi
+hai lần — hai chỗ đọc cùng một con số là điều panel's doc đã cảnh báo.
+
+### P2 — bảng Revisions đẩy cả trang sang ngang trên điện thoại
+
+`scrollWidth − clientWidth = 154px` ở 390px: bảng 7 cột rộng 512px, **không có wrapper**, trong khi
+bảng danh sách quote đã có `overflow-x-auto` từ trước. Nay có wrapper → 0. Quét lại toàn bộ 5 màn ở
+390 và 768: **tất cả 0**.
+
+### Còn lại (chưa làm)
+
+`P3` danh sách quote: 24 dòng, chip chỉ `All / draft / accepted`, **5 dòng `deleted` chỉ hiện ở All**,
+không có ô tìm kiếm · `P4` bước 1 trên điện thoại: 41 field, 7 528px, chỉ 1 nhóm đóng · `P5` link
+breadcrumb cao 14–15px (dưới 24px, không thuộc ngoại lệ) · `P6` slider roof pitch thumb 8px; smoke
+suite để lại quote "E2E Smoke" mỗi lần chạy.
+
+### Test giữ cho nó không tái diễn
+
+`e2e/layout.spec.ts` — 3 ca, mỗi ca phát biểu **chính con số đã đo** làm điều kiện pass, để lần hồi quy
+báo ra số:
+
+1. giá phải nằm trong viewport **không cần cuộn** ở 1440 / 1279 / 768 / 390;
+2. sau khi cuộn 1 500px ở 1279, `plan.top >= strip.bottom` — không chồng;
+3. không trang nào cuộn ngang ở 390 và 768, kể cả trang chi tiết quote (bảng rộng nhất).
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -1811,7 +1882,7 @@ chủ ý — smoke mà không ghi được gì thì không chứng minh được
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 7 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, sign out) — needs `pnpm dev` |
+| `e2e` (Playwright) | 10 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, sign out, **price visible at every width**, **strip stays pinned**, **no sideways scroll**) — needs `pnpm dev` |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

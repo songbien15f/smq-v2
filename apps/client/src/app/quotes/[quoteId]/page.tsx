@@ -159,7 +159,14 @@ export default async function QuotePage({
               This quote has no saved revisions yet.
             </p>
           ) : (
-            <table className="w-full border-collapse text-sq-body">
+            /*
+             * Seven columns do not fit a phone: at 390 px this table measured 512 px wide and pushed
+             * the page 154 px sideways (2026-11-08, WCAG 1.4.10 reflow). The wrapper is what the
+             * quotes list already had — the table scrolls inside its panel instead of the viewport
+             * scrolling under it.
+             */
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sq-body">
               <thead>
                 <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
                   <th scope="col" className="px-sq-2 py-sq-2 font-medium">Rev</th>
@@ -225,7 +232,8 @@ export default async function QuotePage({
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </Panel>
 

@@ -8,14 +8,22 @@
  * ```
  * ┌────────────────────────────── three steps ──────────────────────────────┐
  * │ Details  /  Options  /  Cost                                            │
+ * ├────────────────────────────── price (one line) ─────────────────────────┤  ← below 1280 px only
  * ├───────────────┬─────────────────────────────┬───────────────────────────┤
- * │ the step      │ the plan (steps 1–2 only)   │ price — always visible    │
+ * │ the step      │ the plan (every step)       │ price — always visible    │
  * └───────────────┴─────────────────────────────┴───────────────────────────┘
  * ```
  *
- * Three columns above 1280 px because a salesperson needs the plan and the price at once; one
- * column below 1024 px, with the price as a sticky summary at the top, because a phone has no room
- * for three and the price is the part that matters.
+ * Three columns above 1280 px, because a salesperson needs the plan and the price at once. Between
+ * 1024 and 1279 there is room for two, and below 1024 for one — so in both of those the price is
+ * pinned as a **single line under the workspace bar** (`PriceSummary`), and the full panel with the
+ * payment stages and the allowances stays at the end of the column. It is not merely "at the top":
+ * it is sticky, because the form beside it is thousands of pixels tall.
+ *
+ * This paragraph described that behaviour before the code had it. Measured on 2026-11-08: at 1279 px
+ * the panel's top edge sat at 5 092 px and on a phone at 5 996 px, off screen while the operator was
+ * typing the building. A comment here is read as a specification — that is why it is worth keeping
+ * exactly true.
  *
  * ## The one rule this screen exists to enforce
  *
@@ -42,7 +50,7 @@ import { CostPanel } from './CostPanel';
 import { SteelworkPanel } from './SteelworkPanel';
 import { PunchingPanel } from './PunchingPanel';
 import { SiteCheckPanel } from './SiteCheckPanel';
-import { PricePanel } from './PricePanel';
+import { PricePanel, PriceSummary } from './PricePanel';
 import { ErrorSummary, focusErrorSummary } from './ErrorSummary';
 import { deriveStages } from './stages';
 import { evaluateGate, validateDraft } from './validation';
@@ -455,6 +463,18 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         : gate.reasons[0];
 
   /*
+   * The staged figures, computed **once** and handed to both places that show the price.
+   *
+   * The strip below `xl` and the full panel must read the same number; two calls to `deriveStages`
+   * with one of them drifting is exactly the "two answers on one screen" the panel's own doc warns
+   * about. `pricing` carries the operator's overrides, so this is the figure that will be frozen.
+   */
+  const stages =
+    evaluation === null
+      ? { contractCents: 0, depositCents: 0, progressCents: 0, balanceCents: 0 }
+      : deriveStages(evaluation.price, pricing);
+
+  /*
    * `data-dirty` is what the unsaved-changes guard is about to decide, on the element it protects.
    *
    * The guard is a `window.confirm` on the way out — invisible until somebody tries to leave, which
@@ -524,6 +544,29 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         onSelect={goTo}
         noticeCount={issues.length}
       />
+
+      {/*
+        The price, pinned under the workspace bar, at every width where the panel has nowhere to live.
+
+        Above 1280 px it is the third column and this strip does not render. Below that the panel is
+        the last child of a page that measured 6 515 px at 1279 and 7 528 px on a phone, so the number
+        being quoted was **off screen while the form was being filled** — measured 2026-11-08: top edge
+        at 5 092 px and 5 996 px respectively. This is the "sticky summary at the top" the module
+        header has claimed since the screen was written.
+
+        `sticky top-0` on the page rather than inside the grid: the grid is one row per column count
+        and the form decides the height, so a sticky child of it would be constrained to its own cell.
+      */}
+      <div className="sticky top-0 z-20 border-b border-sq-line bg-sq-ground/95 backdrop-blur xl:hidden">
+        <div className="mx-auto max-w-[1400px] px-sq-3 py-sq-2">
+          <PriceSummary
+            evaluation={evaluation}
+            stale={pricedAt === 'stale'}
+            stages={stages}
+            onOpenCost={step === 'cost' ? undefined : () => goTo('cost')}
+          />
+        </div>
+      </div>
 
       <div className="mx-auto grid w-full max-w-[1400px] flex-1 gap-sq-3 px-sq-3 py-sq-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,300px)]">
         {/* ------------------------------------------------------------ left: the step */}
@@ -711,8 +754,13 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           camera frames the middle of it and the shed sits in a corner. Sticky plus a
           viewport height makes the drawing the size of a drawing, and keeps it in view
           while the form scrolls. Below `lg` the columns stack, so it stays in flow.
+
+          **The offset is not `12px` below `xl`.** The price summary above is sticky too and measured
+          61 px tall; with both pinned at `top: 12px` the plan slid underneath it and its top 49 px —
+          the dimensions along the top edge — were hidden. `4.5rem` clears the strip, and `xl` returns
+          to `sq-3` where the strip does not render.
         */}
-        <div className="min-h-[320px] min-w-0 lg:sticky lg:top-sq-3 lg:mb-sq-3 lg:h-[calc(100dvh-2rem)] lg:min-h-0">
+        <div className="min-h-[320px] min-w-0 lg:sticky lg:top-[4.5rem] lg:mb-sq-3 lg:h-[calc(100dvh-5.5rem)] lg:min-h-0 xl:top-sq-3 xl:h-[calc(100dvh-2rem)]">
           <PlanView interactive={step === 'options'} />
         </div>
 
@@ -721,11 +769,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           <div className="sticky top-sq-3">
             <PricePanel
               evaluation={evaluation}
-              stages={
-                evaluation === null
-                  ? { contractCents: 0, depositCents: 0, progressCents: 0, balanceCents: 0 }
-                  : deriveStages(evaluation.price, pricing)
-              }
+              stages={stages}
               stale={pricedAt === 'stale'}
               calculating={calculating}
               error={priceError}
