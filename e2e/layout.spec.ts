@@ -17,6 +17,14 @@ import { expect, test } from '@playwright/test';
  * 1440 (a desktop), 1279 (a laptop, and the width one pixel below where the third grid column
  * appears — the exact boundary the price panel fell off), 768 (a tablet) and 390 (a phone). The skill
  * guidance says test 320/375/414/768/1024/1440; 390 sits between and is what the in-app browser uses.
+ *
+ * ## Measure here, not in the in-app browser pane
+ *
+ * The in-app browser's `setViewportSize({ width: 1279 })` **reports** 1279 and applies ~1407 (a
+ * constant +102 px in the pane), so a breakpoint measurement taken there lands on the wrong side of
+ * 1280 and reads as "the strip is hidden" when the strip is correctly hidden. Playwright's own
+ * context applies the width exactly, which is why these assertions live here. A hand measurement
+ * that disagrees with this file should be re-taken in this harness before the code is suspected.
  */
 
 /** True when nothing pushes the page wider than the viewport (WCAG 1.4.10 reflow). */

@@ -42,11 +42,26 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
   await page.getByRole('link', { name: 'New quote' }).click();
   await expect(page).toHaveURL(/\/quotes\/new$/);
 
+  /*
+   * Wait for the first price before touching the form.
+   *
+   * The editor prices the default building on mount, and when that evaluation lands React re-renders
+   * the details panel. A field filled into the *first* render could be replaced by the value the
+   * evaluation's render carried, so the flow ran with `firstName` empty and lost 60 s to a save gate
+   * that was right to refuse. (Seen once in four runs — the kind of failure that reads as a product
+   * bug and is not.)
+   */
+  await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
+
   // Step 1: enough of a customer for the save gate.
   await page.locator('#customer-firstName').fill('E2E');
   await page.locator('#customer-lastName').fill('Smoke');
   await page.locator('#customer-email').fill('e2e.smoke@example.com');
   await page.locator('#customer-address').fill('1 Test Street');
+
+  // Filled, not just typed: `fill` sets the value in one event, and the assertion is what breaks the
+  // "the form looks done but a field is empty" failure before it reaches the save gate.
+  await expect(page.locator('#customer-firstName')).toHaveValue('E2E');
 
   // The site address has its own block; "Copy from customer" is the button the desktop had.
   await page.getByRole('button', { name: 'Copy from customer' }).click();
@@ -60,13 +75,11 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
   await page.getByRole('button', { name: /^Delivery/ }).click();
   await page.locator('#site-deliveryAcknowledged').check();
 
-  // A price appears without pressing anything — the screen's whole premise.
-  await expect(page.getByRole('heading', { name: 'Contract price' })).toBeVisible({ timeout: 30_000 });
   /*
-   * Scoped to the panel, not the page. The price now renders in **two** places — the third column
-   * above `xl`, and the pinned strip below it — and only one of them is displayed at any width. A
-   * page-wide `.first()` matched the hidden one and failed on a screen that was showing the price
-   * correctly.
+   * A price appears without pressing anything — the screen's whole premise. Scoped to the panel, not
+   * the page: the price renders in **two** places now (the third column above `xl`, the pinned strip
+   * below it) and only one is displayed at any width, so a page-wide `.first()` matched the hidden one
+   * and failed on a screen showing the price correctly.
    */
   await expect(
     page.locator('aside[aria-label="Price"]').getByText(/\$[\d,]+\.\d\d/).first(),
