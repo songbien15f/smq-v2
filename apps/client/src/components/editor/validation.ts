@@ -1,7 +1,8 @@
 'use client';
 
 import { COLOUR_ROLES } from '@sq/core/domain';
-import type { ShedColors } from '@sq/core/domain';
+import { baySpacingMismatch, optionsThatNoLongerFit } from '@sq/core/domain';
+import type { ShedColors, ShedConfig } from '@sq/core/domain';
 
 /**
  * Validation for the quote draft.
@@ -41,10 +42,25 @@ export interface DraftForValidation {
     height: number;
     roofPitchDeg: number;
     bays: number;
+    /**
+     * The stored nominal bay spacing, which the desktop lets a person type.
+     *
+     * Read here because the desktop reports a length its bays do not sum to, and that check had been
+     * written in core with nothing calling it. See `baySpacingMismatch`.
+     */
+    nomBaySpacing: number;
     windRegion: string;
     terrainCategory: number | string;
     importanceLevel: number;
     stateCode: string;
+    /**
+     * The options already placed, so one that no longer fits the building can be reported.
+     *
+     * `unknown[]` rather than `ShedOption[]`: this module only hands them back to
+     * `optionsThatNoLongerFit`, which takes the whole config and owns the shape. Naming the type
+     * here would be a second declaration to keep in step.
+     */
+    options: readonly unknown[];
     /**
      * The colour roles, as the domain types them.
      *
@@ -200,6 +216,42 @@ export function validateDraft(draft: DraftForValidation): DraftIssue[] {
           'Adjust the length or the bay count so the bays are equal, or the purlin quantities will be wrong.',
       });
     }
+  }
+
+  /*
+   * The stored nominal spacing and the bay count must agree with the length.
+   *
+   * `reconcileBays` keeps them consistent when a person edits them, so this only fires for a
+   * building that arrived some other way — a template, an imported file, a hand-edited row. It is
+   * the desktop's own message ("Total bay length is not equal to overall length"): a remainder means
+   * one bay is a different length from the rest, which moves the purlin run and therefore the price.
+   *
+   * Found unwired — `baySpacingMismatch` had been written and tested in core with **no caller**, so
+   * a check the desktop performs was absent here.
+   */
+  if (baySpacingMismatch(config)) {
+    issues.push({
+      path: 'shed-nomBaySpacing',
+      message:
+        `${config.nomBaySpacing} mm × ${config.bays} bays is ${config.nomBaySpacing * config.bays} mm, ` +
+        `but the building is ${config.length} mm long. Change the spacing or the bay count so they agree.`,
+    });
+  }
+
+  /*
+   * Options that no longer fit the building it now is.
+   *
+   * `normaliseOption` clamps every option into the new bounds, so nothing is ever drawn outside the
+   * shed — but a clamped option can be a **different thing** from what was placed: a mezzanine whose
+   * level dropped under the new ceiling is no longer a mezzanine anyone can stand on, and an option
+   * whose footprint resolved to zero is one the geometry could not place at all.
+   *
+   * The function reported them and **nothing called it**, so a person could lower the walls out from
+   * under a mezzanine, watch the plan redraw, and save a quote for a building that cannot be built.
+   * Same class as the R9 rule: refuse rather than warn, because a warning is what a person clicks past.
+   */
+  for (const problem of optionsThatNoLongerFit(config as unknown as ShedConfig)) {
+    issues.push({ path: `options-${problem.id}`, message: problem.reason });
   }
 
   // ---------------------------------------------------------------- 5. Site conditions

@@ -18,7 +18,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
 import { pageQuery, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability, requirePlatformCapability } from '../lib/guard.js';
-import { recentUsage, recordUsage, usageSummary, USAGE_KINDS } from '../lib/usage.js';
+import { recentUsage, recordUsage, usageSummary } from '../lib/usage.js';
 
 export function registerUsage(app: FastifyInstance, db: Db): void {
   /**
@@ -79,10 +79,12 @@ export function registerUsage(app: FastifyInstance, db: Db): void {
     return sendOk(reply, { recorded: true });
   });
 
-  /** The kinds, so a screen labels them from one list rather than spelling them again. */
-  app.get('/usage/kinds', async (request, reply) => {
-    const session = requireCompanyCapability(request, reply, 'usage:read');
-    if (session === null) return;
-    return sendOk(reply, { kinds: USAGE_KINDS });
-  });
+  /*
+   * There was a `GET /usage/kinds` here, returning the four ids.
+   *
+   * Nothing called it, and the screen that lists them keeps its own English labels — "Quotes
+   * created", not `quote_created` — because a shed owner should not read an identifier, and a route
+   * that hands over ids cannot supply that. Its comment said "so a screen labels them from one
+   * list", but the list it returns is the one the screen cannot use. Removed 2026-11-06.
+   */
 }

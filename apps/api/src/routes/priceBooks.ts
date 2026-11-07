@@ -127,20 +127,14 @@ export function registerPriceBooks(app: FastifyInstance, db: Db): void {
     }
   });
 
-  app.get('/admin/price-books/active', async (request, reply) => {
-    const session = requirePlatformCapability(request, reply, 'platform:pricebooks');
-    if (session === null) return;
-
-    const hash = await activeBookHash(db);
-    if (hash === null) {
-      return sendFail(
-        reply,
-        'not_configured',
-        'No price book is active, so nothing can be priced. Publish one.',
-      );
-    }
-    return sendOk(reply, { hash });
-  });
+  /*
+   * There was a `GET /admin/price-books/active` here, returning the active hash alone.
+   *
+   * Nothing called it, and nothing needed to: `GET /admin/price-books` above already answers
+   * `activeHash` beside the list, which is the only screen that asks. A second route for one field of
+   * a route that exists is a second thing to keep authorised, tested and documented — and one more
+   * way for two answers to disagree. Removed 2026-11-06.
+   */
 }
 
 /** Re-exported so a caller handling a missing book has one place to look. */

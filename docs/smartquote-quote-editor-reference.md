@@ -1486,6 +1486,63 @@ không điều hướng.
 
 ---
 
+## 13.6 Chọn revision cũ, hai luật mồ côi, và dọn đường chết (2026-11-06)
+
+### Revision picker — `?revision=N`
+
+Trang báo giá luôn dùng `items[0]`, nên **không xem được revision cũ**: khách hỏi *"bản rev 1 tôi
+nhận hôm trước ghi gì"* thì phải sửa URL bằng tay. Mọi route tài liệu đã nhận `:rev`; chỉ màn hình
+thiếu đường vào.
+
+- Mỗi dòng trong bảng Revisions là một link `?revision=N` (cả dòng bấm được, `after:absolute
+  inset-0` — số 20 px không phải target).
+- `?revision=` không parse được hoặc không tồn tại thì **rơi về bản mới nhất**, không 404: một
+  bookmark cũ là chuyện thường, không phải lỗi.
+- Khi xem bản cũ: tiêu đề `Revision 1 · <tên>`, pill cảnh báo *"an earlier revision — the quote is
+  on 2"* + link về bản hiện tại. Không có dòng này thì header vẫn ghi revision 2 trong khi tài liệu
+  là rev 1 — hai con số trên một màn hình, và người ta đọc nhầm giá.
+- `DocumentActions` và `FrozenSteelwork` nhận `selected.revision`, nên PDF, plan, elevations, BOM,
+  `.vqu`, bảng cắt và punching đều đúng bản đang xem.
+
+Đo được: `?revision=1` → `revisions/1/pdf`, panel khoá thép có mặt, hai pill đúng.
+
+### Hai luật đã viết, có test, **không ai gọi**
+
+| Hàm | Trước | Sau |
+|---|---|---|
+| `optionsThatNoLongerFit()` | 0 caller | mỗi option báo một issue `options-<id>` |
+| `baySpacingMismatch()` | 0 caller | issue `shed-nomBaySpacing` |
+
+Kịch bản thật của cái thứ nhất: đặt mezzanine trong nhà tường 4200, hạ tường xuống 2100.
+`normaliseOption` **clamp** slab xuống `height - 300`, nên không có gì vẽ ra ngoài nhà — nhưng kết quả
+là một mezzanine **không ai đứng được**, khác hẳn cái đã đặt. Không có thông báo nào, và lưu được.
+
+Cái thứ hai là cảnh báo của desktop *"Total bay length is not equal to overall length"*. Qua UI thì
+`reconcileBays` giữ ba trường khớp nhau, nên nó chỉ cháy khi building đến từ template / file nhập /
+dòng sửa tay — đúng lúc cần nhất.
+
+Cả hai đều **chặn** chứ không cảnh báo, cùng nguyên tắc với R9: một cảnh báo là thứ người ta bấm qua.
+
+5 test mới trong `apps/client/src/components/editor/__tests__/validation.test.ts` — gồm cả ca
+**không** báo khi nhà hợp lệ, để một luật quá tay không lọt.
+
+### Dọn đường chết
+
+| | |
+|---|---|
+| `GET /admin/price-books/active` | **xoá** — `GET /admin/price-books` đã trả `activeHash` |
+| `GET /usage/kinds` | **xoá** — màn hình giữ nhãn tiếng Anh riêng, route chỉ trả id |
+| `exportPng()` | **nối** — nút "Save image" trên plan (2D), tải `plan.png` |
+| `ADMIN_PORT`/`CLIENT_PORT`/`SITE_PORT` | **xoá** khỏi `.env.example` + `turbo.json` — cổng nằm trong từng `package.json` |
+| `PRICE_DUMP` | **xoá** — `publish-book` dùng cờ `--dump` |
+| `SINGLE_COMPANY` | **xoá** — tính năng đã bị bỏ từ lâu |
+
+`exportPng` là ví dụ rõ nhất của "handle không ai giữ": hàm có, `useImperativeHandle` có, mà
+`PlanView` render `<Render2D />` **không ref** — nên "copy plan as image" của desktop không tồn tại.
+Nay `PlanView` giữ ref và có nút; nút chỉ hiện ở 2D vì 3D không có exporter.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -1493,7 +1550,7 @@ không điều hướng.
 | `@sq/api` | 242 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
-| `@sq/client-app` | 28 (form, category dock, `ControlSheet`, unsaved-changes guard) |
+| `@sq/client-app` | 33 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules) |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

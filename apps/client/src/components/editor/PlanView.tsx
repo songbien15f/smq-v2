@@ -17,9 +17,10 @@
  * the lists beside it, with real controls.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { describeSelection } from '@sq/core/domain';
 import { Render2D } from './Render2D';
+import type { Render2DHandle } from './Render2D';
 import { Render3D } from './Render3D';
 import { ControlSheet } from './ControlSheet';
 import { useShedStore } from '@/store/useShedStore';
@@ -34,6 +35,27 @@ export function PlanView({ interactive = true }: PlanViewProps) {
   const selection = useShedStore((state) => state.selection);
   const view = useShedStore((state) => state.view);
   const setView = useShedStore((state) => state.setView);
+
+  /**
+   * The 2D canvas, so its picture can be saved.
+   *
+   * `exportPng()` has existed on `Render2D`'s imperative handle since the plan was built and
+   * **nothing ever passed a ref**, so "copy the plan as an image" — a thing the desktop offered and
+   * a thing a salesperson does to paste a plan into an email — was unreachable. A handle nobody
+   * holds is dead code that looks like a feature.
+   */
+  const render2d = useRef<Render2DHandle | null>(null);
+
+  const saveAsImage = (): void => {
+    const url = render2d.current?.exportPng() ?? null;
+    if (url === null) return;
+    // A real `<a download>` rather than `window.open`: a data URL opened in a tab is a page the
+    // person then has to save by hand, and some browsers refuse to open one at all.
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'plan.png';
+    link.click();
+  };
 
   const selectedLabel = useMemo(() => {
     const description = describeSelection(config, selection);
@@ -59,6 +81,20 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             {mode === '2d' ? 'Plan' : '3D'}
           </button>
         ))}
+        {/*
+          Save the plan as a picture. Only meaningful in 2D — the 3D view is a canvas the user orbits,
+          and there is no exporter for it — so the button appears with the 2D plan rather than sitting
+          disabled in 3D with no explanation.
+        */}
+        {view === '2d' && (
+          <button
+            type="button"
+            onClick={saveAsImage}
+            className="min-h-11 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            Save image
+          </button>
+        )}
       </div>
 
       <div
@@ -80,7 +116,7 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             : `3D view of a ${config.span} by ${config.length} millimetre shed`
         }
       >
-        {view === '2d' ? <Render2D /> : <Render3D />}
+        {view === '2d' ? <Render2D ref={render2d} /> : <Render3D />}
       </div>
 
       {/*
