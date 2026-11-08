@@ -61,6 +61,7 @@ import { customerFromFragment, templateFromFragment } from './fragment';
 import { api, newIdempotencyKey } from '@/lib/sq';
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
 import { navFor } from '@/components/ShellFrame';
+import { WorkspaceMenu } from '@/components/WorkspaceMenu';
 import type { DisplayUnit } from '@sq/core/domain';
 import { normaliseShedConfig } from '@sq/core/domain';
 
@@ -498,12 +499,35 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         and it takes its links from `navFor` so the set is the same one the rest of the workspace
         shows rather than a second list that can drift.
       */}
-      <div className="border-b border-sq-line bg-sq-brand text-white">
-        <div className="mx-auto flex min-h-11 max-w-[1400px] flex-wrap items-center gap-sq-3 px-sq-3 py-sq-1">
+      <div className="relative border-b border-sq-line bg-sq-brand text-white">
+        <div className="mx-auto flex min-h-11 max-w-[1400px] items-center gap-sq-2 px-sq-3 py-sq-1">
           <a href="/quotes" className="flex min-h-11 items-center gap-sq-2 no-underline">
             <span className="text-sq-body font-semibold text-white">SmartQuote</span>
           </a>
-          <nav aria-label="Workspace" className="flex flex-wrap items-center gap-sq-1">
+
+          {/*
+            On a phone the links go behind one icon — the same `WorkspaceMenu` the workspace shell uses,
+            so the two chromes cannot drift into different phone behaviour. Its footer carries the two
+            things this bar used to show inline: the company and the password link.
+          */}
+          <WorkspaceMenu
+            id="editor-menu"
+            links={navFor(session.capabilities)}
+            footer={
+              <>
+                <p className="px-sq-2 text-sq-micro text-white/70">{session.currentTenantName ?? 'No company'}</p>
+                <a
+                  href="/change-password"
+                  className="mt-sq-1 flex min-h-11 items-center rounded-md px-sq-2 text-sq-body text-white/85 no-underline hover:bg-white/10"
+                >
+                  Change password
+                </a>
+              </>
+            }
+          />
+
+          {/* The desktop row: every link visible, because the width is there. */}
+          <nav aria-label="Workspace" className="hidden flex-wrap items-center gap-sq-1 lg:flex">
             {navFor(session.capabilities).map((link) => {
               const here = link.href === '/quotes';
               return (
@@ -521,12 +545,12 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
               );
             })}
           </nav>
-          <span className="ml-auto flex items-center gap-sq-2 text-sq-micro text-white/80">
+          <span className="ml-auto hidden items-center gap-sq-2 text-sq-micro text-white/80 sm:flex">
             {session.currentTenantName ?? 'No company'}
           </span>
           <a
             href="/change-password"
-            className="inline-flex min-h-11 items-center rounded-md px-sq-2 text-sq-micro text-white/85 no-underline hover:bg-white/10"
+            className="hidden min-h-11 items-center rounded-md px-sq-2 text-sq-micro text-white/85 no-underline hover:bg-white/10 lg:inline-flex"
           >
             Password
           </a>

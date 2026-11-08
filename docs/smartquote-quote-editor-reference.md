@@ -1874,6 +1874,92 @@ báo ra số:
 
 ---
 
+## 13.12 UI/UX pass, phần hai — nav mobile, danh sách, breadcrumb, màu (2026-11-08)
+
+### Nav mobile: một icon thay vì một hàng link
+
+Trước: dưới `lg`, cả hai chrome đều trải link thành hàng. Ở 390px đó là **264px link + 79px sign-out**
+chiếm trọn hàng đầu của **mọi** trang, và tự cuộn ngang khi không vừa — trên đúng hai màn cần bề rộng
+nhất (danh sách quote và bản vẽ).
+
+Nay: `WorkspaceMenu` — một nút 44×44 có `aria-expanded`, panel mở ra chứa link + tên công ty + account.
+Dùng chung cho `ShellFrame` (workspace) và editor, nên hai chrome không thể lệch nhau về hành vi mobile.
+
+Ba chi tiết phải đúng mới không tạo lỗi mới:
+
+1. **Panel neo vào thanh bar, không neo vào nút.** Neo vào nút thì nó bắt đầu ở x=141 và kết thúc ở 397
+   trên màn 390 → **tràn 13px**. Neo vào bar (left/right 0) thì luôn vừa.
+2. **Nhãn `Workspace menu`, không phải `Workspace`.** Editor cũng render một hàng desktop tên
+   `Workspace`; hai landmark cùng tên là tài liệu mà screen reader đọc hai lần không phân biệt được —
+   và nó làm một test không chọn được cái nào.
+3. **Disclosure, không phải dialog.** Bốn cái link không đáng một modal với overlay, scroll lock và
+   focus trap. Disclosure: link là `<a>` thật (chạy không cần JS), Escape đóng và **trả focus về nút**,
+   bấm ra ngoài đóng, và `usePathname` đóng khi điều hướng.
+
+Đo: 390px → nút 44×44, panel `left 0 / right 375`, **tràn 0**, Escape đóng + focus về nút. Desktop
+1440px → nút **ẩn**, rail 232px giữ nguyên như cũ.
+
+### Danh sách quote: `All` không còn tính quote đã xoá
+
+Đây là **lỗi số tiền**, không phải thẩm mỹ. Đo trên công ty demo (2026-11-08):
+
+| | Số dòng | Contract |
+|---|---|---|
+| Có cả quote đã xoá (trước) | 27 | **$747,970.42** |
+| Chỉ quote còn dùng (sau) | 22 | **$621,113.57** |
+| Chênh = 5 quote `deleted` | 5 | $126,856.85 |
+
+"On the books" đang cộng $126k của những quote đã bị xoá khỏi lưu thông, và "Open" đếm cả draft đã
+xoá. Nay strip, caption và chip `All` đều đếm **cùng một tập**, và chip `Deleted N` chỉ hiện khi có.
+
+Thêm **ô tìm kiếm** lọc theo số quote / khách / suburb, đặt cuối hàng chip. Lọc tại client vì danh sách
+đã fetch trọn (≤50 dòng): một vòng request là cùng đáp án nhưng chậm hơn và lỗi thời ngay khi tab khác
+lưu.
+
+### Breadcrumb: 14px → 44px
+
+Cùng một block 5 dòng được copy vào **6 trang** — nên cả 6 cùng dính một lỗi: link cao **14–15px**.
+WCAG 2.5.8 cần 24 CSS px, và ngoại lệ inline **không** áp dụng (đây không phải link trong câu, đây là
+đường duy nhất lên một cấp). Nay `Breadcrumb` là một component: `min-h-11` cộng `-ml-sq-2 px-sq-2` để
+target 44px mà chữ không xê dịch.
+
+### Form mobile: Colours từ 1.992px xuống 652px
+
+P4 ban đầu tôi đề xuất "collapse các nhóm trên mobile". Đo lại thì **thủ phạm không phải số field** mà
+là một khối:
+
+| Nhóm | Cao | % trang |
+|---|---|---|
+| Quote & client | 703 | 9% |
+| Design | 911 | 12% |
+| Shed | 672 | 9% |
+| **Colours** | **1.992** | **26%** |
+
+10 fieldset, mỗi cái một palette 30 swatch cao 160px. Nay mỗi vai trò là **một hàng** 44px (swatch 32px
++ tên màu + tên vai trò), bấm mới mở palette của vai trò đó, chọn xong tự đóng.
+
+Trang bước 1 trên điện thoại: **7.722px → 6.142px** (−20%). Palette vẫn là grid swatch — chỉ *độ hiện*
+thay đổi, không phải cách chọn.
+
+### Slider roof pitch: 8px → 44px
+
+`h-2` → `min-h-11 py-sq-2`, track vẫn 8px nhưng hộp bấm 44px. `range` là control duy nhất mà điều này
+thực sự quan trọng trên điện thoại.
+
+### Rác test
+
+Smoke suite trước đây để lại một quote mỗi lần chạy: tới 2026-11-08 danh sách công ty demo có **13 dòng
+`E2E Smoke`** lẫn giữa quote thật, và "On the books" cộng cả tiền của chúng. Teardown nay **xoá mềm**
+chúng qua API (đúng cách app làm — revision giữ bằng chứng đã gửi đi), chỉ khớp tên khách `E2E` nên
+không bao giờ chạm quote thật. Đo: lần chạy đầu dọn 13, lần sau dọn **1**.
+
+### Test giữ cho không tái diễn
+
+`e2e/layout.spec.ts` thêm 2 ca: menu mobile (nút ≥24px, panel không tràn, Escape trả focus) và breadcrumb
+(≥24px trên 5 trang). Tổng e2e: **12 ca, 53 giây**.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -1882,7 +1968,7 @@ báo ra số:
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 10 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, sign out, **price visible at every width**, **strip stays pinned**, **no sideways scroll**) — needs `pnpm dev` |
+| `e2e` (Playwright) | 12 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, **mobile menu opens without overflow**, **breadcrumb touch target**, sign out + clean up) — needs `pnpm dev` |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

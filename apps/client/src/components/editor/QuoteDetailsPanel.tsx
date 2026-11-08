@@ -972,7 +972,13 @@ function ShedGroup({
 
       <label className="flex flex-col gap-sq-1">
         <span className="text-sq-micro font-medium text-sq-ink">Roof pitch</span>
-        <span className="flex min-h-[38px] items-center gap-sq-2">
+        {/*
+          The track is 8 px and the thumb is whatever the platform draws — too small to grab with a
+          thumb, and `range` is the one control where that matters on a phone. `py-sq-2` grows the
+          touchable box to 44 px without changing the drawn track; `accent-*` keeps the brand colour.
+          Measured before: the whole input was 8 px tall.
+        */}
+        <span className="flex min-h-11 items-center gap-sq-2">
           <input
             id="shed-roofPitchDeg"
             type="range"
@@ -984,7 +990,7 @@ function ShedGroup({
             onChange={(event) =>
               applyDimension({ roofPitchDeg: Number(event.target.value) })
             }
-            className="h-2 flex-1 cursor-pointer accent-[var(--color-sq-brand)]"
+            className="min-h-11 flex-1 cursor-pointer py-sq-2 accent-[var(--color-sq-brand)]"
           />
           <output
             id="shed-roofPitchDeg-value"
@@ -1027,6 +1033,14 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
   const entries = Object.entries(COLORBOND) as [string, string][];
+  /**
+   * Which role's palette is open, or `null` for none.
+   *
+   * One at a time: walls and roof are two decisions, and ten open palettes is what made this block
+   * 1 992 px tall. Kept in the component rather than in `Group` so collapsing the whole Colours group
+   * and reopening it starts from the summary rows again.
+   */
+  const [paletteOpen, setPaletteOpen] = useState<keyof ShedColors | null>(null);
 
   /** The Colorbond name for a hex, so the field can show the name rather than the code. */
   const nameOf = (hex: string): string =>
@@ -1062,64 +1076,115 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
           const label = COLOUR_LABELS[key];
           const hex = config.colors[key];
           const name = nameOf(hex);
+          const editing = paletteOpen === key;
           return (
             <fieldset key={key} className="flex flex-col gap-sq-1">
-              <legend className="flex w-full items-center justify-between text-sq-micro font-medium text-sq-ink">
-                <span>{label}</span>
-                <span className="sq-numeric text-sq-ink-muted">{name === '' ? hex : name}</span>
-              </legend>
               {/*
-                A radio group in a scrollable grid rather than a `<select>`.
+                A row that opens its palette, not ten palettes at once.
 
-                A colour is chosen by looking at it. A dropdown that shows 30 names and no colours
-                makes the operator read, and it is the one field on this form where the swatch is
-                the information.
+                Ten radio groups of 30 swatches each is 1 992 px of this screen — 26% of a phone's
+                whole scroll (measured 2026-08-11-style, 2026-11-08: 7 722 px page, 1 992 px of
+                colour). Most sheds use one colour for everything, so nine of those ten groups are
+                information nobody reads, sitting between the operator and the price.
+
+                The row still **shows** the chosen colour: a 32 px swatch, its name, and the role.
+                Tapping it opens that one palette. One open at a time, because picking a colour for
+                the walls and one for the roof is two decisions, not one.
               */}
-              <div
-                role="radiogroup"
-                aria-label={`${label} colour`}
+              <button
+                type="button"
+                aria-expanded={editing}
+                aria-controls={`colours-${key}-palette`}
+                aria-label={`${label}: ${name === '' ? hex : name}. Change colour`}
                 aria-invalid={issuesByPath.has(`colours-${key}`) || undefined}
-                aria-describedby={
-                  issuesByPath.has(`colours-${key}`) ? `colours-${key}-error` : undefined
-                }
-                className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto rounded-md border border-sq-line p-sq-2"
+                onClick={() => setPaletteOpen(editing ? null : key)}
+                className={[
+                  'flex min-h-11 w-full items-center gap-sq-2 rounded-md px-sq-1 text-left transition-colors duration-sq-fast hover:bg-sq-ground',
+                  issuesByPath.has(`colours-${key}`) ? 'ring-1 ring-sq-danger' : '',
+                ].join(' ')}
               >
-                {entries.map(([colourName, colourHex]) => {
-                  const selected = hex.toLowerCase() === colourHex.toLowerCase();
-                  return (
-                    <button
-                      key={colourName}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={colourName}
-                      title={colourName}
-                      onClick={() => setColour(key, colourHex)}
-                      className={[
-                        'grid h-8 w-8 cursor-pointer place-items-center rounded-md border transition-transform duration-sq-fast',
-                        selected
-                          ? 'border-sq-brand ring-2 ring-sq-brand ring-offset-1'
-                          : 'border-sq-line hover:scale-105',
-                      ].join(' ')}
-                      style={{ backgroundColor: colourHex }}
-                    >
-                      {selected && (
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#ffffff"
-                          strokeWidth="3.5"
-                          aria-hidden="true"
-                        >
-                          <path d="m5 13 4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                <span
+                  aria-hidden="true"
+                  className="h-8 w-8 shrink-0 rounded-md border border-sq-line"
+                  style={{ backgroundColor: hex }}
+                />
+                <span className="min-w-0 flex-1 truncate text-sq-body text-sq-ink">{label}</span>
+                <span className="sq-numeric shrink-0 text-sq-micro text-sq-ink-muted">
+                  {name === '' ? hex : name}
+                </span>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  aria-hidden="true"
+                  className={`shrink-0 text-sq-ink-muted transition-transform duration-sq-fast ${editing ? 'rotate-90' : ''}`}
+                >
+                  <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+
+              {editing && (
+                /*
+                  A radio group in a scrollable grid rather than a `<select>`: a colour is chosen by
+                  looking at it, and a dropdown showing 30 names and no colours makes the operator
+                  read. The swatch is the information — which is why this stays a grid of swatches and
+                  only its *visibility* changed.
+                */
+                <div
+                  id={`colours-${key}-palette`}
+                  role="radiogroup"
+                  aria-label={`${label} colour`}
+                  aria-invalid={issuesByPath.has(`colours-${key}`) || undefined}
+                  aria-describedby={
+                    issuesByPath.has(`colours-${key}`) ? `colours-${key}-error` : undefined
+                  }
+                  className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto rounded-md border border-sq-line p-sq-2"
+                >
+                  {entries.map(([colourName, colourHex]) => {
+                    const selected = hex.toLowerCase() === colourHex.toLowerCase();
+                    return (
+                      <button
+                        key={colourName}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={colourName}
+                        title={colourName}
+                        onClick={() => {
+                          setColour(key, colourHex);
+                          // Pick and close: the row above now shows the answer, so an open palette
+                          // would be asking the same question again.
+                          setPaletteOpen(null);
+                        }}
+                        className={[
+                          'grid h-8 w-8 cursor-pointer place-items-center rounded-md border transition-transform duration-sq-fast',
+                          selected
+                            ? 'border-sq-brand ring-2 ring-sq-brand ring-offset-1'
+                            : 'border-sq-line hover:scale-105',
+                        ].join(' ')}
+                        style={{ backgroundColor: colourHex }}
+                      >
+                        {selected && (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#ffffff"
+                            strokeWidth="3.5"
+                            aria-hidden="true"
+                          >
+                            <path d="m5 13 4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {issuesByPath.has(`colours-${key}`) && (
                 <p id={`colours-${key}-error`} className="text-sq-micro text-sq-danger">
                   {issuesByPath.get(`colours-${key}`)?.message}

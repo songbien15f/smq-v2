@@ -6,6 +6,7 @@ import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { QuoteActions } from '@/components/workspace/QuoteActions';
 import { FrozenSteelwork } from '@/components/workspace/FrozenSteelwork';
+import { Breadcrumb } from '@/components/Breadcrumb';
 
 /**
  * One quote, with its revisions.
@@ -104,12 +105,7 @@ export default async function QuotePage({
       <div className="flex flex-col gap-sq-4">
         <div className="flex flex-wrap items-end justify-between gap-sq-2">
           <div>
-            <p className="text-sq-micro text-sq-ink-muted">
-              <a href="/quotes" className="underline underline-offset-2 hover:text-sq-ink">
-                Quotes
-              </a>{' '}
-              / {quote.data.number}
-            </p>
+            <Breadcrumb trail={[{ label: 'Quotes', href: '/quotes' }, { label: quote.data.number }]} />
             <h1 className="text-sq-title font-semibold">{customerName || 'No customer name'}</h1>
             <p className="text-sq-body text-sq-ink-muted">{quote.data.site?.address ?? '—'}</p>
           </div>

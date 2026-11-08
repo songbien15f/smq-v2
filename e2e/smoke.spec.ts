@@ -53,7 +53,13 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
    */
   await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
 
-  // Step 1: enough of a customer for the save gate.
+  /*
+   * Step 1: enough of a customer for the save gate.
+   *
+   * The name is `E2E` on purpose and it is the marker the teardown deletes on — see `auth.teardown.ts`.
+   * The other flows find this quote by it, so it has to be the same string every run; a unique name
+   * per run would leave one more row behind each time, which is the defect this replaces.
+   */
   await page.locator('#customer-firstName').fill('E2E');
   await page.locator('#customer-lastName').fill('Smoke');
   await page.locator('#customer-email').fill('e2e.smoke@example.com');

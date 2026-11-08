@@ -4,6 +4,7 @@ import { currentSession } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { QuoteFileImport } from '@/components/workspace/QuoteFileImport';
+import { Breadcrumb } from '@/components/Breadcrumb';
 
 /**
  * Reading a legacy `.sqd` quote file.
@@ -26,12 +27,7 @@ export default async function QuoteFileRoute() {
     >
       <div className="flex flex-col gap-sq-4">
         <div>
-          <p className="text-sq-micro text-sq-ink-muted">
-            <a href="/quotes" className="underline underline-offset-2 hover:text-sq-ink">
-              Quotes
-            </a>{' '}
-            / Open a quote file
-          </p>
+          <Breadcrumb trail={[{ label: 'Quotes', href: '/quotes' }, { label: 'Open a quote file' }]} />
           <h1 className="text-sq-title font-semibold">Open a quote file</h1>
           <p className="text-sq-body text-sq-ink-muted">
             A quote saved by the desktop app, as a <code>.sqd</code> file.

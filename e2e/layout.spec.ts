@@ -121,3 +121,56 @@ test('no page scrolls sideways on a phone or a tablet', async ({ page }) => {
     expect(await overflowX(page), `a quote detail page scrolls sideways at ${width}px`).toBeLessThanOrEqual(0);
   }
 });
+
+test('the workspace menu collapses to one icon on a phone, and opens without overflowing', async ({ page }) => {
+  /*
+   * The defect: the links were a horizontal strip. At 390 px that was 264 px of links plus 79 px of
+   * sign-out across the one row every screen has — and it scrolled sideways when it did not fit. The
+   * panel is now anchored to the **bar**, not the button, which is what keeps it inside the viewport;
+   * anchored to the button it started 141 px in and ended at 397 px on a 390 px screen.
+   */
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of ['/quotes', '/quotes/new']) {
+    await page.goto(path);
+    await page.waitForTimeout(1200);
+
+    // Collapsed: no workspace link is visible, the button is, and it is a real touch target.
+    const toggle = page.getByRole('button', { name: /Open workspace menu/ });
+    await expect(toggle).toBeVisible();
+    const box = await toggle.boundingBox();
+    expect(box?.width ?? 0, `${path}: menu button narrower than 24 CSS px`).toBeGreaterThanOrEqual(24);
+    expect(box?.height ?? 0, `${path}: menu button shorter than 24 CSS px`).toBeGreaterThanOrEqual(24);
+    await expect(page.locator('nav[aria-label="Workspace menu"]')).toBeHidden();
+
+    // Opened: every link is there, plus the account control, and nothing overflows.
+    await toggle.click();
+    const panel = page.locator('nav[aria-label="Workspace menu"]');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Quotes' })).toBeVisible();
+    expect(await overflowX(page), `${path}: the open menu overflows the viewport`).toBeLessThanOrEqual(0);
+
+    // Escape closes it and gives focus back to the button — a disclosure, not a trap.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('nav[aria-label="Workspace menu"]')).toBeHidden();
+    await expect(page.getByRole('button', { name: /Open workspace menu/ })).toBeFocused();
+  }
+});
+
+test('the breadcrumb link is a real touch target', async ({ page }) => {
+  /*
+   * The defect: the same five-line block was copied into six pages and in all six the link was
+   * **14–15 px tall**. The inline exception does not apply — it is the only way back up a level, not a
+   * link inside a sentence — so WCAG 2.5.8 wants 24 CSS px.
+   */
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of ['/settings', '/team', '/activity', '/quotes/import', '/settings/prices']) {
+    await page.goto(path);
+    await page.waitForTimeout(800);
+    const crumb = page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').first();
+    if ((await crumb.count()) === 0) continue; // a role without that screen: nothing to measure
+    const box = await crumb.boundingBox();
+    expect(box?.height ?? 0, `${path}: breadcrumb link is ${box?.height}px tall`).toBeGreaterThanOrEqual(24);
+  }
+});

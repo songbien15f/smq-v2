@@ -20,14 +20,31 @@
  *
  * The accessible name is written out (`Open Q-2026-0009 for Jane Citizen`) because an anchor with no
  * text of its own would otherwise be announced as nothing.
+ *
+ * ## "All" means the live quotes, and "Deleted" is its own chip
+ *
+ * A deleted quote is out of use — the row exists so the record of what a customer was sent survives.
+ * It used to render inside "All", so a working list carried dead rows (measured 2026-11-08: 5 of 27,
+ * $126,856.85 of contract value) and the numbers on the chips described a list nobody works from.
+ * `All` now excludes them, and a `Deleted N` chip appears **only when there are some** — so the record
+ * stays reachable without a permanent chip advertising a state most companies never have.
+ *
+ * The search box filters the current chip's rows on number, customer and suburb. It is here rather
+ * than on the server because the list is already fetched whole (≤50 rows): a round trip would be the
+ * same answer, one request later, and stale the moment another tab saves.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { QuoteListItem } from '@sq/contracts';
 import { money, Panel, StatusPill } from '@sq/ui';
 
 /** A status reading order that puts the living states first and the dead ones last. */
-const ORDER = ['draft', 'issued', 'accepted', 'declined', 'expired'] as const;
+const ORDER = ['draft', 'issued', 'accepted', 'declined', 'expired', 'deleted'] as const;
+
+/** The statuses that mean "not in use". Their rows exist for the audit trail, not the work. */
+function isDead(status: string): boolean {
+  return status === 'deleted';
+}
 
 /**
  * The colour of a row's spine, by status. The word is still shown; the colour only leads the eye.
@@ -53,12 +70,32 @@ function toneFor(status: string): 'ok' | 'attention' | 'danger' | 'info' | 'neut
 
 export function QuoteTable({ items }: { items: QuoteListItem[] }) {
   const [filter, setFilter] = useState<string>('');
+  const [query, setQuery] = useState('');
 
-  const present = ORDER.filter((status) => items.some((q) => q.status === status));
-  const shown = filter === '' ? items : items.filter((q) => q.status === filter);
+  /** The living rows. `All` counts these, not the whole array — see the module comment. */
+  const live = useMemo(() => items.filter((quote) => !isDead(quote.status)), [items]);
+  const dead = useMemo(() => items.filter((quote) => isDead(quote.status)), [items]);
 
-  const counts: Record<string, number> = { '': items.length };
-  for (const status of present) counts[status] = items.filter((q) => q.status === status).length;
+  const present = ORDER.filter((status) =>
+    status === 'deleted' ? dead.length > 0 : live.some((q) => q.status === status),
+  );
+
+  const byStatus = filter === '' ? live : filter === 'deleted' ? dead : live.filter((q) => q.status === filter);
+
+  const needle = query.trim().toLowerCase();
+  const shown =
+    needle === ''
+      ? byStatus
+      : byStatus.filter((quote) =>
+          [quote.number, quote.customerName, quote.siteSuburb]
+            .filter((part): part is string => typeof part === 'string')
+            .some((part) => part.toLowerCase().includes(needle)),
+        );
+
+  const counts: Record<string, number> = { '': live.length };
+  for (const status of present) {
+    counts[status] = status === 'deleted' ? dead.length : live.filter((q) => q.status === status).length;
+  }
 
   return (
     <div className="flex flex-col gap-sq-4">
@@ -97,11 +134,35 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
             Clear
           </button>
         )}
+
+        {/*
+          Search, at the end of the chip row so it does not push the filters aside. Not a chip and not
+          a panel: one input with a label a screen reader can announce, sized for a quote number.
+        */}
+        <div className="ml-auto flex min-w-0 items-center gap-sq-1">
+          <label htmlFor="quote-search" className="sr-only">
+            Search quotes by number, customer or site
+          </label>
+          <input
+            id="quote-search"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Number, customer, site"
+            className="min-h-11 w-full max-w-56 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body text-sq-ink placeholder:text-sq-ink-muted/70"
+          />
+        </div>
       </div>
 
       <Panel padded={false}>
         {shown.length === 0 ? (
-          <p className="px-sq-4 py-sq-6 text-sq-body text-sq-ink-muted">No quotes with that status.</p>
+          <p className="px-sq-4 py-sq-6 text-sq-body text-sq-ink-muted">
+            {needle !== ''
+              ? `No quotes match “${query.trim()}”.`
+              : filter === 'deleted'
+                ? 'No deleted quotes.'
+                : 'No quotes with that status.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sq-body">

@@ -4,6 +4,7 @@ import { currentSession } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { TeamPage } from '@/components/workspace/TeamPage';
+import { Breadcrumb } from '@/components/Breadcrumb';
 
 /**
  * The team screen.
@@ -30,12 +31,7 @@ export default async function TeamRoute() {
     >
       <div className="flex flex-col gap-sq-4">
         <div>
-          <p className="text-sq-micro text-sq-ink-muted">
-            <a href="/quotes" className="underline underline-offset-2 hover:text-sq-ink">
-              Quotes
-            </a>{' '}
-            / Team
-          </p>
+          <Breadcrumb trail={[{ label: 'Quotes', href: '/quotes' }, { label: 'Team' }]} />
           <h1 className="text-sq-title font-semibold">Team</h1>
           <p className="text-sq-body text-sq-ink-muted">
             Who can work in this company, and as what.

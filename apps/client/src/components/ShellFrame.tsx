@@ -8,11 +8,12 @@
  * quote list gets the whole width — which is what this product is for. The catalogue's
  * `data-dense-dashboard` profile puts the same figure on it: a 232 px sidebar and a 44 px row.
  *
- * ## Below `lg` it is a strip again
+ * ## Below `lg` the links go behind one icon
  *
- * A rail on a 375 px screen would be a 232 px column of navigation and nothing else. So below `lg`
- * the rail becomes a horizontal strip of the same items, and the account control moves into it. One
- * component, two arrangements, no second implementation of the navigation.
+ * A rail on a 375 px screen would be a 232 px column of navigation and nothing else. So below `lg` the
+ * rail becomes a bar: the brand, a menu button, and the account control. The links themselves live in
+ * `WorkspaceMenu` — measured before this, the strip spent 264 px on links plus 79 px on sign-out, and
+ * scrolled sideways when it did not fit, on the two screens that need the width most.
  *
  * ## `title` and `actions` are optional on purpose
  *
@@ -22,6 +23,7 @@
  */
 
 import { BrandMark } from '@sq/ui';
+import { WorkspaceMenu } from './WorkspaceMenu';
 
 export interface ShellFrameProps {
   children: React.ReactNode;
@@ -88,17 +90,34 @@ export function ShellFrame({
   return (
     <div className="min-h-dvh bg-sq-ground lg:grid lg:grid-cols-[232px_1fr]">
       {/*
-        The rail. One element, arranged by breakpoint: a horizontal strip of links on a phone, a
-        vertical column on a desktop. `sq-on-brand` swaps the focus ring to gold, because a navy ring
+        The rail. One element, arranged by breakpoint: a bar with a menu button on a phone, a vertical
+        column of links on a desktop. `sq-on-brand` swaps the focus ring to gold, because a navy ring
         on navy is invisible.
       */}
-      <aside className="sq-on-brand flex items-center gap-sq-2 overflow-x-auto bg-sq-brand px-sq-3 py-sq-2 text-white lg:flex-col lg:items-stretch lg:gap-sq-6 lg:overflow-visible lg:px-sq-3 lg:py-sq-4">
-        <a href="/quotes" className="flex min-h-11 shrink-0 items-center gap-2 no-underline">
-          <BrandMark size={24} tone="brand" title="" />
-          <span className="text-sq-body font-semibold text-white">SmartQuote</span>
-        </a>
+      <aside className="sq-on-brand relative flex items-center gap-sq-2 bg-sq-brand px-sq-3 py-sq-2 text-white lg:flex-col lg:items-stretch lg:gap-sq-6 lg:px-sq-3 lg:py-sq-4">
+        <div className="flex min-w-0 flex-1 items-center gap-sq-2 lg:flex-col lg:items-stretch lg:gap-sq-6">
+          <a href="/quotes" className="flex min-h-11 shrink-0 items-center gap-2 no-underline">
+            <BrandMark size={24} tone="brand" title="" />
+            <span className="text-sq-body font-semibold text-white">SmartQuote</span>
+          </a>
 
-        <nav className="flex items-center gap-sq-1 lg:flex-col lg:items-stretch lg:gap-1">
+          {/*
+            The phone menu. Its footer carries what the strip used to show inline: the company name, so
+            a person can still tell whose workspace they are in, and the account control.
+          */}
+          <WorkspaceMenu
+            links={nav}
+            footer={
+              <>
+                {hasCompany && <p className="px-sq-2 text-sq-micro text-white/70">{companyName}</p>}
+                <div className="mt-sq-1">{account}</div>
+              </>
+            }
+          />
+        </div>
+
+        {/* On a desktop the links are the rail itself, and the account control sits at its foot. */}
+        <nav className="hidden lg:flex lg:flex-col lg:items-stretch lg:gap-1">
           {nav.map((link) => (
             <a
               key={link.href}
@@ -110,18 +129,14 @@ export function ShellFrame({
           ))}
         </nav>
 
-        {/* On a phone the account control rides in the strip; on a desktop it sits at the foot. */}
-        <div className="ml-auto shrink-0 lg:ml-0 lg:mt-auto lg:shrink">
-          <div className="flex items-center gap-sq-2 lg:hidden">{account}</div>
-          <div className="hidden lg:block">
-            {account}
-            {(hasCompany || subtitle !== undefined) && (
-              <div className="mt-sq-3 border-t border-white/15 pt-sq-3 text-sq-micro leading-relaxed text-white/55">
-                {hasCompany && <b className="block text-sq-body font-semibold text-white">{companyName}</b>}
-                {subtitle}
-              </div>
-            )}
-          </div>
+        <div className="ml-auto hidden shrink-0 lg:ml-0 lg:mt-auto lg:block lg:shrink">
+          {account}
+          {(hasCompany || subtitle !== undefined) && (
+            <div className="mt-sq-3 border-t border-white/15 pt-sq-3 text-sq-micro leading-relaxed text-white/55">
+              {hasCompany && <b className="block text-sq-body font-semibold text-white">{companyName}</b>}
+              {subtitle}
+            </div>
+          )}
         </div>
       </aside>
 

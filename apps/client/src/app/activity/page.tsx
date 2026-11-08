@@ -4,6 +4,7 @@ import { currentSession } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { UsagePage } from '@/components/workspace/UsagePage';
+import { Breadcrumb } from '@/components/Breadcrumb';
 
 /**
  * What this company has been doing, in this product.
@@ -31,12 +32,7 @@ export default async function UsageRoute() {
     >
       <div className="flex flex-col gap-sq-4">
         <div>
-          <p className="text-sq-micro text-sq-ink-muted">
-            <a href="/quotes" className="underline underline-offset-2 hover:text-sq-ink">
-              Quotes
-            </a>{' '}
-            / Activity
-          </p>
+          <Breadcrumb trail={[{ label: 'Quotes', href: '/quotes' }, { label: 'Activity' }]} />
           <h1 className="text-sq-title font-semibold">Activity</h1>
           <p className="text-sq-body text-sq-ink-muted">
             What this company has done here — quotes written, revisions saved, quotes emailed and

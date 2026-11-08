@@ -51,10 +51,22 @@ export default async function QuotesPage() {
   const items = result.ok ? result.data.items : [];
   const canWrite = session.capabilities.includes('quote:write');
 
-  const open = items.filter((q) => q.status === 'draft' || q.status === 'issued').length;
-  const accepted = items.filter((q) => q.status === 'accepted').length;
-  const onTheBooks = items.reduce((sum, q) => sum + (q.contractCents ?? 0), 0);
-  const needsPrice = items.filter((q) => q.incomplete).length;
+  /*
+   * The strip describes the **live** book, not every row in the table.
+   *
+   * A deleted quote keeps its row so the record of what a customer was sent survives, but it is out of
+   * use: its money is not on the books and it is not "open". Counting it here made the strip disagree
+   * with the list beside it. Measured 2026-11-08 on the demo company: 27 rows, of which 5 were deleted
+   * carrying $126,856.85 — so "On the books" read $747,970.42 while the live book was $621,113.57, and
+   * "Open" counted a draft nobody works on. The table's own `All` chip excludes them for the same
+   * reason; the two now agree because they count the same set.
+   */
+  const live = items.filter((q) => q.status !== 'deleted');
+  const open = live.filter((q) => q.status === 'draft' || q.status === 'issued').length;
+  const accepted = live.filter((q) => q.status === 'accepted').length;
+  const onTheBooks = live.reduce((sum, q) => sum + (q.contractCents ?? 0), 0);
+  const needsPrice = live.filter((q) => q.incomplete).length;
+  const hidden = items.length - live.length;
 
   const summary = [
     { label: 'Open', value: String(open), tone: '' },
@@ -76,7 +88,11 @@ export default async function QuotesPage() {
       account={<SignOutButton />}
       subtitle={`Signed in as ${session.email}`}
       title="Quotes"
-      caption={result.ok ? `${items.length} ${items.length === 1 ? 'quote' : 'quotes'} · newest first` : 'The list could not be loaded'}
+      caption={
+        result.ok
+          ? `${live.length} ${live.length === 1 ? 'quote' : 'quotes'}${hidden > 0 ? ` · ${hidden} deleted hidden` : ''} · newest first`
+          : 'The list could not be loaded'
+      }
       actions={
         canWrite ? (
           <>

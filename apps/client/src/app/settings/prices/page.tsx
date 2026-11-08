@@ -4,6 +4,7 @@ import { currentSession } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
 import { PriceImportPage } from '@/components/workspace/PriceImportPage';
+import { Breadcrumb } from '@/components/Breadcrumb';
 
 /**
  * Loading a supplier's price list.
@@ -28,12 +29,7 @@ export default async function PriceImportRoute() {
     >
       <div className="flex flex-col gap-sq-4">
         <div>
-          <p className="text-sq-micro text-sq-ink-muted">
-            <a href="/settings" className="underline underline-offset-2 hover:text-sq-ink">
-              Settings
-            </a>{' '}
-            / Prices
-          </p>
+          <Breadcrumb trail={[{ label: 'Settings', href: '/settings' }, { label: 'Prices' }]} />
           <h1 className="text-sq-title font-semibold">Prices</h1>
           <p className="text-sq-body text-sq-ink-muted">
             Your supplier&rsquo;s prices, loaded from a spreadsheet. These override the shared price
