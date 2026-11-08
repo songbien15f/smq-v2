@@ -113,10 +113,17 @@ test('no page scrolls sideways on a phone or a tablet', async ({ page }) => {
       expect(await overflowX(page), `${path} scrolls sideways at ${width}px`).toBeLessThanOrEqual(0);
     }
 
-    // A quote with several revisions — the widest table in the product.
+    /*
+     * A quote with several revisions — the widest table in the product.
+     *
+     * The list itself is a **table above `sm` and a card list below it**, so the way into a quote
+     * differs by width: a row's stretched link, or the card's own anchor. Both are links to
+     * `/quotes/<id>`, so the locator is that rather than a role that only one arrangement has.
+     */
     await page.goto('/quotes');
-    const firstRow = page.getByRole('row').filter({ hasText: /Q-\d{4}-\d{4}/ }).first();
-    await firstRow.getByRole('link').first().click();
+    await page.waitForTimeout(1200);
+    const firstQuote = page.getByRole('link', { name: /^Open Q-\d{4}-\d{4}/ }).first();
+    await firstQuote.click();
     await expect(page.getByRole('heading', { name: 'Revisions', level: 2 })).toBeVisible({ timeout: 20_000 });
     expect(await overflowX(page), `a quote detail page scrolls sideways at ${width}px`).toBeLessThanOrEqual(0);
   }

@@ -1960,6 +1960,62 @@ không bao giờ chạm quote thật. Đo: lần chạy đầu dọn 13, lần s
 
 ---
 
+## 13.13 Danh sách quote thành card trên điện thoại (2026-11-08)
+
+Bảng 6 cột trên màn 390px là một cuộn ngang với hai cột nhìn thấy một lúc: người bán **không thấy
+khách và giá cùng lúc**, mà đó là phép so sánh duy nhất màn hình này tồn tại để làm. Skill trả đúng
+rule này (`Table Handling` → *"Use horizontal scroll or card layout"*).
+
+Nay dưới `sm` (640px) là **danh sách card**, từ `sm` trở lên vẫn là bảng. Cùng dữ liệu, cùng link,
+cùng state filter — bảng không bị thay mà là thứ bề rộng cho phép.
+
+Mỗi card, theo thứ tự thị giác:
+
+```
+│▌ Q-2026-0032                              draft
+│  E2E Smoke
+│  Dandenong South
+│  ─────────────────────────────────────────────
+│  rev 1 · 07 Nov 2026              $30,119.92
+```
+
+- **spine 3px** màu theo trạng thái, cùng hàm `spineFor` bảng dùng — nên hai hình thức không thể lệch;
+- tên khách là thứ lớn nhất, vì đó là cách người ta tìm;
+- số quote nhỏ, trên cùng, vì đó là thứ người ta **đối chiếu**, không phải thứ người ta tìm;
+- giá ở đáy phải, kèm `rev` và ngày ở đáy trái — một dòng so sánh, không phải hai;
+- cả card là một `<a>`, target **118px**, so với 48px của một hàng bảng.
+
+Đo: 11 card, card đầu **318 × 118**, `overflowX = 0`, trang 2 034px (bảng cũ cùng dữ liệu cao hơn vì
+mỗi hàng 48px cộng header). Desktop 1440: bảng 11 hàng, card `display:none`. Tablet 768: vẫn bảng.
+
+### Ba lỗi test mà việc này làm lộ ra — và một lỗi thật
+
+1. **`getByRole('row')` không còn tồn tại ở 390px.** Layout suite và ba flow smoke dùng nó để mở một
+   quote. Nay cả hai hình thức đều là link tới `/quotes/<id>`, nên locator là **accessible name**
+   (`/for E2E/`, `/^Open Q-\d{4}/`) — bền với cả bảng và card, và không phụ thuộc role nào.
+2. **`.filter({ hasText })` không khớp link trong bảng.** Link của hàng chỉ có text `Open quote`
+   (sr-only); tên khách nằm trong `aria-label`. Đây là lý do phải dùng accessible name chứ không text.
+3. **Cả hai hình thức nằm trong DOM**, cái kia chỉ `hidden` → `.first()` trúng bản ẩn và click chờ
+   60s. Sửa bằng `:visible` trước khi chuyển hẳn sang accessible name.
+
+Và lỗi thật: **quote test tích lại thành rác.** Teardown cũ xoá mềm một quote mỗi lần chạy, nhưng
+revision **không thể xoá** (trigger append-only từ chối, đúng thiết kế) — nên mỗi lần chạy để lại một
+dòng `deleted`. Tới hôm nay công ty demo có **21 quote `E2E Smoke` đã xoá**, hiện trong chip Deleted và
+đủ để làm sai các con số trên danh sách. Nay smoke **dùng lại một quote** (tìm hoặc tạo một lần), nên
+database kết thúc mỗi lần chạy đúng như lúc bắt đầu, và không cần đường xoá nào cho thứ sản phẩm cố ý
+giữ lại.
+
+**21 dòng cũ vẫn còn** — tôi **không** xoá cứng chúng: FK là cascade nhưng trigger `refuse_delete`
+chặn, và `DELETE FROM quotes` bằng tay là phá đúng cái rule sản phẩm đặt ra. Chúng nằm trong chip
+`Deleted` và không còn ảnh hưởng con số nào. Nếu muốn dọn sạch thì đó là một quyết định riêng của bạn.
+
+Một chi tiết nữa: flow 1 giờ mở lại quote cũ, mà mở lại thì **chưa có thay đổi** — nên nút Save bị
+disable, và đó là sản phẩm đúng (lưu một revision y hệt là nhân bản vô nghĩa). Flow đổi số điện thoại
+với một stamp theo thời gian: `fill` cùng giá trị đã có thì fingerprint không đổi và cổng vẫn đóng —
+đó là lần chạy đầu tiên đã chứng minh.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -1968,7 +2024,7 @@ không bao giờ chạm quote thật. Đo: lần chạy đầu dọn 13, lần s
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 12 (sign in, create+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, **mobile menu opens without overflow**, **breadcrumb touch target**, sign out + clean up) — needs `pnpm dev` |
+| `e2e` (Playwright) | 12 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu opens without overflow, breadcrumb touch target, sign out) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

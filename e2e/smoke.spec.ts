@@ -38,9 +38,39 @@ async function dirtyState(page: Page): Promise<{ any: boolean; building: boolean
   };
 }
 
-test('1 — create a quote, see a price, save it, and stay on it', async ({ page }) => {
-  await page.getByRole('link', { name: 'New quote' }).click();
-  await expect(page).toHaveURL(/\/quotes\/new$/);
+test('1 — create or reopen a quote, see a price, save it, and stay on it', async ({ page }) => {
+  /*
+   * Reuse the quote an earlier run left, or create one on a fresh database.
+   *
+   * Every run used to create a new quote and the teardown soft-deleted it — but a revision cannot be
+   * deleted (the append-only trigger refuses, by design), so the rows accumulated: by 2026-11-08 the
+   * demo company carried **21 deleted `E2E Smoke` quotes**, visible in the Deleted chip and enough to
+   * make the count alarms read wrong. A test that keeps one row and reuses it leaves the database the
+   * way it found it, forever, without needing a delete path the product deliberately does not have.
+   *
+   * On a fresh database this is still the **create** flow — the assertion below on the URL is the same
+   * either way, and a save appends a revision when the quote already exists.
+   */
+  const existing = await page.evaluate(async () => {
+    const response = await fetch('/api/sq/quotes?limit=50');
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      data?: { items?: { id: string; customerName?: string | null; status: string }[] };
+    };
+    const items = body.data?.items ?? [];
+    const mine = items.find(
+      (item) => item.status !== 'deleted' && (item.customerName ?? '').trim().startsWith('E2E'),
+    );
+    return mine?.id ?? null;
+  });
+
+  if (existing === null) {
+    await page.getByRole('link', { name: 'New quote' }).click();
+    await expect(page).toHaveURL(/\/quotes\/new$/);
+  } else {
+    await page.goto(`/quotes/${existing}/edit`);
+    await expect(page).toHaveURL(/\/edit$/);
+  }
 
   /*
    * Wait for the first price before touching the form.
@@ -92,6 +122,23 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
   ).toBeVisible();
 
   /*
+   * A **real change** has to exist before a save means anything.
+   *
+   * When the flow reopens the quote an earlier run left, nothing has moved — and the save gate
+   * correctly refuses to freeze a revision identical to the one already saved. That is the product
+   * being right: "Save revision" on an untouched quote would append a duplicate and move the quote's
+   * current revision for no reason.
+   *
+   * The phone number is the field to change. It is not the locator the other flows use (that is the
+   * name), nothing asserts on it, and it is a field a person fills in — so the value must also be
+   * *different* each run: `fill` with the value already there sets the same string, the fingerprint
+   * matches, and the gate stays closed. A first run against the same text is what proved that.
+   */
+  const stamp = String(Date.now()).slice(-6);
+  await page.locator('#customer-phone').fill(`07 3000 ${stamp}`);
+  await expect(page.locator('#customer-phone')).toHaveValue(`07 3000 ${stamp}`);
+
+  /*
    * The save lives on step 3, and the two buttons before it are **navigation** — a distinction the
    * screen makes in words because "Save & next" once cost an operator the whole feature. So the flow
    * walks the steps, and each "Next" is gated on the validation issues being clear.
@@ -100,13 +147,18 @@ test('1 — create a quote, see a price, save it, and stay on it', async ({ page
   await expect(page.getByRole('button', { name: 'Next: cost' })).toBeEnabled({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Next: cost' }).click();
 
-  typeButton: {
-    await page.getByRole('button', { name: 'Save quote' }).click();
-  }
+  /*
+   * The label depends on whether this is the first save: `Save quote` creates, `Save revision`
+   * appends. Both are the same action, so the locator matches either rather than the flow branching
+   * on state it does not need to know.
+   */
+  const saveButton = page.getByRole('button', { name: /^Save (quote|revision)$/ });
+  await expect(saveButton).toBeEnabled({ timeout: 20_000 });
+  await saveButton.click();
 
   /*
-   * The address bar must move to the saved quote. This is the defect of 2026-11-06: the save
-   * worked, the URL stayed `/quotes/new`, and an F5 then showed a blank form — "it did not save".
+   * The address bar must name the saved quote. This is the defect of 2026-11-06: the save worked, the
+   * URL stayed `/quotes/new`, and an F5 then showed a blank form — "it did not save".
    */
   await expect(page).toHaveURL(/\/quotes\/[0-9a-f-]{36}\/edit$/, { timeout: 30_000 });
 });
@@ -118,8 +170,12 @@ test('2 — reopen a saved quote: three steps, the customer, and the plan', asyn
    * "Open Q-2026-0016 for E2E Smoke", not a generic "Open quote", so the row is where the search
    * starts and the single link inside it is the target.
    */
-  const firstRow = page.getByRole('row').filter({ hasText: 'E2E Smoke' }).first();
-  await firstRow.getByRole('link').first().click();
+  /*
+   * The list is a **table above `sm` and cards below it**, so the way in differs by width: a row's
+   * stretched link, or the card's own anchor. Both point at `/quotes/<id>`, so the locator is that
+   * rather than a role only one arrangement has.
+   */
+  await page.getByRole('link', { name: /for E2E/ }).first().click();
   await expect(page).toHaveURL(/\/quotes\/[0-9a-f-]{36}$/);
 
   await page.getByRole('link', { name: 'Edit', exact: true }).click();
@@ -171,8 +227,12 @@ test('3 — save company settings', async ({ page }) => {
 
 test('4 — the send dialog asks for a mode, and posts it (intercepted, no mail)', async ({ page }) => {
 
-  const firstRow = page.getByRole('row').filter({ hasText: 'E2E Smoke' }).first();
-  await firstRow.getByRole('link').first().click();
+  /*
+   * The list is a **table above `sm` and cards below it**, so the way in differs by width: a row's
+   * stretched link, or the card's own anchor. Both point at `/quotes/<id>`, so the locator is that
+   * rather than a role only one arrangement has.
+   */
+  await page.getByRole('link', { name: /for E2E/ }).first().click();
 
   /*
    * The send is intercepted: a smoke test must not email a real address, and the subject under test
@@ -210,8 +270,12 @@ test('4 — the send dialog asks for a mode, and posts it (intercepted, no mail)
 });
 
 test('5 — leaving an edited quote warns; leaving an untouched one does not', async ({ page }) => {
-  const firstRow = page.getByRole('row').filter({ hasText: 'E2E Smoke' }).first();
-  await firstRow.getByRole('link').first().click();
+  /*
+   * The list is a **table above `sm` and cards below it**, so the way in differs by width: a row's
+   * stretched link, or the card's own anchor. Both point at `/quotes/<id>`, so the locator is that
+   * rather than a role only one arrangement has.
+   */
+  await page.getByRole('link', { name: /for E2E/ }).first().click();
   await page.getByRole('link', { name: 'Edit', exact: true }).click();
   await expect(page).toHaveURL(/\/edit$/);
 
@@ -232,7 +296,7 @@ test('5 — leaving an edited quote warns; leaving an untouched one does not', a
   expect(asked, 'an unedited quote asked before leaving').toBe(false);
 
   // Edited: it must ask.
-  await page.getByRole('row').filter({ hasText: 'E2E Smoke' }).first().getByRole('link').first().click();
+  await page.getByRole('link', { name: /for E2E/ }).first().click();
   await page.getByRole('link', { name: 'Edit', exact: true }).click();
   await page.locator('#customer-firstName').fill('E2E Edited');
   await expect.poll(async () => (await dirtyState(page)).any).toBe(true);

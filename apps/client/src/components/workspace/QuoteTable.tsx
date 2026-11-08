@@ -36,7 +36,7 @@
 
 import { useMemo, useState } from 'react';
 import type { QuoteListItem } from '@sq/contracts';
-import { money, Panel, StatusPill } from '@sq/ui';
+import { money, date, Panel, StatusPill } from '@sq/ui';
 
 /** A status reading order that puts the living states first and the dead ones last. */
 const ORDER = ['draft', 'issued', 'accepted', 'declined', 'expired', 'deleted'] as const;
@@ -164,8 +164,66 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
                 : 'No quotes with that status.'}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sq-body">
+          <>
+            {/*
+              Cards below `sm`, the table above it.
+
+              A six-column table on a 390 px screen is a horizontal scroll with two columns visible at
+              a time: the operator cannot see a quote's customer and its price together, which is the
+              only comparison the screen exists for. A card shows all four facts at once — who, where,
+              how far along, how much — in one glance, and each card is a 100 px tap target instead of
+              a 48 px row.
+
+              Same data, same links, same filter state: the table is not replaced, it is what the width
+              allows. Nothing is computed twice — both render from `shown`.
+            */}
+            <ul className="flex flex-col gap-sq-2 p-sq-3 sm:hidden">
+              {shown.map((quote) => (
+                <li key={quote.id}>
+                  <a
+                    href={`/quotes/${quote.id}`}
+                    aria-label={`Open ${quote.number}${quote.customerName ? ` for ${quote.customerName}` : ''}`}
+                    className="block rounded-sq-lg border border-sq-line bg-sq-surface no-underline shadow-sm transition-colors duration-sq-fast hover:bg-sq-ground/60 focus-visible:bg-sq-ground/60"
+                    style={{ boxShadow: `inset 3px 0 0 ${spineFor(quote.status)}, 0 1px 2px rgb(15 23 42 / 0.06)` }}
+                  >
+                    <div className="flex flex-col gap-sq-2 py-sq-2 pl-sq-4 pr-sq-3">
+                      {/* Identity and state: the two facts that classify the card. */}
+                      <div className="flex items-center justify-between gap-sq-2">
+                        <span className="sq-numeric text-sq-micro font-medium text-sq-brand">{quote.number}</span>
+                        <StatusPill tone={toneFor(quote.status)} label={quote.status} />
+                      </div>
+
+                      {/* Who it is for — the largest thing, because that is how a person looks for it. */}
+                      <p className="text-sq-body-lg font-semibold leading-snug text-sq-ink">
+                        {quote.customerName || 'No customer name'}
+                      </p>
+
+                      {quote.siteSuburb !== '' && (
+                        <p className="-mt-sq-1 text-sq-micro text-sq-ink-muted">{quote.siteSuburb}</p>
+                      )}
+
+                      {/* The money, with what produced it underneath — one comparison per card. */}
+                      <div className="flex items-end justify-between gap-sq-2 border-t border-sq-line/70 pt-sq-2">
+                        <span className="text-sq-micro text-sq-ink-muted">
+                          {quote.revision > 0 ? `rev ${quote.revision}` : 'not saved'} · {date(quote.updatedAt)}
+                        </span>
+                        <span className="flex flex-col items-end gap-0.5">
+                          <span className="sq-numeric text-sq-title font-semibold tracking-tight text-sq-ink">
+                            {quote.contractCents === null ? '—' : money(quote.contractCents)}
+                          </span>
+                          {quote.incomplete && (
+                            <span className="text-sq-micro font-medium text-sq-attention">unpriced lines</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full border-collapse text-sq-body">
               <thead>
                 <tr className="border-b border-sq-line text-left text-sq-micro uppercase tracking-wider text-sq-ink-muted">
                   <th scope="col" className="px-sq-3 py-sq-2 pl-sq-4 font-semibold">Number</th>
@@ -219,7 +277,8 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Panel>
     </div>
