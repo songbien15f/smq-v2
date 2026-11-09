@@ -200,6 +200,69 @@ real supplier quotes is the only thing that can close them; the code cannot answ
 
 ---
 
+## 4b. What is actually in the price book, and why this revision is indicative
+
+Two facts that take a newcomer longest to find, measured from the book file itself
+(`data/price-books/fe5a7cae55a5c2025e807e1a0282171cc2a682c0e5068907b013c51210307eb8.db`).
+
+### The book is 80 tables and 31 553 rows
+
+The ones a normal shed reads:
+
+| Table | Rows | Holds | Asked by |
+|---|---|---|---|
+| `country_surburb` | 16,741 | every Australian suburb | address lookup |
+| `system_lookup_data` | 2,752 | one frame schedule row per span × bay × height × wind code | `lookup.frameSchedule()` |
+| `devided` | 1,012 | purlin and girt span limits per wind code and bay | `lookup.devided()` |
+| `gutter` | 824 | one row per profile × colour × state | `lookup.gutter()` |
+| `flashing` | 612 | ridge, barge, corner, head — per colour | `lookup.flashing()` |
+| `cost_bracket` | 426 | base plates, eave brackets, knee-brace connectors | `lookup.bracketExact()` |
+| `downpipe` | 280 | pipe, elbow, shoe, pop, adaptor | `lookup.downpipe()` |
+| `cost_sheeting` | 272 | cladding per profile and thickness | `lookup.sheeting()` |
+| `misc_option` | 125 | catalogue accessories (the ShedSafe fee is one) | `lookup.miscOption()` |
+| `roller_door` | 122 | door sizes per series | `lookup.door()` |
+| `cost_frame` | 111 | steel sections: cost per metre and mass | `lookup.frame()` |
+| `screws` | 107 | screw packs, pieces per pack | `lookup.screwPack()` |
+| `cost_purlin` | 23 | purlin sections | `lookup.purlin()` |
+| `sheeting_cover` | 12 | cover widths (762, 817 mm …) | `lookup.cover()` |
+
+The remaining 66 tables are design parameters (wind region, terrain factor, importance level,
+shielding) and dropdown lists.
+
+### Why this revision prices as 100 × 100 × 2.0 SHS
+
+The book **does** name a section (`system_lookup_data.C1`) — `C20015` for a 4 000 mm bay at
+6 000 × 3 000. The schedule query matches the bay **exactly**:
+
+```
+bays the book lists, structure 1 / region A:   3000, 3500, 4000
+this building's bay:                           3750      ← no row
+```
+
+15 000 mm over 4 bays is 3 750 mm, and `standardBayLength(3750)` returns 3750 unchanged — so the
+query finds nothing, no section is stated, and every frame member is priced on the single fallback
+section with `FRAME_SECTION_ASSUMED` raised. That is the honest meaning of *indicative* here.
+
+A bay the book lists (3 500 or 4 000) would price against a real C-section and cost **more**, because
+C20015 is heavier than 100 × 100 × 2.0 SHS.
+
+### The worked example, verified to the cent
+
+Revision 2 of `Q-2026-0039` — 6 000 × 15 000, 4 bays, 7.5°, gable, wind A / terrain 2:
+
+```
+main column:  8 × 3 600 mm (wall 3 000 + footing allowance 600) = 28.8 m
+              round(28.8 × $16.9571)                            = $488.45
+material     Σ of 33 lines                                      = $8,185.68
+kit          round(8 185.68 × 1.48 × 1.1)                       = $13,326.29   ← matches the stored kitCents
+gst inside   contract − round(contract / 1.1)                   = $1,211.48
+```
+
+The margin of 1.48 is the book's `setting_price_coeffcient` row for this family, not a constant in the
+code.
+
+---
+
 ## 5. Files to read, in order
 
 1. `apps/api/src/routes/evaluations.ts` — the request, the book, the overrides, the save gate.
