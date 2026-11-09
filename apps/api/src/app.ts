@@ -37,6 +37,7 @@ import { registerTemplateFiles } from './routes/templateFiles.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSettings } from './routes/settings.js';
 import { registerAdmin } from './routes/admin.js';
+import { registerVendor } from './routes/vendor.js';
 
 export interface AppDeps {
   db: Db;
@@ -179,6 +180,11 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
       registerSettings(scope, db, mail);
       registerShares(scope, db, process.env.SITE_ORIGIN ?? 'http://localhost:3063');
       registerAdmin(scope, db, config);
+      /*
+       * The vendor dashboard. No session: it is the operator's own page behind one password, and he
+       * may not be a member of any company. See `routes/vendor.ts` for why it is not `/admin/usage`.
+       */
+      registerVendor(scope, db);
     },
     { prefix: '/api/v1' },
   );

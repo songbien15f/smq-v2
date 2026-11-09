@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
@@ -30,6 +31,37 @@ import { defineConfig, devices } from '@playwright/test';
  * The specs share one database and one company's settings; parallel workers would race over the
  * settings version and the quote counter.
  */
+/**
+ * Read the vendor password from the environment the app actually uses.
+ *
+ * The dashboard's password lives in `.env` (or the deployment's environment), and this suite needs the
+ * same value to sign in. `process.env` alone is empty when Playwright is started without
+ * `--env-file`, so the file is read directly — the alternative is a suite that silently skips every
+ * dashboard test, which is what it did on the first run.
+ *
+ * Read here rather than in the spec so the value reaches `process.env` for **both** this file's skip
+ * decision and the test that types it.
+ */
+function loadVendorPassword(): void {
+  if (process.env.VENDOR_DASHBOARD_PASSWORD !== undefined) return;
+  for (const file of ['.env', 'apps/client/.env.local']) {
+    try {
+      const text = readFileSync(file, 'utf8');
+      const match = /^VENDOR_DASHBOARD_PASSWORD=(.*)$/m.exec(text);
+      if (match === null) continue;
+      const value = (match[1] ?? '').trim().replace(/^["']|["']$/g, '');
+      if (value !== '') {
+        process.env.VENDOR_DASHBOARD_PASSWORD = value;
+        return;
+      }
+    } catch {
+      // A missing file is normal in CI; the skip in the spec then reports why.
+    }
+  }
+}
+
+loadVendorPassword();
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
@@ -66,6 +98,19 @@ export default defineConfig({
        */
       teardown: 'teardown',
       use: { ...devices['Desktop Chrome'], channel: 'chrome', storageState: 'e2e/.auth/state.json' },
+    },
+    {
+      /*
+       * The vendor dashboard, in its own project with **no storageState**.
+       *
+       * It is not part of the product's session: it has its own password and its own cookie. Sharing
+       * the `chrome` project would do two wrong things — it would inherit a product session the page
+       * never uses, and it would inherit a `sq_vendor` cookie left by a previous run, so the "wrong
+       * password" test would start already signed in and be redirected past the form it is testing.
+       */
+      name: 'vendor',
+      testMatch: /vendorDashboard\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
     {
       name: 'teardown',

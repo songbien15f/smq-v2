@@ -2128,15 +2128,77 @@ Mở `Q-2026-0037` từ `/quotes` → trang chi tiết → **Edit**:
 
 ---
 
+## 13.16 `/dashboard` — trang đếm lượt dùng, và tài liệu pipeline giá (2026-11-09)
+
+Yêu cầu: *"mục tiêu đếm có bao nhiêu lượt truy cập, từ API nào, để tôi xem có người xài không"*, và
+*"bổ sung docs về flowchart + công thức + 5 nguồn dữ liệu"*. Cả hai xong.
+
+### Cửa riêng, không dùng session sản phẩm
+
+`/dashboard` là trang của **người vận hành** — người có thể **không thuộc công ty nào**. Cho anh ta một
+dòng `users` + role để xem một trang sẽ đặt anh ta vào danh sách mà khách hàng quản trị được. Nên:
+
+- mật khẩu **một cái**, trong `VENDOR_DASHBOARD_PASSWORD`, ở **cả hai** process;
+- trình duyệt **không giữ** mật khẩu: nó giữ cookie `sq_vendor` do client ký;
+- cookie ký bằng **scrypt(password)** → **đổi mật khẩu là mọi cookie cũ chết theo**, không cần secret
+  thứ hai để rotate;
+- API nhận `x-vendor-key`, so **timing-safe trên SHA-256 của cả hai vế** (`timingSafeEqual` ném lỗi
+  khi độ dài khác nhau, nên so thô buộc phải return sớm — đúng cái timing signal cần tránh);
+- sai key và không key đều trả **404**, không phải 401: người lạ không cần biết route này tồn tại;
+- **không set mật khẩu = đóng**, không phải mở.
+
+### Đếm hai cách, vì hai câu hỏi
+
+| Bảng | Trả lời |
+|---|---|
+| **What is happening** (theo `kind`) | `quote_created` 32 · `revision_saved` 7 · `page_view` 1.376 — sản phẩm có được dùng không, và **bây giờ** có không (cột 7/30/90 ngày) |
+| **Which screens are opened** (theo route) | `/quotes` 557 · `/quotes/new` 298 · `/quotes/:id/edit` 168 · `/quotes/:id` 141 — **màn nào** người ta thực mở. Một công ty đăng nhập rồi không bao giờ mở editor là công ty sẽ không gia hạn, và cột `kind` không nói được điều đó |
+
+### Lỗi tôi tự tạo rồi tự bắt: `:id` không gộp
+
+Lần đầu bảng route có **61 dòng**, trong đó ba dòng cùng nhãn `/quotes/:id/edit` với 41 / 16 / 16 lượt.
+Nguyên nhân: tôi thay UUID thành `:id` lúc **render**, còn **nhóm** thì ở server theo route gốc — ba
+nhóm khác nhau đội cùng một nhãn.
+
+Nhóm và đặt nhãn là hai nửa của **một** câu hỏi ("editor được mở bao nhiêu lần"), nên cả hai phải ở
+cùng một chỗ: khoá của `Map` là route đã chuẩn hoá (`normaliseRoute` ở `routes/vendor.ts`), trang chỉ
+in ra thứ nó nhận. Sau khi sửa: **61 → 11 dòng**, `/quotes/:id/edit` = 168.
+
+Test `vendorUsage.test.ts` ghi **hai UUID khác nhau** và khẳng định chúng vào **một** dòng — nếu ai
+chuyển phép thay thế về lại trang, test đỏ.
+
+### `/dashboard/docs` — cùng nội dung với `docs/PRICING-PIPELINE.md`
+
+Bốn mục: 10 bước · công thức · nguồn dữ liệu · "assumption không phải lỗi". Sơ đồ dùng `<pre>` ASCII,
+**không** Mermaid: trang này server-render, Mermaid cần client bundle cho một sơ đồ không bao giờ đổi.
+
+Nguồn sự thật là `docs/PRICING-PIPELINE.md` (đọc cùng code khi review). Trang chỉ được khác về **cách
+trình bày**, không được khác về **công thức** — sai là bug ở trang.
+
+### Đo được
+
+| | |
+|---|---|
+| `GET /vendor/usage` không key / sai key | **404** |
+| prefix của mật khẩu đúng | **404** |
+| không cấu hình mật khẩu | **503** `not_configured` |
+| đúng key | 200, `page_view` 1.376 · `quote_created` 32 · 11 route |
+| `/dashboard` chưa đăng nhập | redirect `/dashboard/login` |
+| mật khẩu sai | *"That password is not right."*, ở lại form |
+| mật khẩu đúng | `/dashboard`, 1.416 events, 61→11 screens |
+| đăng xuất | cookie xoá, `/dashboard` redirect lại |
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 257 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, **quote header follows its newest revision**) |
+| `@sq/api` | 263 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, **vendor usage route**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 16 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; **+ 4 legacy `.sqd` import** — reads, reports, opens, edits all three steps, saves and reopens) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 19 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 
