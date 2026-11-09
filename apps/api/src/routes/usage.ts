@@ -73,6 +73,13 @@ export function registerUsage(app: FastifyInstance, db: Db): void {
       kind: 'page_view',
       tenantId: session.tenantId as string,
       userId: session.userId,
+      /*
+       * The visitor, hashed inside `recordUsage`. Every screen open carries it, which is what makes a
+       * "how many different people" count possible at all — this row is the only one that happens on
+       * every visit, so it is the only place the count can come from.
+       */
+      address: request.ip,
+      actorEmail: session.email,
       detail: { route },
     });
 

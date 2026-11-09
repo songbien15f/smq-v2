@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { makeTestApp, type TestApp } from './helpers.js';
+import { hashAddress, recordUsage } from '../lib/usage.js';
 
 /**
  * The vendor dashboard's data route, and the one thing that matters about it: **nobody without the
@@ -73,11 +74,16 @@ describe('GET /vendor/usage', () => {
     const response = await call(PASSWORD);
     expect(response.statusCode).toBe(200);
 
-    const body = response.json() as { ok: boolean; data: { kinds: unknown[]; routes: unknown[]; recent: unknown[] } };
+    const body = response.json() as {
+      ok: boolean;
+      data: { kinds: unknown[]; routes: unknown[]; visitors: unknown[]; activity: unknown[] };
+    };
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.data.kinds)).toBe(true);
     expect(Array.isArray(body.data.routes)).toBe(true);
-    expect(Array.isArray(body.data.recent)).toBe(true);
+    // `recent` was replaced by `activity`: one array over one table, not two that can disagree.
+    expect(Array.isArray(body.data.visitors)).toBe(true);
+    expect(Array.isArray(body.data.activity)).toBe(true);
   });
 
   it('records a page view and counts it under a grouped route', async () => {
@@ -106,5 +112,102 @@ describe('GET /vendor/usage', () => {
     expect(editor?.total).toBe(2);
     // And no raw identifier survives into the answer.
     expect(routes.some((row) => /[0-9a-f]{8}-[0-9a-f]{4}-/i.test(row.route))).toBe(false);
+  });
+});
+
+/**
+ * Who came, and what they did.
+ *
+ * The operator's ask was explicit: *"bao nhiêu IP đã ghé thăm, và đã làm những thao tác gì… ko phải
+ * chỉ đếm summary"*. Two properties make that answerable at all, and both are asserted here because
+ * both are easy to lose:
+ *
+ * 1. **an address is recorded at all** — `hashAddress` had to be wired into `recordUsage`, and until
+ *    it was, `ip_hash` was NULL on every row and the visitors table would have been empty forever;
+ * 2. **it is a digest, not an address** — reversible-by-enumeration is the failure mode of an
+ *    unsalted hash of an IPv4 address, so the salt is part of the contract.
+ */
+describe('visitors and the activity log', () => {
+  it('hashes an address with a salt, and never stores the address', () => {
+    process.env.SESSION_SECRET = 'test-session-secret-long-enough-for-the-salt';
+
+    const a = hashAddress('203.0.113.7');
+    expect(a).not.toBeNull();
+    // A digest, and short enough to show as a handle.
+    expect(a).toHaveLength(32);
+    expect(a).not.toContain('203');
+    // Stable for the same input: the count depends on it.
+    expect(hashAddress('203.0.113.7')).toBe(a);
+    // Different for a different input.
+    expect(hashAddress('203.0.113.8')).not.toBe(a);
+
+    // A dual-stack listener reports the mapped form; one visitor must not become two.
+    expect(hashAddress('::ffff:203.0.113.7')).toBe(a);
+
+    // A different salt gives a different digest, which is what makes enumeration useless.
+    process.env.SESSION_SECRET = 'a-different-session-secret-also-long';
+    expect(hashAddress('203.0.113.7')).not.toBe(a);
+  });
+
+  it('answers no digest for an absent address, rather than a digest of nothing', () => {
+    // An event with no request behind it must not collapse into one shared "visitor".
+    expect(hashAddress(undefined)).toBeNull();
+    expect(hashAddress('')).toBeNull();
+    expect(hashAddress('   ')).toBeNull();
+  });
+
+  it('counts two addresses as two visitors, and one address twice as one', async () => {
+    process.env.SESSION_SECRET = 'test-session-secret-long-enough-for-the-salt';
+
+    await recordUsage(ctx.db, {
+      kind: 'page_view',
+      tenantId: 't1',
+      userId: 'u1',
+      address: '198.51.100.10',
+      actorEmail: 'first@example.com',
+      detail: { route: '/quotes' },
+    });
+    await recordUsage(ctx.db, {
+      kind: 'page_view',
+      tenantId: 't1',
+      userId: 'u1',
+      address: '198.51.100.10',
+      actorEmail: 'first@example.com',
+      detail: { route: '/settings' },
+    });
+    await recordUsage(ctx.db, {
+      kind: 'quote_created',
+      tenantId: 't1',
+      userId: 'u2',
+      address: '198.51.100.99',
+      actorEmail: 'second@example.com',
+      detail: { quoteId: 'q1', revision: 1, quoteNumber: 'Q-2026-0042' },
+    });
+
+    // The raw address must not be reachable from the table.
+    const rows = await ctx.db.all<{ ip_hash: string | null; detail_json: string | null }>(
+      'SELECT ip_hash, detail_json FROM usage_events',
+    );
+    expect(rows.every((row) => row.ip_hash === null || !row.ip_hash.includes('198'))).toBe(true);
+
+    const response = await call(PASSWORD);
+    const data = (response.json() as {
+      data: {
+        visitors: { visitor: string; events: number; screens: number; actors: string[] }[];
+        activity: { kind: string; actor: string | null; quoteNumber: string | null }[];
+      };
+    }).data;
+
+    // Two addresses, not three events.
+    expect(data.visitors).toHaveLength(2);
+
+    const repeat = data.visitors.find((visitor) => visitor.actors.includes('first@example.com'));
+    expect(repeat?.events).toBe(2);
+    expect(repeat?.screens).toBe(2);
+
+    // The log says *what* the second one did, by quote number — not only that something happened.
+    const created = data.activity.find((event) => event.kind === 'quote_created');
+    expect(created?.actor).toBe('second@example.com');
+    expect(created?.quoteNumber).toBe('Q-2026-0042');
   });
 });

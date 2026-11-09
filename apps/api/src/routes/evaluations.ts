@@ -726,7 +726,14 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
           kind: result.revision === 1 ? 'quote_created' : 'revision_saved',
           tenantId,
           userId: session.userId,
-          detail: { quoteId: result.quoteId, revision: result.revision },
+          address: request.ip,
+          actorEmail: session.email,
+          detail: {
+            quoteId: result.quoteId,
+            revision: result.revision,
+            // The quote number, so the log says *which* quote was saved and not only its id.
+            quoteNumber: result.quoteNumber,
+          },
         });
       }
 

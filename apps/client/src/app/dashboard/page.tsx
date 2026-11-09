@@ -108,8 +108,9 @@ export default async function DashboardPage() {
       ) : (
         <>
           {/* The headline: one number per window, so "is it being used now" is answered at a glance. */}
-          <dl className="grid grid-cols-2 gap-sq-3 sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-sq-3 sm:grid-cols-5">
             {[
+              { label: 'Visitors', value: usage.visitors.length },
               { label: 'Events, all time', value: totals?.total ?? 0 },
               { label: 'Last 7 days', value: totals?.last7 ?? 0 },
               { label: 'Last 30 days', value: totals?.last30 ?? 0 },
@@ -208,23 +209,112 @@ export default async function DashboardPage() {
 
           <section className="rounded-lg border border-sq-line bg-sq-surface">
             <h2 className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-body font-semibold text-sq-ink">
-              The newest forty events
+              Who came ({usage.visitors.length})
             </h2>
-            <ul className="divide-y divide-sq-line/70">
-              {usage.recent.length === 0 ? (
-                <li className="px-sq-3 py-sq-4 text-sq-ink-muted">Nothing yet.</li>
-              ) : (
-                usage.recent.map((event, index) => (
-                  <li key={`${event.at}-${index}`} className="flex flex-wrap items-baseline gap-sq-2 px-sq-3 py-sq-2">
-                    <span className="sq-numeric text-sq-micro text-sq-ink-muted">{when(event.at)}</span>
-                    <span className="text-sq-body text-sq-ink">{KIND_LABEL[event.kind] ?? event.kind}</span>
-                    <span className="ml-auto font-mono text-sq-micro text-sq-ink-muted">
-                      {event.detail === null ? '' : routeLabel(event.detail)}
-                    </span>
-                  </li>
-                ))
-              )}
-            </ul>
+            <p className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">
+              A visitor is a distinct address, stored as a <strong>salted hash</strong> — the first eight
+              characters are a handle, and the address itself is not in this database and cannot be
+              recovered from it. More than one name under a visitor means a shared machine.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sq-body">
+                <thead>
+                  <tr className="border-b border-sq-line text-left text-sq-micro uppercase tracking-wider text-sq-ink-muted">
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">Visitor</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">Signed in as</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 text-right font-semibold">Screens</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 text-right font-semibold">Events</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">First seen</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">Last seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.visitors.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-sq-3 py-sq-4 text-sq-ink-muted">
+                        No address has been recorded yet. Rows written before addresses were captured carry
+                        no visitor, so an empty table beside a non-zero event count is normal for old data.
+                      </td>
+                    </tr>
+                  ) : (
+                    usage.visitors.map((visitor) => (
+                      <tr key={visitor.visitor} className="border-b border-sq-line/70 last:border-0">
+                        <td className="px-sq-3 py-sq-2 font-mono text-sq-micro">{visitor.visitor}</td>
+                        <td className="px-sq-3 py-sq-2">
+                          {visitor.actors.length === 0 ? (
+                            <span className="text-sq-ink-muted">—</span>
+                          ) : (
+                            visitor.actors.join(', ')
+                          )}
+                          {visitor.actors.length > 1 && (
+                            <span className="ml-sq-1 text-sq-micro text-sq-attention">
+                              ({visitor.actors.length} people)
+                            </span>
+                          )}
+                        </td>
+                        <td className="sq-numeric px-sq-3 py-sq-2">{num(visitor.screens)}</td>
+                        <td className="sq-numeric px-sq-3 py-sq-2">{num(visitor.events)}</td>
+                        <td className="sq-numeric px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">{when(visitor.firstSeen)}</td>
+                        <td className="sq-numeric px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">{when(visitor.lastSeen)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-sq-line bg-sq-surface">
+            <h2 className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-body font-semibold text-sq-ink">
+              The activity log — who did what ({usage.activity.length})
+            </h2>
+            <p className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">
+              Every recorded action, newest first. A screen open says which screen; a save says which
+              quote; a send says which of the four intents. No customer name, address or price is
+              recorded, so a quote appears by its number and not by who it was for.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sq-body">
+                <thead>
+                  <tr className="border-b border-sq-line text-left text-sq-micro uppercase tracking-wider text-sq-ink-muted">
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">When</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">Who</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">What</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">On</th>
+                    <th scope="col" className="px-sq-3 py-sq-2 font-semibold">Visitor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.activity.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-sq-3 py-sq-4 text-sq-ink-muted">Nothing recorded yet.</td>
+                    </tr>
+                  ) : (
+                    usage.activity.map((event, index) => (
+                      <tr key={`${event.at}-${index}`} className="border-b border-sq-line/70 last:border-0">
+                        <td className="sq-numeric px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">{when(event.at)}</td>
+                        <td className="px-sq-3 py-sq-2">
+                          {event.actor ?? <span className="text-sq-ink-muted">—</span>}
+                          {event.tenant !== null && (
+                            <span className="block text-sq-micro text-sq-ink-muted">{event.tenant}</span>
+                          )}
+                        </td>
+                        <td className="px-sq-3 py-sq-2">{KIND_LABEL[event.kind] ?? event.kind}</td>
+                        <td className="px-sq-3 py-sq-2 font-mono text-sq-micro text-sq-ink-muted">
+                          {event.route !== null && routeLabel(event.route)}
+                          {event.quoteNumber !== null && event.quoteNumber}
+                          {event.revision !== null && ` · rev ${event.revision}`}
+                          {event.mode !== null && ` · ${event.mode}`}
+                        </td>
+                        <td className="px-sq-3 py-sq-2 font-mono text-sq-micro text-sq-ink-muted">
+                          {event.visitor ?? '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         </>
       )}

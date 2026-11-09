@@ -188,21 +188,131 @@ export function registerVendor(app: FastifyInstance, db: Db): void {
       last90: Number(row.last90 ?? 0),
     }));
 
+    /*
+     * Who came, and what they did.
+     *
+     * Two readings of the same rows, because the operator asked two things:
+     *
+     * - **visitors** — a distinct `ip_hash` with its first and last visit, how many events it produced,
+     *   and which person it was signed in as. This is "how many different people used it", which no
+     *   total can answer: a thousand page views from one laptop is a different fact from a thousand
+     *   from forty.
+     * - **activity** — every event, newest first, with the actor and what it was about. This is the log.
+     *
+     * **The address is already a digest** by the time it reaches this table (`hashAddress` in
+     * `lib/usage.ts`), so nothing here can turn it back into an address even if asked to. The screen
+     * shows the first eight characters as a stable handle, which is enough to tell two visitors apart
+     * and not enough to identify anybody.
+     */
+    const events = await db.all<{
+      at: string;
+      kind: string;
+      ip_hash: string | null;
+      user_id: string | null;
+      tenant_id: string | null;
+      detail_json: string | null;
+    }>(
+      `SELECT at, kind, ip_hash, user_id, tenant_id, detail_json
+         FROM usage_events
+        ORDER BY at DESC`,
+    );
+
+    /** The `detail_json` fields this route reads, parsed once per row. */
+    type Parsed = { route?: string; actor?: string; quoteNumber?: string; mode?: string; revision?: number };
+    const parsedOf = (json: string | null): Parsed => {
+      if (json === null) return {};
+      try {
+        const value = JSON.parse(json) as unknown;
+        return typeof value === 'object' && value !== null ? (value as Parsed) : {};
+      } catch {
+        return {};
+      }
+    };
+
+    const byVisitor = new Map<
+      string,
+      {
+        visitor: string;
+        firstSeen: string;
+        lastSeen: string;
+        events: number;
+        screens: number;
+        actors: Set<string>;
+        tenants: Set<string>;
+      }
+    >();
+
+    for (const row of events) {
+      // An event with no address (a job with no request behind it) cannot be a visitor.
+      if (row.ip_hash === null) continue;
+
+      const handle = row.ip_hash.slice(0, 8);
+      const entry =
+        byVisitor.get(handle) ??
+        {
+          visitor: handle,
+          firstSeen: row.at,
+          lastSeen: row.at,
+          events: 0,
+          screens: 0,
+          actors: new Set<string>(),
+          tenants: new Set<string>(),
+        };
+
+      entry.events += 1;
+      if (row.kind === 'page_view') entry.screens += 1;
+      if (row.at < entry.firstSeen) entry.firstSeen = row.at;
+      if (row.at > entry.lastSeen) entry.lastSeen = row.at;
+      const actor = parsedOf(row.detail_json).actor;
+      if (typeof actor === 'string' && actor !== '') entry.actors.add(actor);
+      if (row.tenant_id !== null) entry.tenants.add(row.tenant_id);
+
+      byVisitor.set(handle, entry);
+    }
+
+    const visitors = [...byVisitor.values()]
+      .map((entry) => ({
+        visitor: entry.visitor,
+        firstSeen: entry.firstSeen,
+        lastSeen: entry.lastSeen,
+        events: entry.events,
+        screens: entry.screens,
+        actors: [...entry.actors],
+        tenants: entry.tenants.size,
+      }))
+      .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
+
+    /** A company name, so the log says "Demo Sheds" rather than a uuid. */
+    const tenants = await db.all<{ id: string; name: string }>('SELECT id, name FROM tenants');
+    const tenantName = new Map(tenants.map((row) => [row.id, row.name]));
+
+    const activity = events.slice(0, 200).map((row) => {
+      const parsed = parsedOf(row.detail_json);
+      return {
+        at: row.at,
+        kind: row.kind,
+        visitor: row.ip_hash === null ? null : row.ip_hash.slice(0, 8),
+        actor: typeof parsed.actor === 'string' ? parsed.actor : null,
+        tenant: row.tenant_id === null ? null : (tenantName.get(row.tenant_id) ?? null),
+        route: typeof parsed.route === 'string' ? parsed.route : null,
+        quoteNumber: typeof parsed.quoteNumber === 'string' ? parsed.quoteNumber : null,
+        mode: typeof parsed.mode === 'string' ? parsed.mode : null,
+        revision: typeof parsed.revision === 'number' ? parsed.revision : null,
+      };
+    });
+
     return sendOk(reply, {
       windows: WINDOWS,
       kinds: kindRows,
       routes,
-      // The newest events, so a person can see *when* the last thing happened rather than only a count.
-      recent: (
-        await db.all<{ at: string; kind: string; detail_json: string | null; tenant_id: string | null }>(
-          `SELECT at, kind, detail_json, tenant_id FROM usage_events ORDER BY at DESC LIMIT 40`,
-        )
-      ).map((row) => ({
-        at: row.at,
-        kind: row.kind,
-        tenantId: row.tenant_id,
-        detail: row.detail_json,
-      })),
+      visitors,
+      /*
+       * `activity` is the log, and it replaced an older `recent` array — same rows, fewer fields.
+       *
+       * Two arrays over one table is how a screen ends up showing "the newest 40" beside "every
+       * event" that disagree about what happened. One list, sliced here, and the page renders it.
+       */
+      activity,
     });
   });
 }

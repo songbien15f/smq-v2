@@ -2190,11 +2190,89 @@ trình bày**, không được khác về **công thức** — sai là bug ở t
 
 ---
 
+## 13.17 Ai đã ghé, và đã làm gì — nhật ký thật (2026-11-09)
+
+Yêu cầu: *"thống kê lại bao nhiêu IP đã ghé thăm, và đã làm những thao tác gì… ko phải chỉ đếm summary
+như hiện tại"*.
+
+### Nút thắt đầu tiên: IP chưa bao giờ được ghi
+
+`usage_events.ip_hash` tồn tại từ migration 001 và **mọi dòng đều NULL** — `recordUsage` ghi cứng
+`NULL`. Nên "bao nhiêu IP" không trả lời được, và một bảng Visitors sẽ rỗng vĩnh viễn.
+
+Nhưng sửa `recordUsage` là **chưa đủ**: API nhận request qua **bridge same-origin** của Next, mà bridge
+là một `fetch` phía server — nên `request.ip` ở API **luôn là 127.0.0.1**. Mọi khách của mọi công ty sẽ
+là **một** địa chỉ. Phải sửa bridge trước:
+
+- bridge đọc `x-forwarded-for` / `x-real-ip` của request vào và **forward tiếp**;
+- không tự bịa, không ghi đè chuỗi đã có — vì API bật `trustProxy: true`, ghi đè sẽ biến nó thành lời
+  nói dối (hop cuối là chính bridge).
+
+### IP được băm, không được lưu
+
+Câu hỏi của dashboard là *"bao nhiêu người **khác nhau**"* — cần **tính khác biệt**, không cần danh
+tính. Lưu `203.0.113.7` trả lời đúng câu đó **và** ghi lại vị trí vật lý của mọi khách hàng của mọi
+công ty, trong một bảng mở bằng một mật khẩu. Nên `hashAddress()`:
+
+- `sha256(SESSION_SECRET + '|' + address)`, cắt 32 ký tự;
+- **salt là `SESSION_SECRET`**, không phải biến mới: IPv4 chỉ có 4 tỉ giá trị, băm không salt thì đảo
+  ngược được trong vài giây; và salt phải sống qua restart, nếu không mỗi lần restart mọi khách thành
+  "mới". `SESSION_SECRET` đã bắt buộc và đã bị từ chối ở production nếu ngắn — thêm secret thứ hai là
+  thêm một thứ để quên, và hệ quả của việc quên là yếu hơn;
+- chuẩn hoá `::ffff:` (dual-stack listener báo dạng mapped), nếu không **một** khách thành **hai**.
+
+Dashboard hiện **8 ký tự đầu** làm handle: đủ để phân biệt hai khách và lần theo một khách trong log,
+không đủ để nhận ra ai.
+
+### "Ai" đi trong `detail_json`, không thêm cột
+
+`actor` (email) đi vào `detail_json`. Lý do: `usage_events` có từ migration 001 trên **cả hai dialect**;
+thêm cột là thêm migration **và** thêm một shape có thể lệch giữa SQLite và Postgres. Nhãn này là một
+chuỗi ngắn trên dòng vốn đã là JSON, và **không truy vấn riêng** — dashboard đọc dòng rồi nhóm. Nếu sau
+này cần index thì đó là lúc thêm cột.
+
+### Ba call site đều ghi `address` + `actor`
+
+| Sự kiện | Ghi thêm gì |
+|---|---|
+| `page_view` | `route` — dòng duy nhất xảy ra **mỗi lần mở màn**, nên là nguồn duy nhất cho đếm visitor |
+| `quote_created` / `revision_saved` | `quoteId`, `revision`, **`quoteNumber`** — log nói được *báo giá nào* |
+| `mail_sent` | `quoteId`, `revisionId`, **`mode`** — bốn ý định gửi, không có `mode` thì "đã gửi mail" không nói được gửi để làm gì |
+
+### Bảng mới trên `/dashboard`
+
+| Bảng | Nội dung |
+|---|---|
+| **Who came (N)** | mỗi `ip_hash` một dòng: handle 8 ký tự · **đăng nhập bằng email nào** (nhiều tên = máy dùng chung, có cảnh báo) · số màn · tổng sự kiện · lần đầu · lần cuối |
+| **The activity log (N)** | **mọi** sự kiện, mới nhất trước: khi nào · **ai** (email + công ty) · **làm gì** · **trên cái gì** (route / số quote + rev / mode gửi) · visitor |
+
+`recent` cũ bị **bỏ**: hai mảng trên một bảng là cách một màn hình hiện "40 cái mới nhất" cạnh "mọi sự
+kiện" mà chúng nói khác nhau. Một danh sách, cắt ở server.
+
+### Đo được
+
+Ghi thật qua trình duyệt (không phải chèn DB): mở `/quotes`, `/settings`, `/activity`, `/dashboard/login`,
+rồi lưu một revision của Q-2026-0039. Log hiện:
+
+```
+2026-11-09 18:46  owner@demo-sheds.local  Demo Sheds Pty Ltd  Revisions saved  Q-2026-0039 · rev 3  91dba38f
+2026-11-09 18:44  owner@demo-sheds.local  Demo Sheds Pty Ltd  Screens opened   /activity            91dba38f
+```
+
+`Visitors = 1` vì tất cả đến từ một máy — đó là **hành vi đúng**, không phải lỗi. Test
+`vendorUsage.test.ts` ghi **hai địa chỉ khác nhau** và đòi `visitors.length === 2` với ba sự kiện, để
+chứng minh phép đếm là theo địa chỉ chứ theo sự kiện.
+
+**Giới hạn phải nói:** mọi dòng ghi **trước** 11:43 hôm nay có `ip_hash = NULL` và `actor = NULL`, nên
+chúng không xuất hiện trong bảng Visitors. Không có cách nào đổ ngược — dữ liệu đó chưa từng được ghi.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 263 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, **vendor usage route**) |
+| `@sq/api` | 266 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, **visitor hashing + activity log**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |

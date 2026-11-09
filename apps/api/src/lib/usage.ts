@@ -29,10 +29,41 @@
 
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
+import { createHash } from 'node:crypto';
 
 /** The kinds this product records. A stable list, because a dashboard groups by it. */
 export const USAGE_KINDS = ['quote_created', 'revision_saved', 'mail_sent', 'page_view'] as const;
 export type UsageKind = (typeof USAGE_KINDS)[number];
+
+/**
+ * An address, as something that can be counted but not read back.
+ *
+ * ## Why a hash rather than the address
+ *
+ * The dashboard's question is *"how many different visitors"*, which needs distinctness, not identity.
+ * Storing `203.0.113.7` answers the same question and additionally records where every customer of
+ * every company physically is — in a table one password opens. A salted digest gives the count and
+ * gives up the address.
+ *
+ * ## Why the salt is `SESSION_SECRET` and not its own variable
+ *
+ * An IPv4 address has four billion values; an unsalted digest of one is reversible by enumeration in
+ * seconds. The salt is what prevents that, and it must survive a restart or every restart would make
+ * every visitor look new. `SESSION_SECRET` is already required and is already rejected in production
+ * if it is short — a second secret would be one more thing a deployment can forget, and the fallback
+ * for forgetting would be weaker than this.
+ *
+ * ## IPv4-mapped IPv6
+ *
+ * A dual-stack listener reports `::ffff:127.0.0.1`. The prefix is stripped first, so one visitor
+ * arriving over v4 and over a mapped address is one visitor rather than two.
+ */
+export function hashAddress(address: string | undefined): string | null {
+  if (address === undefined || address.trim() === '') return null;
+  const normalised = address.trim().replace(/^::ffff:/i, '');
+  const salt = process.env.SESSION_SECRET ?? 'smartquote-usage';
+  return createHash('sha256').update(`${salt}|${normalised}`, 'utf8').digest('hex').slice(0, 32);
+}
 
 /** Record one event. Never throws. */
 export async function recordUsage(
@@ -41,21 +72,39 @@ export async function recordUsage(
     kind: UsageKind;
     tenantId: string | null;
     userId: string | null;
+    /** The request's address. Hashed here, so no caller can write a raw one. */
+    address?: string;
+    /** Who did it, as a person reads it. Not an id: the dashboard is read by a human. */
+    actorEmail?: string | null;
     /** Free-form, and deliberately small: a quote id, a route. Never customer data. */
     detail?: Record<string, string | number | boolean>;
   },
 ): Promise<void> {
   try {
+    /*
+     * The actor travels **inside `detail_json`**, not in a new column.
+     *
+     * `usage_events` has existed since migration 001 on both dialects; a column means a migration plus
+     * a second shape that can disagree between SQLite and Postgres. The label is one short string on a
+     * row that is already JSON, and nothing queries it on its own — the dashboard reads the rows and
+     * groups them. If it ever needs an index, that is the moment to add the column.
+     */
+    const detail: Record<string, string | number | boolean> = { ...(input.detail ?? {}) };
+    if (input.actorEmail !== undefined && input.actorEmail !== null && input.actorEmail !== '') {
+      detail.actor = input.actorEmail;
+    }
+
     await db.run(
       `INSERT INTO usage_events (id, at, kind, tenant_id, user_id, ip_hash, detail_json)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         newId(),
         now(),
         input.kind,
         input.tenantId,
         input.userId,
-        input.detail === undefined ? null : JSON.stringify(input.detail),
+        hashAddress(input.address),
+        Object.keys(detail).length === 0 ? null : JSON.stringify(detail),
       ],
     );
   } catch {

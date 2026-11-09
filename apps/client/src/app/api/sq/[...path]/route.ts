@@ -137,6 +137,22 @@ async function forward(
   const body = request.method === 'GET' || request.method === 'HEAD' ? null : await request.text();
   const hasBody = body !== null && body !== '';
 
+  /*
+   * The visitor's address, forwarded so the API can record *who* at all.
+   *
+   * This bridge is a server-side `fetch`, so every request reaches the API from `127.0.0.1` — which
+   * makes an IP column worthless: every visitor in the product would be one address. The address has
+   * to travel in a header.
+   *
+   * Forwarded, not invented: Next's own `request.headers` already carries `x-forwarded-for` when the
+   * deployment sits behind a proxy. Overwriting it would make the API's `trustProxy: true` a lie —
+   * the last hop would be the only address, and the last hop is this bridge.
+   *
+   * A caller could forge the left end of that list. That is why the API hashes it with a salt and why
+   * nothing authorises on it: it counts distinct visitors, it is not a credential.
+   */
+  const clientAddress = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
+
   const upstream = await fetch(`${API}/${joined}${incoming.search}`, {
     method: request.method,
     headers: {
@@ -146,6 +162,7 @@ async function forward(
       ...(request.headers.get('origin') === null ? {} : { origin: request.headers.get('origin') as string }),
       ...(hasBody ? { 'content-type': request.headers.get('content-type') ?? 'application/json' } : {}),
       ...(cookie === '' ? {} : { cookie }),
+      ...(clientAddress === null || clientAddress === '' ? {} : { 'x-forwarded-for': clientAddress }),
     },
     ...(hasBody ? { body } : {}),
     cache: 'no-store',

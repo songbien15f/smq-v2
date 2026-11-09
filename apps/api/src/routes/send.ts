@@ -170,7 +170,15 @@ export function registerSend(app: FastifyInstance, db: Db): void {
           kind: 'mail_sent',
           tenantId,
           userId: session.userId,
-          detail: { quoteId: request.params.quoteId, revision: body.revisionId },
+          address: request.ip,
+          actorEmail: session.email,
+          detail: {
+            quoteId: request.params.quoteId,
+            revision: body.revisionId,
+            // The mode is the intent: quote, engineering or manufacturing. "A mail was sent" without
+            // it cannot answer which of the three the operator asked for.
+            mode: body.mode,
+          },
         });
       }
 

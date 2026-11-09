@@ -38,18 +38,45 @@ export interface UsageRouteRow {
   last90: number;
 }
 
-/** One recent event. */
-export interface RecentEvent {
+/**
+ * One distinct visitor, identified by the first eight characters of the salted digest of its address.
+ *
+ * **Not an address**, and it cannot be turned into one: the digest is salted with `SESSION_SECRET`
+ * and the salt is not in this table. Eight characters are enough to tell two visitors apart and to
+ * follow one across the activity log, which is all the count needs.
+ */
+export interface VisitorRow {
+  visitor: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** Everything this visitor did, of every kind. */
+  events: number;
+  /** Page views only — the cheapest measure of "how much did they look at". */
+  screens: number;
+  /** The people it was signed in as. More than one means a shared machine. */
+  actors: string[];
+  /** How many companies' data it touched. */
+  tenants: number;
+}
+
+/** One line of the activity log. */
+export interface ActivityRow {
   at: string;
   kind: string;
-  tenantId: string | null;
-  detail: string | null;
+  visitor: string | null;
+  actor: string | null;
+  tenant: string | null;
+  route: string | null;
+  quoteNumber: string | null;
+  mode: string | null;
+  revision: number | null;
 }
 
 export interface VendorUsage {
   kinds: UsageKindRow[];
   routes: UsageRouteRow[];
-  recent: RecentEvent[];
+  visitors: VisitorRow[];
+  activity: ActivityRow[];
 }
 
 /**

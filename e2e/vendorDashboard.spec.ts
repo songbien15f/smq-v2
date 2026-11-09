@@ -49,9 +49,19 @@ test.describe('vendor dashboard', () => {
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 20_000 });
     await expect(page.getByRole('heading', { name: 'Usage dashboard', level: 1 })).toBeVisible();
 
-    // The two tables this page exists for.
+    // The four tables this page exists for.
     await expect(page.getByRole('heading', { name: 'What is happening' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Which screens are opened' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Who came/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /activity log/ })).toBeVisible();
+
+    /*
+     * The log has an **actor** on the newest page view, because that is the question the operator
+     * asked: not a total, but who. This page was opened by a signed-in person a moment ago, so the
+     * newest row must name them — if the actor is not wired into `recordUsage`, every row reads "—".
+     */
+    const activity = page.locator('section').filter({ hasText: 'activity log' });
+    await expect(activity.locator('tbody tr').first()).toContainText(/@/, { timeout: 20_000 });
 
     /*
      * No identifier survives into a route label.
