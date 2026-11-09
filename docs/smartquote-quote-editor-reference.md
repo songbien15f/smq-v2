@@ -2268,11 +2268,96 @@ chúng không xuất hiện trong bảng Visitors. Không có cách nào đổ n
 
 ---
 
+## 13.18 Thấy IP (che 4 số cuối) + phiên có thời lượng và lịch sử (2026-11-09)
+
+Yêu cầu: *"tôi cần thấy IP, show thì che 4 số cuối (tôi click vào thì show). Thống kê dạng Ngày Giờ,
+Ip{no}, bao nhiêu thao tác, ở lại bao nhiêu lâu, click expand thì thấy lịch sử đã làm gì"*.
+
+Yêu cầu này **đảo ngược** quyết định §13.17 (chỉ lưu hash). Đúng, vì câu hỏi thật của người vận hành là
+*"đây là khách thật hay traffic test của tôi"* — một handle 8 ký tự **không trả lời được**, và một
+dashboard không trả lời được câu đó là dashboard không ai tin.
+
+### IP được **mã hoá**, không phải plaintext
+
+`ip_enc` = `iv:tag:ciphertext` (hex), **AES-256-GCM**. Ba tính chất, và cả ba là lý do dùng mã hoá chứ
+không thêm cột text:
+
+- dump DB / backup / file export hỗ trợ **không** chứa địa chỉ ở dạng đọc được;
+- khoá suy từ `SESSION_SECRET`, nên **rotate secret là mọi địa chỉ cũ thành không đọc được** — dữ liệu
+  tự hết hạn thay vì cần job xoá;
+- GCM có xác thực, nên một dòng bị sửa **không giải mã được** thay vì trả về một địa chỉ sai trông hợp lý.
+
+`ip_hash` **giữ nguyên** bên cạnh, vì nó có một tính chất mà ciphertext không có: **rotate khoá thì
+ciphertext chết nhưng handle không đổi**, nên lịch sử của một khách vẫn là một lịch sử. Log nhóm theo
+handle; địa chỉ chỉ để hiển thị.
+
+Ba kết quả trong `lib/address.ts`:
+
+| Hàm | Cho ra |
+|---|---|
+| `encryptAddress` | `iv:tag:body`, IV ngẫu nhiên mỗi dòng (dùng lại IV với GCM là lỗi phá cả mode) |
+| `decryptAddress` | địa chỉ, hoặc `null` khi khoá đã đổi / dòng bị sửa |
+| `maskAddress` | `203.0.1••••` cho IPv4; **`••••••`** cho địa chỉ ngắn như `::1` — che 4 ký tự của 3 ký tự thì không còn gì để đọc, và đó là bẫy đầu tiên tôi gặp |
+
+### "Ở lại bao lâu" cần một biên giới — dùng session của sản phẩm
+
+Migration **016** thêm `session_id` (index `(session_id, at)`). Nhóm theo **session**, không theo địa
+chỉ: một văn phòng 4 người sau một NAT là **một** địa chỉ và **bốn** phiên; một người đi ăn trưa về là
+**phiên thứ hai** cùng địa chỉ. Session là biên giới sản phẩm đã vẽ sẵn, và id đã có trên mọi request —
+không thêm cookie, không sửa client.
+
+`durationMs` = `lastAt − startedAt`. **Đây là sàn, không phải thời lượng**: nó đo khoảng của các hành
+động **đã ghi**, nên một tab mở một màn rồi đọc 10 phút hiện **0** nếu không có gì xảy ra sau. Cột được
+đặt tên **"Active for"** đúng vì thế, và 0 nghĩa là "một hành động được ghi", không phải "không ở lại".
+
+### Bảng Visits mới
+
+| Cột | Ý nghĩa |
+|---|---|
+| **When** | ngày giờ phiên bắt đầu |
+| **Address** | `203.0.1••••`, **click để hiện đầy đủ** (`<button aria-expanded>`, không phải tooltip — tooltip không chạm được trên điện thoại và biến mất khi cuộn) |
+| **Signed in as** | email + công ty |
+| **Actions** | số thao tác trong phiên |
+| **Active for** | `2m 15s` — sàn, xem trên |
+| **Last action** | giờ:phút:giây của hành động cuối |
+| **▸** | expand: danh sách `giờ:phút:giây · hành động · đối tượng` — "Opened /dashboard", "Saved a revision Q-2026-0039 · rev 3" |
+
+`Address` giải mã **một lần mỗi phiên**, không một lần mỗi sự kiện: mọi sự kiện trong một phiên mang
+cùng địa chỉ, và giải mã 200 dòng để hiện một địa chỉ là việc không có đáp án ở cuối.
+
+### Bốn lỗi trong lúc làm — ba của test, một của tôi
+
+1. **Migration chạy hai lần.** Tôi copy nguyên khối `ALTER TABLE` vào **cả** file dialect, mà `migrate()`
+   chạy portable rồi mới tới dialect → cột được thêm hai lần, và lỗi chỉ hiện ở **lần chạy sau** (vì
+   portable đã được ghi nhận), đọc thành "migration hỏng". Sửa: file dialect thành `SELECT 1;` như 015,
+   kèm comment cảnh báo.
+2. **Test chờ quá sớm.** Tôi đọc DOM ngay trong cùng `evaluate` sau `click()` → React chưa flush. Đọc
+   lại sau 600ms thì đúng (`ol: 1`, `li: 183`).
+3. **`.first()` trúng nút Address.** Nút Address **cũng** có `aria-expanded`, nên
+   `tbody button[aria-expanded]` khớp nó trước nút expand. Sửa: scope theo `aria-label*="what was done"`.
+4. **`title*="address"` mất khớp sau click.** `title` đổi từ *"Show the whole address"* sang *"Hide the
+   last four characters"*. Test báo control đang chạy tốt là **hỏng**. Sửa: bám `class` (`font-mono`) —
+   thứ duy nhất không đổi.
+
+Bài học chung: **một control tự đổi nhãn khi bấm thì không thể định vị bằng nhãn của nó.** Cả hai lỗi
+3 và 4 đều là dạng đó, và cả hai đọc thành "tính năng hỏng".
+
+### Đo được
+
+`GET /vendor/usage` trả `visits: 2`, mỗi phiên `actions: 184 / 237`, `events` đầy đủ, `ipMasked:
+"••••••"`, `ipFull: "::1"` (localhost IPv6 — máy test). Trong trình duyệt: click `••••••` → `::1` và
+`aria-expanded="true"`; expand → `ol` với `li` "19:18:22 Opened /dashboard".
+
+**Giới hạn:** mọi dòng ghi trước migration 016 có `session_id = NULL` → không vào bảng Visits (vẫn nằm
+trong Activity log). Không đổ ngược được.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 266 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, **visitor hashing + activity log**) |
+| `@sq/api` | 279 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |

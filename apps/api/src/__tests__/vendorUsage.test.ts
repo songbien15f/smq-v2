@@ -164,6 +164,7 @@ describe('visitors and the activity log', () => {
       tenantId: 't1',
       userId: 'u1',
       address: '198.51.100.10',
+      sessionId: 'session-visit-a',
       actorEmail: 'first@example.com',
       detail: { route: '/quotes' },
     });
@@ -172,6 +173,7 @@ describe('visitors and the activity log', () => {
       tenantId: 't1',
       userId: 'u1',
       address: '198.51.100.10',
+      sessionId: 'session-visit-a',
       actorEmail: 'first@example.com',
       detail: { route: '/settings' },
     });
@@ -180,6 +182,7 @@ describe('visitors and the activity log', () => {
       tenantId: 't1',
       userId: 'u2',
       address: '198.51.100.99',
+      sessionId: 'session-visit-b',
       actorEmail: 'second@example.com',
       detail: { quoteId: 'q1', revision: 1, quoteNumber: 'Q-2026-0042' },
     });
@@ -194,9 +197,36 @@ describe('visitors and the activity log', () => {
     const data = (response.json() as {
       data: {
         visitors: { visitor: string; events: number; screens: number; actors: string[] }[];
+        visits: {
+          sessionId: string;
+          actions: number;
+          durationMs: number;
+          ipMasked: string | null;
+          ipFull: string | null;
+          events: { action: string; detail: string | null }[];
+        }[];
         activity: { kind: string; actor: string | null; quoteNumber: string | null }[];
       };
     }).data;
+
+    /*
+     * Visits are grouped by **session**, which is what "how long did they stay" is a property of. Two
+     * events were written under one session id, so they are one visit with two actions — and the
+     * address is present in both forms: masked for the column, full for the click.
+     */
+    expect(data.visits).toHaveLength(2);
+    const first = data.visits.find((visit) => visit.sessionId === 'session-visit-a');
+    expect(first?.actions).toBe(2);
+    expect(first?.ipMasked).toBe('198.51.10••••');
+    expect(first?.ipFull).toBe('198.51.100.10');
+    // And the history says *what*, in words: "Opened" plus the route.
+    expect(first?.events.map((event) => event.action)).toEqual(['Opened', 'Opened']);
+    /*
+     * Compared as a **set**, not a sequence: both rows are written in the same millisecond, so their
+     * order in the table is whatever the storage decided — and asserting one order would be a test that
+     * passes on SQLite and fails on Postgres for no reason a person could act on.
+     */
+    expect(new Set(first?.events.map((event) => event.detail))).toEqual(new Set(['/quotes', '/settings']));
 
     // Two addresses, not three events.
     expect(data.visitors).toHaveLength(2);

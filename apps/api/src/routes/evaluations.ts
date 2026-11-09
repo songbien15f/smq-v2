@@ -727,6 +727,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
           tenantId,
           userId: session.userId,
           address: request.ip,
+          sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {
             quoteId: result.quoteId,

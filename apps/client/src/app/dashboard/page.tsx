@@ -3,6 +3,7 @@ import { requireVendorSession } from '@/lib/vendorGuard';
 import { vendorPassword } from '@/lib/vendorUsage';
 import { loadVendorUsage } from '@/lib/vendorUsage';
 import { VendorSignOut } from '@/components/vendor/VendorSignOut';
+import { VisitTable } from '@/components/vendor/VisitTable';
 
 /**
  * `/dashboard` — is anybody using this?
@@ -108,8 +109,9 @@ export default async function DashboardPage() {
       ) : (
         <>
           {/* The headline: one number per window, so "is it being used now" is answered at a glance. */}
-          <dl className="grid grid-cols-2 gap-sq-3 sm:grid-cols-5">
+          <dl className="grid grid-cols-2 gap-sq-3 sm:grid-cols-6">
             {[
+              { label: 'Visits', value: usage.visits.length },
               { label: 'Visitors', value: usage.visitors.length },
               { label: 'Events, all time', value: totals?.total ?? 0 },
               { label: 'Last 7 days', value: totals?.last7 ?? 0 },
@@ -205,6 +207,19 @@ export default async function DashboardPage() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="rounded-lg border border-sq-line bg-sq-surface">
+            <h2 className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-body font-semibold text-sq-ink">
+              Visits ({usage.visits.length})
+            </h2>
+            <p className="border-b border-sq-line px-sq-3 py-sq-2 text-sq-micro text-sq-ink-muted">
+              One row per sitting — a signed-in session, from its first action to its last. The address
+              is hidden from the fourth character back; click it to see the whole one, and the arrow to
+              see what was done. <strong>Active for</strong> spans the first and last recorded action, so
+              it is a floor: a tab left open on one screen adds nothing until something else happens.
+            </p>
+            <VisitTable visits={usage.visits} />
           </section>
 
           <section className="rounded-lg border border-sq-line bg-sq-surface">

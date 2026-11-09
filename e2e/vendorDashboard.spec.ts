@@ -52,8 +52,62 @@ test.describe('vendor dashboard', () => {
     // The four tables this page exists for.
     await expect(page.getByRole('heading', { name: 'What is happening' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Which screens are opened' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Visits/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /^Who came/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /activity log/ })).toBeVisible();
+
+    /*
+     * A visit expands into what was done, and its address reveals on a click.
+     *
+     * Both are client state, and both were verified by hand before this test existed — which is exactly
+     * why they need a test: a client component that stops hydrating renders the same markup and does
+     * nothing when clicked, and nothing in the HTML looks wrong.
+     */
+    const visits = page.locator('section').filter({ has: page.getByRole('heading', { name: /^Visits/ }) });
+    /*
+     * Addressed by `aria-expanded` once it has flipped, **not** by the label.
+     *
+     * The button's accessible name changes with its state ("Show what was done…" → "Hide what was
+     * done…"), so a locator built from the opening label stops matching the moment it is pressed and
+     * resolves to nothing — which reads as "the expand did not work". The row's own button is the
+     * stable thing: the one in the Visits section that carries `aria-expanded`.
+     */
+    /*
+     * Scoped to the history button by its `aria-label`, **not** `tbody button[aria-expanded]`.
+     *
+     * The address button carries `aria-expanded` too (it reveals the last four characters), and it sits
+     * in the same row — so a bare `[aria-expanded]` matched the address cell first and the test pressed
+     * the wrong control. The label is stable in *kind* even though it flips between Show and Hide, so
+     * the pattern matches both states.
+     */
+    const expand = visits.locator('tbody button[aria-label*="what was done in the visit"]').first();
+    if ((await expand.count()) > 0) {
+      await expect(visits.locator('ol')).toHaveCount(0);
+      await expand.click();
+      // The history list appears, with at least one dated action.
+      await expect(visits.locator('ol').first()).toBeVisible({ timeout: 10_000 });
+      await expect(visits.locator('ol li').first()).toContainText(/\d{2}:\d{2}:\d{2}/);
+      await expect(expand).toHaveAttribute('aria-expanded', 'true');
+    }
+
+    /*
+     * The address: masked until clicked, then the whole value.
+     *
+     * Addressed by **class**, because both of its other handles change on click: the `title` moves from
+     * "Show the whole address" to "Hide the last four characters" (so `[title*="address"]` stops
+     * matching the moment it is pressed — which is what made this test report a working control as
+     * broken), and the label is the text itself. `font-mono` is the one thing that does not move.
+     *
+     * The bullets are asserted rather than compared as a string: the masked form is `203.0.1••••` for a
+     * long address and `••••••` for the loopback, and the test should not encode which.
+     */
+    const address = visits.locator('td button.font-mono').first();
+    if ((await address.count()) > 0) {
+      await expect(address).toContainText('•');
+      await address.click();
+      await expect(address).not.toContainText('•', { timeout: 10_000 });
+      await expect(address).toHaveAttribute('aria-expanded', 'true');
+    }
 
     /*
      * The log has an **actor** on the newest page view, because that is the question the operator

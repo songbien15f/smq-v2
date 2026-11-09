@@ -171,6 +171,7 @@ export function registerSend(app: FastifyInstance, db: Db): void {
           tenantId,
           userId: session.userId,
           address: request.ip,
+          sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {
             quoteId: request.params.quoteId,

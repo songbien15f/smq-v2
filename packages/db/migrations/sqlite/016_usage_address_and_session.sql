@@ -1,0 +1,12 @@
+-- 016 dialect half — no difference: `TEXT` columns and a plain index are spelled the same on both
+-- dialects, so the whole change lives in the portable file.
+--
+-- **This file must stay a no-op.** The first version copied the `ALTER TABLE` statements into it, and
+-- `migrate()` runs the portable file and then the dialect file — so every column was added twice and
+-- the second run failed with `column "ip_enc" ... already exists`. The portable file had already been
+-- recorded, so the failure appeared only on the *next* run, which reads as "the migration is broken"
+-- rather than "this file repeats it".
+--
+-- This file exists at all because the runner records dialect extras under `<prefix>@dialect`; without
+-- it there is no trace that the dialect pass ran.
+SELECT 1;

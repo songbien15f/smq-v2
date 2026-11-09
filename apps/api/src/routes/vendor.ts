@@ -32,9 +32,24 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
 import { sendFail, sendOk } from '../lib/http.js';
+import { decryptAddress, maskAddress } from '../lib/address.js';
 
 /** The windows the dashboard offers. Anything else falls back to the first. */
 const WINDOWS = [7, 30, 90] as const;
+
+/** What an event reads as inside an expanded visit. */
+const KIND_ACTION: Record<string, string> = {
+  quote_created: 'Created a quote',
+  revision_saved: 'Saved a revision',
+  mail_sent: 'Sent a quote',
+  page_view: 'Opened',
+};
+
+/** The masked form of a stored address, or `null` when the row cannot be decrypted. */
+function maskAddressOrNull(stored: string): string | null {
+  const plain = decryptAddress(stored);
+  return plain === null ? null : maskAddress(plain);
+}
 
 /**
  * Compare two strings without leaking their content or their length through timing.
@@ -208,11 +223,13 @@ export function registerVendor(app: FastifyInstance, db: Db): void {
       at: string;
       kind: string;
       ip_hash: string | null;
+      ip_enc: string | null;
+      session_id: string | null;
       user_id: string | null;
       tenant_id: string | null;
       detail_json: string | null;
     }>(
-      `SELECT at, kind, ip_hash, user_id, tenant_id, detail_json
+      `SELECT at, kind, ip_hash, ip_enc, session_id, user_id, tenant_id, detail_json
          FROM usage_events
         ORDER BY at DESC`,
     );
@@ -286,6 +303,115 @@ export function registerVendor(app: FastifyInstance, db: Db): void {
     const tenants = await db.all<{ id: string; name: string }>('SELECT id, name FROM tenants');
     const tenantName = new Map(tenants.map((row) => [row.id, row.name]));
 
+    /*
+     * Visits: one row per **session**, which is what "how long did they stay" is a property of.
+     *
+     * Grouping by address was the wrong unit — an office of four people behind one NAT is one address
+     * and four sessions, and a person who returns after lunch is a second session at the same address.
+     * The session is the boundary the product already draws, so it is the one used here.
+     *
+     * A row with no `session_id` (written before this change, or by a background job with no request
+     * behind it) cannot be a visit and is skipped — it still appears in `activity`.
+     */
+    type VisitEvent = {
+      at: string;
+      kind: string;
+      action: string;
+      detail: string | null;
+    };
+
+    const bySession = new Map<
+      string,
+      {
+        sessionId: string;
+        startedAt: string;
+        lastAt: string;
+        ipMasked: string | null;
+        ipFull: string | null;
+        actors: Set<string>;
+        tenant: string | null;
+        events: VisitEvent[];
+      }
+    >();
+
+    for (const row of events) {
+      if (row.session_id === null) continue;
+
+      const parsed = parsedOf(row.detail_json);
+      const entry =
+        bySession.get(row.session_id) ??
+        {
+          sessionId: row.session_id,
+          startedAt: row.at,
+          lastAt: row.at,
+          /*
+           * The address is decrypted **once per session**, not once per event: every event in a
+           * session carries the same one, and decrypting two hundred rows to show one address is work
+           * with no answer at the end of it.
+           */
+          ipMasked: row.ip_enc === null ? null : maskAddressOrNull(row.ip_enc),
+          ipFull: row.ip_enc === null ? null : decryptAddress(row.ip_enc),
+          actors: new Set<string>(),
+          tenant: row.tenant_id === null ? null : (tenantName.get(row.tenant_id) ?? null),
+          events: [],
+        };
+
+      if (row.at < entry.startedAt) {
+        entry.startedAt = row.at;
+        // The earliest event's address wins, for the same reason: it is the one they arrived with.
+        if (row.ip_enc !== null) {
+          entry.ipMasked = maskAddressOrNull(row.ip_enc);
+          entry.ipFull = decryptAddress(row.ip_enc);
+        }
+      }
+      if (row.at > entry.lastAt) entry.lastAt = row.at;
+      const actor = typeof parsed.actor === 'string' && parsed.actor !== '' ? parsed.actor : null;
+      if (actor !== null) entry.actors.add(actor);
+
+      entry.events.push({
+        at: row.at,
+        kind: row.kind,
+        action: KIND_ACTION[row.kind] ?? row.kind,
+        detail:
+          typeof parsed.route === 'string'
+            ? parsed.route
+            : typeof parsed.quoteNumber === 'string'
+              ? `${parsed.quoteNumber}${typeof parsed.revision === 'number' ? ` · rev ${parsed.revision}` : ''}`
+              : typeof parsed.mode === 'string'
+                ? `mode: ${parsed.mode}`
+                : null,
+      });
+
+      bySession.set(row.session_id, entry);
+    }
+
+    const visits = [...bySession.values()]
+      .map((entry) => {
+        const startedMs = Date.parse(entry.startedAt);
+        const lastMs = Date.parse(entry.lastAt);
+        return {
+          sessionId: entry.sessionId,
+          startedAt: entry.startedAt,
+          lastAt: entry.lastAt,
+          /**
+           * Milliseconds between the first and last event.
+           *
+           * **A floor, not a duration.** It measures the span of recorded activity, so a person who
+           * opened one screen and read it for ten minutes shows ten minutes only if something else was
+           * recorded after; an idle tab is invisible. The column is labelled "active for" for that
+           * reason, and a zero means "one recorded action", not "no time spent".
+           */
+          durationMs: Number.isFinite(startedMs) && Number.isFinite(lastMs) ? Math.max(0, lastMs - startedMs) : 0,
+          actions: entry.events.length,
+          ipMasked: entry.ipMasked,
+          ipFull: entry.ipFull,
+          actors: [...entry.actors],
+          tenant: entry.tenant,
+          events: entry.events.slice().reverse(),
+        };
+      })
+      .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+
     const activity = events.slice(0, 200).map((row) => {
       const parsed = parsedOf(row.detail_json);
       return {
@@ -306,6 +432,13 @@ export function registerVendor(app: FastifyInstance, db: Db): void {
       kinds: kindRows,
       routes,
       visitors,
+      /*
+       * `visits` is the table the operator asked for: date and time, address, how many actions, how
+       * long, and — when a row is opened — what was done. `visitors` is kept beside it because they
+       * answer different questions: a visit is one sitting, a visitor is one machine across all of
+       * them.
+       */
+      visits,
       /*
        * `activity` is the log, and it replaced an older `recent` array — same rows, fewer fields.
        *

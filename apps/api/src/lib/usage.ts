@@ -30,39 +30,24 @@
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 import { createHash } from 'node:crypto';
+import { encryptAddress } from './address.js';
 
 /** The kinds this product records. A stable list, because a dashboard groups by it. */
 export const USAGE_KINDS = ['quote_created', 'revision_saved', 'mail_sent', 'page_view'] as const;
 export type UsageKind = (typeof USAGE_KINDS)[number];
 
 /**
- * An address, as something that can be counted but not read back.
+ * A salted digest of an address: a stable handle, not the address.
  *
- * ## Why a hash rather than the address
- *
- * The dashboard's question is *"how many different visitors"*, which needs distinctness, not identity.
- * Storing `203.0.113.7` answers the same question and additionally records where every customer of
- * every company physically is — in a table one password opens. A salted digest gives the count and
- * gives up the address.
- *
- * ## Why the salt is `SESSION_SECRET` and not its own variable
- *
- * An IPv4 address has four billion values; an unsalted digest of one is reversible by enumeration in
- * seconds. The salt is what prevents that, and it must survive a restart or every restart would make
- * every visitor look new. `SESSION_SECRET` is already required and is already rejected in production
- * if it is short — a second secret would be one more thing a deployment can forget, and the fallback
- * for forgetting would be weaker than this.
- *
- * ## IPv4-mapped IPv6
- *
- * A dual-stack listener reports `::ffff:127.0.0.1`. The prefix is stripped first, so one visitor
- * arriving over v4 and over a mapped address is one visitor rather than two.
+ * Kept beside `ip_enc` (the encrypted address) for one property the ciphertext does not have: a
+ * **rotation of `SESSION_SECRET` makes the ciphertext unreadable but leaves this unchanged**, so a
+ * visitor's history stays one history. The log groups by this; the address is only ever shown.
  */
 export function hashAddress(address: string | undefined): string | null {
   if (address === undefined || address.trim() === '') return null;
   const normalised = address.trim().replace(/^::ffff:/i, '');
   const salt = process.env.SESSION_SECRET ?? 'smartquote-usage';
-  return createHash('sha256').update(`${salt}|${normalised}`, 'utf8').digest('hex').slice(0, 32);
+  return createHash('sha256').update(`handle|${salt}|${normalised}`, 'utf8').digest('hex').slice(0, 32);
 }
 
 /** Record one event. Never throws. */
@@ -72,8 +57,17 @@ export async function recordUsage(
     kind: UsageKind;
     tenantId: string | null;
     userId: string | null;
-    /** The request's address. Hashed here, so no caller can write a raw one. */
+    /** The request's address. Encrypted and digested here, so no caller can write a raw one. */
     address?: string;
+    /**
+     * The product session this event happened in.
+     *
+     * This is what makes "how long did they stay" answerable. The product's own session is the honest
+     * boundary: somebody who closes the laptop and returns tomorrow has a new session and must not be
+     * credited with fourteen hours. No new cookie and no client change — the id is already on every
+     * request.
+     */
+    sessionId?: string | null;
     /** Who did it, as a person reads it. Not an id: the dashboard is read by a human. */
     actorEmail?: string | null;
     /** Free-form, and deliberately small: a quote id, a route. Never customer data. */
@@ -95,8 +89,8 @@ export async function recordUsage(
     }
 
     await db.run(
-      `INSERT INTO usage_events (id, at, kind, tenant_id, user_id, ip_hash, detail_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO usage_events (id, at, kind, tenant_id, user_id, ip_hash, ip_enc, session_id, detail_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newId(),
         now(),
@@ -104,6 +98,8 @@ export async function recordUsage(
         input.tenantId,
         input.userId,
         hashAddress(input.address),
+        encryptAddress(input.address),
+        input.sessionId ?? null,
         Object.keys(detail).length === 0 ? null : JSON.stringify(detail),
       ],
     );

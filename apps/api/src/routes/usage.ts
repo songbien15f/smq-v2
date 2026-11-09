@@ -79,6 +79,7 @@ export function registerUsage(app: FastifyInstance, db: Db): void {
        * every visit, so it is the only place the count can come from.
        */
       address: request.ip,
+      sessionId: session.sessionId,
       actorEmail: session.email,
       detail: { route },
     });

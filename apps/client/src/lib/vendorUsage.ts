@@ -72,10 +72,43 @@ export interface ActivityRow {
   revision: number | null;
 }
 
+/** One action inside a visit, for the expanded history. */
+export interface VisitEvent {
+  at: string;
+  kind: string;
+  /** Already in words: "Opened", "Saved a revision". */
+  action: string;
+  /** The route, the quote number, or the send mode. */
+  detail: string | null;
+}
+
+/**
+ * One visit — a session, from its first recorded action to its last.
+ *
+ * `durationMs` is a **floor, not a duration**: it spans the first and last recorded event, so a
+ * person who opened one screen and read it for ten minutes shows zero unless something happened
+ * after. The column is labelled "active for" for that reason.
+ */
+export interface VisitRow {
+  sessionId: string;
+  startedAt: string;
+  lastAt: string;
+  durationMs: number;
+  actions: number;
+  /** `203.0.113.xx` — enough to recognise a network, not a person. */
+  ipMasked: string | null;
+  /** The full address, shown only when somebody clicks. `null` when it cannot be decrypted. */
+  ipFull: string | null;
+  actors: string[];
+  tenant: string | null;
+  events: VisitEvent[];
+}
+
 export interface VendorUsage {
   kinds: UsageKindRow[];
   routes: UsageRouteRow[];
   visitors: VisitorRow[];
+  visits: VisitRow[];
   activity: ActivityRow[];
 }
 
