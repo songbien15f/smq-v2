@@ -2016,6 +2016,72 @@ với một stamp theo thời gian: `fill` cùng giá trị đã có thì finger
 
 ---
 
+## 13.14 Deleted mặc định ẩn; và một lỗi giá nghiêm trọng trong luồng import (2026-11-08)
+
+### Deleted ẩn mặc định, có công tắc
+
+Trước: chip `Deleted 21` luôn hiện. Quote đã xoá là **hồ sơ**, không phải việc — một chip thường trực
+nhắc tới thứ hầu hết công ty không bao giờ làm. Nay:
+
+- mặc định **không** render chip `deleted` chút nào;
+- một checkbox **Show deleted (21)** ở cuối hàng chip — bật thì hiện chip **và** chuyển sang nó luôn
+  ("cho tôi xem cái đã xoá" là lý do duy nhất để bấm), tắt thì về danh sách đang dùng;
+- không render công tắc khi không có quote nào bị xoá.
+
+State trong component, **không** `localStorage`: một tuỳ chọn lưu lại sẽ để lựa chọn của người này
+trước mặt người dùng máy kế tiếp, và đây không phải tuỳ chọn về dữ liệu.
+
+`effectiveFilter` xử lý ca tắt công tắc trong khi đang xem Deleted — nếu không, filter trỏ vào tập
+không render, ra bảng rỗng dưới một chip không thấy được, đọc thành "không có quote nào".
+
+### Lỗi thật: mở quote từ template/import thì giá của **toà nhà sai**
+
+Đăng ký e2e cho luồng nhập `.sqd` → phát hiện nút Save bị disable với câu *"Calculate the price again
+before saving"* **dù chưa sửa gì**. Đo theo thời gian: giá stale từ 300ms sau khi mở, `dirty=false`,
+`data-dirty-building=false`. Thu hẹp: xảy ra với `/quotes/new#template=…`, **không** xảy ra với
+`/quotes/new` trơn.
+
+Nguyên nhân — hai quyết định đúng tương tác thành lỗi:
+
+1. `applyConfig` **normalise** config đến từ fragment;
+2. effect tự-tính-giá chạy trong **cùng commit** với `applyConfig`, và callback `calculate` đóng gói
+   `config` của **render trước** — tức toà nhà mặc định.
+
+Nên nó định giá toà nhà mặc định: một con số thật, cho một toà nhà **không có trên màn hình**. Rồi
+fingerprint (tính từ config đã normalise) không khớp, và màn hình báo "out of date" cho một trạng thái
+chưa từng tồn tại.
+
+**Đo được mức độ:** cùng file `mock-test.sqd`,
+- giá của toà nhà **mặc định** (144 × 240 m... không, 12 000 × 24 000 mặc định): **$30,119.92**;
+- giá của toà nhà **trong file** (6 000 × 15 000, 4 bay 3 750, mái 7.5°): **$12,469.03**.
+
+Nghĩa là trước khi sửa, mở một quote cũ hiện **giá của một toà nhà hoàn toàn khác**, và vì stale nên
+không lưu được — nên nó chưa bao giờ bị đóng băng. Nhưng người dùng đọc con số đó.
+
+**Sửa:** `calculate` đọc `useShedStore.getState().config` và `useDraftStore.getState().pricing` **tại
+thời điểm gọi**, không dùng closure — cùng nguyên tắc đường lưu đã theo: thứ được đóng băng là thứ có
+mặt khi request được gửi.
+
+### `e2e/legacyImport.spec.ts` — 4 ca, dùng file thật
+
+Playwright điều khiển được `<input type="file">`, thứ IAB browser **không** làm được — nên lần kiểm
+trước của tính năng này phải bỏ qua picker và POST thẳng vào API. Nay dùng `setInputFiles` thật, trên
+3 định dạng có thật:
+
+| file | dạng | vì sao |
+|---|---|---|
+| `mock-test.sqd` | JSON plaintext | 1 cửa sổ, 4 bay — dạng desktop ghi hôm nay |
+| `template-files/2/1.sqd` | AES-256-CBC | chứng minh key cũ vẫn giải mã trong app **đang chạy** |
+| (cùng file) | | 24 000 mm / 6 bay, khác fixture trên → báo cáo không thể "trông có vẻ đúng" |
+
+Hai file nằm trong **repo legacy bên cạnh**, không phải repo này. Test **skip và nói rõ tên file** khi
+không có, để một clone thiếu chúng báo skip chứ không phải tick xanh trên đường chưa kiểm.
+
+Bốn ca: đọc + báo cáo + mở; sửa được cả 3 step; file AES giải mã được; **lưu rồi mở lại vẫn đúng toà
+nhà** (6000 × 15000 × 4 bay, cửa sổ vẫn trên plan).
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -2024,7 +2090,7 @@ với một stamp theo thời gian: `fill` cùng giá trị đã có thì finger
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 12 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu opens without overflow, breadcrumb touch target, sign out) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 16 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; **+ 4 legacy `.sqd` import** — reads, reports, opens, edits all three steps, saves and reopens) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

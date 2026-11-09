@@ -56,7 +56,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chrome',
-      testMatch: /(smoke|layout)\.spec\.ts/,
+      testMatch: /(smoke|layout|legacyImport)\.spec\.ts/,
       dependencies: ['setup'],
       /*
        * And it signs out when the last flow is done. A seat belongs to a session, a five-seat company

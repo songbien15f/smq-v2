@@ -71,16 +71,39 @@ function toneFor(status: string): 'ok' | 'attention' | 'danger' | 'info' | 'neut
 export function QuoteTable({ items }: { items: QuoteListItem[] }) {
   const [filter, setFilter] = useState<string>('');
   const [query, setQuery] = useState('');
+  /**
+   * Whether deleted quotes are reachable, off by default.
+   *
+   * A deleted quote keeps its row so the record of what a customer was sent survives — but it is not
+   * work, and a chip on the working list advertising it is a permanent reminder of something most
+   * companies never do. So the chip is not rendered at all until this is on, and turning it on is an
+   * explicit act that also **moves the filter to Deleted** in one click: "show me the deleted ones"
+   * is the only reason to press it.
+   *
+   * Kept in component state, not `localStorage`: a preference that persists would leave one person's
+   * choice in front of whoever uses the machine next, and this is not a preference about the data.
+   */
+  const [showDeleted, setShowDeleted] = useState(false);
 
   /** The living rows. `All` counts these, not the whole array — see the module comment. */
   const live = useMemo(() => items.filter((quote) => !isDead(quote.status)), [items]);
   const dead = useMemo(() => items.filter((quote) => isDead(quote.status)), [items]);
 
+  /*
+   * A link back to the working list when the filter points at a set that is currently hidden.
+   *
+   * Turning `showDeleted` off while looking at Deleted would otherwise leave the filter selecting rows
+   * that are not rendered — an empty table under a chip nobody can see, which reads as "there are no
+   * quotes" rather than "you hid them".
+   */
+  const effectiveFilter = filter === 'deleted' && !showDeleted ? '' : filter;
+
   const present = ORDER.filter((status) =>
-    status === 'deleted' ? dead.length > 0 : live.some((q) => q.status === status),
+    status === 'deleted' ? showDeleted && dead.length > 0 : live.some((q) => q.status === status),
   );
 
-  const byStatus = filter === '' ? live : filter === 'deleted' ? dead : live.filter((q) => q.status === filter);
+  const byStatus =
+    effectiveFilter === '' ? live : effectiveFilter === 'deleted' ? dead : live.filter((q) => q.status === effectiveFilter);
 
   const needle = query.trim().toLowerCase();
   const shown =
@@ -103,10 +126,10 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
         <button
           type="button"
           onClick={() => setFilter('')}
-          aria-pressed={filter === ''}
+          aria-pressed={effectiveFilter === ''}
           className={[
             'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-sq-4 text-sq-body font-semibold transition-colors duration-sq-fast',
-            filter === '' ? 'border-sq-brand bg-sq-brand text-white' : 'border-sq-line bg-sq-surface text-sq-ink-muted hover:bg-sq-ground',
+            effectiveFilter === '' ? 'border-sq-brand bg-sq-brand text-white' : 'border-sq-line bg-sq-surface text-sq-ink-muted hover:bg-sq-ground',
           ].join(' ')}
         >
           All <span className="sq-numeric">{counts['']}</span>
@@ -116,16 +139,16 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
             key={status}
             type="button"
             onClick={() => setFilter(status)}
-            aria-pressed={filter === status}
+            aria-pressed={effectiveFilter === status}
             className={[
               'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-sq-4 text-sq-body font-semibold capitalize transition-colors duration-sq-fast',
-              filter === status ? 'border-sq-brand bg-sq-brand text-white' : 'border-sq-line bg-sq-surface text-sq-ink-muted hover:bg-sq-ground',
+              effectiveFilter === status ? 'border-sq-brand bg-sq-brand text-white' : 'border-sq-line bg-sq-surface text-sq-ink-muted hover:bg-sq-ground',
             ].join(' ')}
           >
             {status} <span className="sq-numeric">{counts[status]}</span>
           </button>
         ))}
-        {filter !== '' && (
+        {effectiveFilter !== '' && (
           <button
             type="button"
             onClick={() => setFilter('')}
@@ -139,7 +162,7 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
           Search, at the end of the chip row so it does not push the filters aside. Not a chip and not
           a panel: one input with a label a screen reader can announce, sized for a quote number.
         */}
-        <div className="ml-auto flex min-w-0 items-center gap-sq-1">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-sq-2">
           <label htmlFor="quote-search" className="sr-only">
             Search quotes by number, customer or site
           </label>
@@ -151,6 +174,30 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
             placeholder="Number, customer, site"
             className="min-h-11 w-full max-w-56 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body text-sq-ink placeholder:text-sq-ink-muted/70"
           />
+
+          {/*
+            Deleted quotes are **off by default**: they are a record, not work, and a permanent chip
+            advertising them is a reminder of something most companies never do. This switch both shows
+            the chip and selects it — "show me the deleted ones" is the only reason to press it — and
+            turning it off returns to the working list. Not rendered at all when there are none, rather
+            than offering an empty view.
+          */}
+          {dead.length > 0 && (
+            <label className="inline-flex min-h-11 cursor-pointer items-center gap-sq-2 rounded-md border border-sq-line bg-sq-surface px-sq-3 text-sq-body text-sq-ink-muted">
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={(event) => {
+                  const next = event.target.checked;
+                  setShowDeleted(next);
+                  setFilter(next ? 'deleted' : '');
+                }}
+                className="h-4 w-4 cursor-pointer accent-[var(--color-sq-brand)]"
+              />
+              Show deleted
+              <span className="sq-numeric text-sq-micro">({dead.length})</span>
+            </label>
+          )}
         </div>
       </div>
 
@@ -159,7 +206,7 @@ export function QuoteTable({ items }: { items: QuoteListItem[] }) {
           <p className="px-sq-4 py-sq-6 text-sq-body text-sq-ink-muted">
             {needle !== ''
               ? `No quotes match “${query.trim()}”.`
-              : filter === 'deleted'
+              : effectiveFilter === 'deleted'
                 ? 'No deleted quotes.'
                 : 'No quotes with that status.'}
           </p>

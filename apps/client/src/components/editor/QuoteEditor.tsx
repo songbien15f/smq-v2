@@ -245,13 +245,40 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   /** What the last successful evaluation was priced from, so a change can be classified. */
   const pricedInputs = useRef({ building: '', money: '' });
 
+  /**
+   * Price what is in the stores **now**, not what was in the render that created this callback.
+   *
+   * ## The bug this fixes
+   *
+   * Opening a quote from a template or a legacy `.sqd` link left the price permanently "out of
+   * date" — measured on `/quotes/new#template=…` with nothing touched: `dirty=false`,
+   * `data-dirty-building=false`, and the strip still said *out of date*. The Save button was then
+   * disabled with *"Calculate the price again before saving"*, when nothing had changed to
+   * recalculate for.
+   *
+   * The cause is the interaction of two correct decisions. `applyConfig` **normalises** the incoming
+   * building, and the auto-price effect fires in the same commit that applies it. The callback closed
+   * over the `config` of the *previous* render — the default shed — so it priced that: a real price,
+   * for the wrong building. Then `priceInputs` (computed from the normalised building) no longer
+   * matched the fingerprint that was recorded with it, and the screen correctly reported a stale
+   * price for a state that had never existed on screen.
+   *
+   * Reading the stores at call time is the fix, and it is the same rule the save path already
+   * follows: what gets frozen is what is there when the request is made.
+   */
   const calculate = useCallback(async () => {
+    const currentConfig = useShedStore.getState().config;
+    const currentPricing = useDraftStore.getState().pricing;
+    const currentBuilding = JSON.stringify(currentConfig);
+    const currentMoney = JSON.stringify(currentPricing);
+    const currentInputs = JSON.stringify({ building: currentBuilding, money: currentMoney });
+
     setCalculating(true);
     setPriceError(null);
 
     const result = await api<EvaluationView>('evaluate', {
       method: 'POST',
-      body: { config, pricing },
+      body: { config: currentConfig, pricing: currentPricing },
     });
 
     setCalculating(false);
@@ -263,18 +290,18 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     }
 
     setEvaluation(result.data);
-    pricedInputs.current = { building: buildingInputs, money: moneyInputs };
+    pricedInputs.current = { building: currentBuilding, money: currentMoney };
     setPriced({
       kind: 'current',
       evaluationId: result.data.evaluationId,
       contractCents: result.data.price.contractCents,
       expiresAt: result.data.expiresAt,
-      inputs: priceInputs,
+      inputs: currentInputs,
     });
     // A fresh price means a fresh key: the previous one may have been spent by a save that failed
     // halfway, and reusing it would make the retry look like a replay.
     idempotency.current = newIdempotencyKey();
-  }, [config, pricing, buildingInputs, moneyInputs, priceInputs, setPriced, pricedInputs]);
+  }, [setPriced]);
 
   /**
    * Price the building as soon as the draft it belongs to is in the store.
