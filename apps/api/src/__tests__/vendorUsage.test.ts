@@ -217,7 +217,8 @@ describe('visitors and the activity log', () => {
     expect(data.visits).toHaveLength(2);
     const first = data.visits.find((visit) => visit.sessionId === 'session-visit-a');
     expect(first?.actions).toBe(2);
-    expect(first?.ipMasked).toBe('198.51.10••••');
+    // The last octet is what is hidden, so the /24 stays readable.
+    expect(first?.ipMasked).toBe('198.51.100.•••');
     expect(first?.ipFull).toBe('198.51.100.10');
     // And the history says *what*, in words: "Opened" plus the route.
     expect(first?.events.map((event) => event.action)).toEqual(['Opened', 'Opened']);

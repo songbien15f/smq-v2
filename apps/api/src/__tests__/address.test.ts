@@ -76,19 +76,24 @@ describe('encrypted addresses', () => {
 });
 
 describe('the masked form', () => {
-  it('hides the last four characters of an IPv4 address', () => {
-    // `203.0.113.7` is 11 characters; the last four (`.7` plus two digits) become bullets.
-    expect(maskAddress('203.0.113.7')).toBe('203.0.1••••');
+  it('hides the last octet of an IPv4 address, keeping the network', () => {
+    // The /24 stays — "that is our office range" — and the host does not.
+    expect(maskAddress('203.0.113.7')).toBe('203.0.113.•••');
+    expect(maskAddress('203.0.113.7')).toContain('203.0.113');
   });
 
-  it('hides a short address entirely rather than showing bullets with nothing to read', () => {
-    // `::1` is localhost over IPv6; hiding four characters of three leaves nothing.
-    expect(maskAddress('::1')).toBe('••••••');
+  it('hides the last groups of a long IPv6 address', () => {
+    expect(maskAddress('2001:db8:85a3:8d3:1319:8a2e:370:7348')).toBe('2001:db8:85a3:8d3:••••');
   });
 
-  it('leaves the network recognisable', () => {
-    // The point of the masked column: "that is our office range", not "who is this".
-    expect(maskAddress('203.0.113.7')).toContain('203.0.1');
+  it('shows a short address in full, rather than a row of bullets', () => {
+    /*
+     * `::1` is this machine. Hiding four characters of three leaves nothing, which is the defect this
+     * replaced: every row rendered `••••••` and the operator could not tell a real visitor from their
+     * own test traffic. "Every visitor is ::1" is information, not a leak.
+     */
+    expect(maskAddress('::1')).toBe('::1');
+    expect(maskAddress('127.0.0.1')).toBe('127.0.0.•••');
   });
 });
 

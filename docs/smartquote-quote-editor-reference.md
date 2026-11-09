@@ -2353,6 +2353,62 @@ trong Activity log). Không đổ ngược được.
 
 ---
 
+## 13.19 Cột IP hiện `••••••` — hai lỗi thật (2026-11-09)
+
+Người vận hành: *"sao dashboard vẫn chưa thấy địa chỉ IP của session đó, bạn ko nghe tôi yêu cầu à?"* —
+đúng, và có **hai** lỗi riêng biệt.
+
+### Lỗi 1: `maskAddress` che hết địa chỉ ngắn
+
+Cột Address hiện **`••••••`** trên **mọi** dòng. Nguyên nhân: hàm che **4 ký tự cuối, vô điều kiện**.
+Với `203.0.113.7` thì ra `203.0.1••••` (ổn). Với `::1` — loopback IPv6, **3 ký tự** — che 4 ký tự là che
+toàn bộ. Mọi dòng thành một hàng chấm: **không có IP nào**, đúng cái không được phép xảy ra.
+
+Nay che theo **phần**, vì phần cuối là phần định danh host:
+
+| | |
+|---|---|
+| IPv4 `203.0.113.7` | `203.0.113.•••` — /24 đọc được, host thì không |
+| IPv6 dài | `2001:db8:85a3:8d3:••••` |
+| `::1`, chuỗi ngắn | **hiện đầy đủ** — không có phần host để giấu, và che 3 ký tự của 3 ký tự không nói gì |
+
+Địa chỉ ngắn không riêng tư như địa chỉ của khách: `::1` là **máy này**, và người vận hành **cần** thấy
+điều đó — *"mọi khách đều là ::1"* là một câu trả lời, không phải một rò rỉ.
+
+### Lỗi 2: `request.ip` bỏ qua `x-forwarded-for`
+
+`lib/http.ts` đã có `clientIp()` xử lý đúng (lấy hop đầu của `x-forwarded-for`), nhưng **cả ba** call
+site dùng `request.ip` thô — thứ mà Fastify điền từ socket. Sau bridge same-origin, socket luôn là
+`127.0.0.1`/`::1`, nên địa chỉ thật **không bao giờ** được ghi.
+
+Nay cả ba dùng `clientIp(request.headers, request.ip)`.
+
+### Chứng minh đường ống bằng IP giả
+
+`POST /usage/page-view` với `x-forwarded-for: 203.0.113.77` (như một proxy thật sẽ gửi):
+
+```
+masked: "203.0.113.•••"
+full:   "203.0.113.77"
+```
+
+Trong trình duyệt: dòng đầu hiện **`203.0.113.•••`**, click → **`203.0.113.77`**, `aria-expanded=true`,
+`title` đổi thành *"Hide the last four characters"*.
+
+### Vì sao dữ liệu thật vẫn là `::1`
+
+Vì trình duyệt test chạy **trên cùng máy** với API — `x-forwarded-for` khi đó đúng là `::1`. Đó không
+phải lỗi: khi có người truy cập từ máy khác, hoặc khi deploy sau nginx/Cloudflare, header mang địa chỉ
+thật và cột hiện địa chỉ đó. Phép thử với IP giả ở trên là bằng chứng đường ống hoạt động.
+
+### Bài học
+
+**Một phép che phải được thử với dữ liệu ngắn nhất có thể xảy ra, không phải điển hình nhất.** Test cũ
+của tôi dùng `203.0.113.7` — trường hợp đẹp — nên `::1` lọt qua. Nay test có cả `::1`, `127.0.0.1`,
+IPv4, và IPv6 dài.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|

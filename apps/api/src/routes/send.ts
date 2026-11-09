@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { loadFrozenRevision } from '../lib/documents.js';
 import { dispatchNextJob, enqueueSend, SendRefused } from '../lib/mail/queue.js';
 import { createSmtpTransport, smtpConfigFromEnv, mailIsConfigured } from '../lib/mail/smtp.js';
-import { parseBody, sendFail, sendOk } from '../lib/http.js';
+import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import { recordUsage } from '../lib/usage.js';
 import { newId } from '@sq/db';
@@ -170,7 +170,7 @@ export function registerSend(app: FastifyInstance, db: Db): void {
           kind: 'mail_sent',
           tenantId,
           userId: session.userId,
-          address: request.ip,
+          address: clientIp(request.headers, request.ip),
           sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {

@@ -103,10 +103,21 @@ test.describe('vendor dashboard', () => {
      */
     const address = visits.locator('td button.font-mono').first();
     if ((await address.count()) > 0) {
-      await expect(address).toContainText('•');
+      /*
+       * Two shapes, both correct: a real address is masked (`203.0.113.•••`) and a short one — the
+       * loopback `::1`, which is what a test run from this machine records — is shown in full, because
+       * hiding four characters of three leaves a row of bullets and no information. The assertion
+       * therefore checks the *reveal*, not the presence of bullets: whatever the collapsed text is, the
+       * click must change it and expand the control.
+       */
+      const collapsed = (await address.textContent()) ?? '';
       await address.click();
-      await expect(address).not.toContainText('•', { timeout: 10_000 });
-      await expect(address).toHaveAttribute('aria-expanded', 'true');
+      await expect(address).toHaveAttribute('aria-expanded', 'true', { timeout: 10_000 });
+      // The title flips from "Show the whole address" to "Hide the last four characters".
+      await expect(address).toHaveAttribute('title', /Hide/);
+      if (collapsed.includes('•')) {
+        await expect(address).not.toContainText('•', { timeout: 10_000 });
+      }
     }
 
     /*

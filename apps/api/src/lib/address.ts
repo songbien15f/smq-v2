@@ -91,19 +91,46 @@ export function normaliseAddress(address: string): string {
 }
 
 /**
- * The address with its last four characters hidden, for the column nobody clicks.
+ * The address with its **last part** hidden, so the column shows a network without showing a person.
  *
- * Enough to recognise a network — `203.0.113.xx` tells an operator "that is our office range" — and
- * not enough to identify a person reading over a shoulder.
+ * ## What was wrong with the first version
  *
- * **A short address is not masked into nothing.** The first version hid four characters unconditionally
- * and turned `::1` — localhost over IPv6 — into `••••`, which hides the one thing the column is for and
- * looks like a bug. When there is not enough left to read, the whole address is masked: that is
- * honest about having nothing to show, and the click still reveals it.
+ * It hid four *characters*, unconditionally. For `203.0.113.7` that reads `203.0.1••••`, which is fine.
+ * For `::1` — loopback over IPv6, three characters — four characters is the whole string, so the
+ * column rendered `••••••`: **no address at all**, on every row, which is exactly what it must not do.
+ *
+ * ## The rule now
+ *
+ * Mask the last **part**, because that is the part that identifies a host:
+ *
+ * | | |
+ * |---|---|
+ * | IPv4 `203.0.113.7` | `203.0.113.•••` — the /24 is visible, the host is not |
+ * | IPv6, long | the first four groups, then `:••••` |
+ * | Loopback or anything short | **shown in full** — there is no host part to hide, and hiding three characters of three tells the operator nothing |
+ *
+ * A short address is not private in the way a customer's is: `::1` is this machine, and the operator
+ * *needs* to see that, because "every visitor is ::1" is the answer to a question they will ask.
  */
 export function maskAddress(address: string): string {
   const normalised = normaliseAddress(address);
-  // Short addresses (a loopback, a container host name) have nothing to half-show.
-  if (normalised.length <= 8) return '••••••';
-  return `${normalised.slice(0, -4)}••••`;
+
+  // IPv4: hide the last octet.
+  const ipv4 = /^(\d{1,3}\.\d{1,3}\.\d{1,3})\.(\d{1,3})$/.exec(normalised);
+  if (ipv4 !== null) return `${ipv4[1] as string}.•••`;
+
+  // IPv6 with enough groups to hide something: keep four, mask the rest.
+  const groups = normalised.split(':').filter((group) => group !== '');
+  if (normalised.includes(':') && groups.length >= 5) {
+    return `${groups.slice(0, 4).join(':')}:••••`;
+  }
+
+  /*
+   * Everything else — `::1`, a container hostname, an already-short string.
+   *
+   * Shown as it is. The alternative is a row of bullets that hides the only information the column has,
+   * which is how this looked broken. Nothing is leaked: these are addresses with no customer behind
+   * them, and the full value is one click away for the rest.
+   */
+  return normalised;
 }

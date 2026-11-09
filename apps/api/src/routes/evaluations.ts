@@ -34,7 +34,7 @@ import type { PriceInput } from '@sq/core/pricing';
 import { isEmptyOverrideSet, withOverrides } from '@sq/core/pricing';
 import { normaliseShedConfig } from '@sq/core/domain';
 import { freightScope, minimumFreightCents, type FreightMinimums } from '@sq/core/domain';
-import { parseBody, sendFail, sendOk } from '../lib/http.js';
+import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { recordUsage } from '../lib/usage.js';
 import { loadOverrides } from '../lib/priceOverrides.js';
 import { requireCompanyCapability } from '../lib/guard.js';
@@ -726,7 +726,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
           kind: result.revision === 1 ? 'quote_created' : 'revision_saved',
           tenantId,
           userId: session.userId,
-          address: request.ip,
+          address: clientIp(request.headers, request.ip),
           sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {

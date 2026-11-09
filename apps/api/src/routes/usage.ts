@@ -16,7 +16,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
-import { pageQuery, sendFail, sendOk } from '../lib/http.js';
+import { clientIp, pageQuery, sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability, requirePlatformCapability } from '../lib/guard.js';
 import { recentUsage, recordUsage, usageSummary } from '../lib/usage.js';
 
@@ -78,7 +78,7 @@ export function registerUsage(app: FastifyInstance, db: Db): void {
        * "how many different people" count possible at all — this row is the only one that happens on
        * every visit, so it is the only place the count can come from.
        */
-      address: request.ip,
+      address: clientIp(request.headers, request.ip),
       sessionId: session.sessionId,
       actorEmail: session.email,
       detail: { route },
