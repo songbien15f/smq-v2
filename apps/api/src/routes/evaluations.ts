@@ -599,9 +599,29 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
             }
           }
         } else {
+          /*
+           * The header follows the newest revision, including **who the quote is for**.
+           *
+           * `customer_id` used to be written only on create, so a quote re-quoted for somebody else
+           * kept the first revision's customer in the list forever: measured on Q-2026-0037, revision 1
+           * was "E2E Legacy" and revision 2 "E2E Smoke" — the detail page and the editor both said
+           * Smoke (they read the frozen revision), and the list said Legacy (it reads this column). Two
+           * answers to "whose quote is this", on screen at once.
+           *
+           * The list is a summary of *the current revision*, like `contract_cents` and `site_json`
+           * beside it, so it belongs in the same statement.
+           */
           await tx.run(
-            'UPDATE quotes SET current_revision = ?, contract_cents = ?, incomplete = ?, site_json = ?, updated_at = ? WHERE id = ?',
-            [revisionNumber, price.contractCents, incomplete ? 1 : 0, JSON.stringify(body.site), at, quoteId],
+            'UPDATE quotes SET current_revision = ?, contract_cents = ?, incomplete = ?, site_json = ?, customer_id = ?, updated_at = ? WHERE id = ?',
+            [
+              revisionNumber,
+              price.contractCents,
+              incomplete ? 1 : 0,
+              JSON.stringify(body.site),
+              customerId,
+              at,
+              quoteId,
+            ],
           );
         }
 

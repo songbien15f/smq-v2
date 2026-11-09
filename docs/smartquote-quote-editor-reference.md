@@ -2082,11 +2082,57 @@ nhà** (6000 × 15000 × 4 bay, cửa sổ vẫn trên plan).
 
 ---
 
+## 13.15 Danh sách nói sai tên khách sau khi báo giá lại (2026-11-08)
+
+Mở `Q-2026-0037` từ danh sách thì thấy: danh sách ghi **"E2E Legacy"**, trang chi tiết và editor ghi
+**"E2E Smoke"**. Cùng một quote, hai câu trả lời cho "báo giá này của ai".
+
+Nguyên nhân: **hai nguồn khác nhau**.
+
+| Nơi đọc | Nguồn |
+|---|---|
+| Trang chi tiết, editor | `quote_revisions.customer_json` — **đóng băng** theo revision |
+| Danh sách quote | `quotes.customer_id` → join `customers` — **cột header** |
+
+`customer_id` chỉ được ghi khi **tạo** quote, và không bao giờ cập nhật lại. Nên một quote báo giá lại
+cho người khác sẽ có revision 2 mang khách mới (đúng), trong khi header vẫn trỏ khách của revision 1
+(sai) — và cột `contract_cents`, `site_json` **bên cạnh nó thì vẫn được cập nhật**, nên header là thứ
+duy nhất bị bỏ lại phía sau.
+
+**Sửa:** thêm `customer_id = ?` vào câu `UPDATE` khi append revision — header mô tả revision hiện tại,
+cùng quy tắc với hai cột kia.
+
+Test `quoteHeaderCustomer.test.ts` đi qua **route thật** với sách giá thật (publish dump), và tôi đã
+kiểm nó **thật sự bắt bug**: revert fix → đỏ với `Expected "New Person", Received "Old Name"`; khôi
+phục → xanh. Một test không đỏ khi bug quay lại thì không phải test.
+
+**Dữ liệu cũ**: hai dòng trong DB dev (Q-2026-0036, Q-2026-0037) đã được sửa một lần bằng script đọc
+`customer_json` của revision mới nhất rồi trỏ `customer_id` sang đúng — đo trước/sau: cả hai
+`E2E Legacy → E2E Smoke`. Script chỉ chạm các dòng **lệch**, không đụng dòng đúng.
+
+### Đã kiểm bằng tay trong trình duyệt (theo yêu cầu)
+
+Mở `Q-2026-0037` từ `/quotes` → trang chi tiết → **Edit**:
+
+| | Kết quả |
+|---|---|
+| 3 step | `Details` → `Options on the plan` → `Cost and price`, cả ba bấm được |
+| Nhãn | `Q-2026-0037 · revision 2` |
+| Khách | E2E Smoke / e2e.smoke@example.com |
+| Toà nhà | span 6000, length 15000, height 3000, 4 bays, pitch 7.5° — đúng file `.sqd` |
+| Giá | **$13,326.29** (GST $1,211.48, 3410 kg), **không** stale |
+| Plan 2D | canvas 800 × 600 |
+| 3D | canvas 670 × 839, **WebGL2 sống** |
+| Save | `Save revision` — **disabled**, đúng: chưa sửa gì thì không có gì để đóng băng |
+| `data-dirty` | `false` khi mở, `true` sau khi sửa |
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 256 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**) |
+| `@sq/api` | 257 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, **quote header follows its newest revision**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
