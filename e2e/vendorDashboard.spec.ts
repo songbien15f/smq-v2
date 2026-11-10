@@ -155,11 +155,33 @@ test.describe('vendor dashboard', () => {
     await page.getByRole('link', { name: /How pricing works/ }).click();
     await expect(page.getByRole('heading', { name: 'How a quote becomes a price', level: 1 })).toBeVisible();
 
-    // The four sections, and the two facts a reader must be able to find.
-    for (const heading of ['① The ten steps', '② The formulas', '③ Where the data comes from', '④ An assumption is not an error']) {
+    /*
+     * The page is worked through with real figures, so the assertions are the figures: a heading per
+     * stage, the four diagrams, and the numbers a newcomer has to be able to find.
+     */
+    for (const heading of [
+      /The whole pipeline, in one picture/,
+      /Where the data comes from/,
+      /One steel member/,
+      /That revision, line by line/,
+      /The price chain, with the real figures/,
+      /The wind code/,
+      /What the quote honestly does not know/,
+    ]) {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible();
     }
-    await expect(page.getByText(/contract = round\(total × \(1 \+ quoteRate%\)\)/)).toBeVisible();
+
+    // Four diagrams, each with an accessible name — an SVG with no label is invisible to a screen reader.
+    const diagrams = page.locator('svg[role="img"]');
+    await expect(diagrams).toHaveCount(4);
+    for (const index of [0, 1, 2, 3]) {
+      await expect(diagrams.nth(index)).toHaveAttribute('aria-label', /.{20,}/);
+    }
+
+    // The facts the page exists to convey.
+    await expect(page.getByText(/31 553/).first()).toBeVisible();
+    await expect(page.getByText(/8,185\.68/).first()).toBeVisible();
+    await expect(page.getByText(/13,326\.29/).first()).toBeVisible();
     await expect(page.getByText(/GIRT_PRICE_FROM_PURLIN/)).toBeVisible();
   });
 });

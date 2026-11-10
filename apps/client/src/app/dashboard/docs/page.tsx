@@ -1,5 +1,11 @@
 import Link from 'next/link';
 import { requireVendorSession } from '@/lib/vendorGuard';
+import {
+  DataMapDiagram,
+  PipelineDiagram,
+  PriceChainDiagram,
+  SaveGateDiagram,
+} from '@/components/vendor/PricingDiagrams';
 
 /**
  * `/dashboard/docs` — how a quote becomes a price, worked through with real numbers.
@@ -95,6 +101,13 @@ export default async function DashboardDocsPage() {
       </header>
 
       <Section
+        title="The whole pipeline, in one picture"
+        lead="Start here. Everything the rest of this page explains is one box in this diagram — the two inputs on the left, the book in the middle, and the frozen revision on the right."
+      >
+        <PipelineDiagram />
+      </Section>
+
+      <Section
         title="① Where the data comes from: 80 tables, 31 553 rows"
         lead="The price book is one SQLite file, published as an immutable snapshot. Every price in a quote is read from it. Here is what is actually in it, by row count."
       >
@@ -118,10 +131,13 @@ export default async function DashboardDocsPage() {
           ]}
         />
         <p className="text-sq-ink-muted">
-          The full book is 80 tables and <strong>31 553 rows</strong>; the thirteen above are the ones a
+          The full book is 80 tables and <strong>31 553 rows</strong>; the fourteen above are the ones a
           normal shed actually reads. The rest are design-parameter tables (wind regions, terrain
           factors, importance levels) and lookup lists for the dropdowns.
         </p>
+
+        <p className="font-medium">Which part of the engine reads which table</p>
+        <DataMapDiagram />
       </Section>
 
       <Section
@@ -227,6 +243,8 @@ SELECT C1 … FROM view_system_lookup_data
           ]}
         />
 
+        <PriceChainDiagram />
+
         <p>
           The <strong>margin of 1.48</strong> is not invented: it is the book's{' '}
           <code>setting_price_coeffcient</code> row for this building family. A gable carport is 1.69 —
@@ -322,12 +340,10 @@ SELECT C1 … FROM view_system_lookup_data
           the name and description may change.
         </p>
         <p>
-          <strong>2. A save refuses to freeze a stale price.</strong> Three checks before a revision is
-          written: the building must hash the same as when it was priced, the company's price overrides
-          must not have moved, and the freight must not be under the delivery scope's minimum. Any of the
-          three failing answers 409 or 422 and asks for a recalculation, rather than recording a figure
-          nobody can reproduce.
+          <strong>2. A save refuses to freeze a stale price.</strong> Three checks run before a revision is
+          written, and any of them can refuse the save rather than record a figure nobody can reproduce.
         </p>
+        <SaveGateDiagram />
       </Section>
 
       <Section title="⑧ Where to read the code" lead="In this order — each file depends on the one before it.">
