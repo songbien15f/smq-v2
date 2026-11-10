@@ -301,6 +301,14 @@ export interface PriceLookup {
   haunch?(web: number, pitchDeg: number): { e1: number; e2: number; e3: number } | undefined;
   /** Purlin/girt span rows for a wind code and standard bay. */
   devided(code: string, standardSpan: number, openDesign?: boolean): DevidedRow[];
+  /**
+   * The wind codes this book is indexed by — `A2`, `A3`, `A5`, `B2`, …
+   *
+   * Optional, because a partial book (a dump without the span table) has none and the frame path must
+   * still run. When present it lets a bare region become the code the book actually lists instead of
+   * a guessed combination.
+   */
+  windCodes?(): readonly string[];
   /** Site wind speed in m/s for a wind region; `0` when unknown. */
   windSpeed(region: string): number;
   /** Delivery cost in cents for a state and a distance band. */

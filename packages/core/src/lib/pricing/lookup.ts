@@ -320,6 +320,23 @@ export function createLookup(db: DatabaseSync): PriceLookup {
   // every frame would come back mocked — a silent, total failure for one optional
   // column.
   const devidedHasGirtMaterial = hasColumn('devided', 'girt_material');
+  /*
+   * The codes this book is indexed by, read once.
+   *
+   * Needed because a bare region (`A`) has to become a full code (`A2`) on a book that has no `A`
+   * rows — and which combination applies depends on what the book lists. Reading it from the book is
+   * the only honest answer; a hard-coded list is a claim about a table this code does not own.
+   */
+  const devidedCodes = (() => {
+    const statement = prepare('SELECT DISTINCT lookup_code FROM devided');
+    if (statement === null) return [] as string[];
+    try {
+      const rows = statement.all() as unknown as Record<string, unknown>[];
+      return rows.map((row) => str(row.lookup_code)).filter((code) => code !== '');
+    } catch {
+      return [] as string[];
+    }
+  })();
   const devidedByCode = prepare(
     `SELECT lookup_code, standard_span, purlin_span, girt_span, open_design, purlin_material${
       devidedHasGirtMaterial ? ', girt_material' : ''
@@ -757,6 +774,16 @@ export function createLookup(db: DatabaseSync): PriceLookup {
         };
       });
       return openDesign === undefined ? mapped : mapped.filter((row) => row.openDesign === openDesign);
+    },
+
+    /**
+     * The wind codes this book is indexed by.
+     *
+     * Empty for a book without a span table, which is why the caller treats it as a hint rather than
+     * a guarantee: `windRegionCode` falls back to the plain region-plus-terrain combination.
+     */
+    windCodes() {
+      return devidedCodes;
     },
 
     windSpeed(region) {

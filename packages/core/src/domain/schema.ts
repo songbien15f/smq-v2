@@ -26,6 +26,7 @@ import { migrateColors } from './colors';
 import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from './defaults';
 import { normaliseCharge } from './charges';
 import { normaliseOption } from './options';
+import { nearestTerrainCategory, windRegionLetter } from './wind';
 import type { Charge, Opening, OptionKind, ShedConfig, ShedOption } from './types';
 
 /** The structural families the model may choose from. */
@@ -121,8 +122,68 @@ const pitchSchema = z.coerce.number().finite().min(0).max(45);
  * every `applyPartial`, undo and AI round-trip, and the next BOM is priced for a
  * different site than the one on screen.
  */
-const windRegionSchema = z.enum(['A', 'B', 'C', 'D']);
-const terrainCategorySchema = z.union([z.literal(2), z.literal(2.5), z.literal(3)]);
+/**
+ * A wind region code, as the certificate states it.
+ *
+ * **Not an enum.** ShedSafe answers `A1`, `A2`, `A5`, `B1` — measured across the 47 real buildings in
+ * the legacy licence database — and the price book's `devided` table is keyed by exactly those codes.
+ * The enum that used to be here accepted only `A`–`D`, so `"A5"` failed validation and the tolerant
+ * schema's `.catch()` replaced it with `"A"`. Measured 2026-11-10, the consequence is steel, not a
+ * label: on the reference book `A2` gives purlin_span 720, `A5` gives 830 and `A6` gives 1 300 — so
+ * rewriting `A5` as `A2` prices a level-5 site with a smaller purlin at a shorter span.
+ *
+ * The rule is therefore "a short code starting with a region letter", and anything unexpected is
+ * refused on the strict path rather than silently replaced. `windRegionCode()` decides how the code
+ * becomes a book key; that is a separate question and it lives in `wind.ts`.
+ */
+const windRegionSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(8)
+  /*
+   * A region letter `A`–`D` with an optional one- or two-digit suffix, **or** one of the obsolete
+   * codes an old quote file carries (`W41`, `N2`).
+   *
+   * Not an enum: ShedSafe owns the vocabulary and issues `A1`, `A2`, `A5`, `B1`, so enumerating the
+   * known codes would reject a real certificate the day they add one. It is strict enough to keep
+   * nonsense out — `Z` and `open country` are refused — and lenient enough for the two shapes that
+   * actually occur. A code the book does not list misses the lookup and is reported as an assumption,
+   * which is visible; substituting a nearby code would not be.
+   */
+  .regex(
+    /^([A-Da-d]\d{0,2}|[WN]\d{1,3}C?)$/,
+    'A wind region is A–D with an optional digit (A, A5, B1), or an older code such as W41.',
+  );
+/**
+ * Terrain category, snapped to the three the book lists.
+ *
+ * A certificate reports a **fraction**: ShedSafe answered `2.68`, `2.7`, `2.81`, `2.92` and `2.95`
+ * across the real buildings measured on 2026-11-10. The book lists `2`, `2.5`, `3`, so the value is
+ * snapped to the nearest — otherwise every lookup misses and the frame falls back to an assumed
+ * section for a site the book could have priced.
+ *
+ * `nearestTerrainCategory` does the arithmetic, so the strict path and the tolerant one cannot snap
+ * differently. Snapping is recorded rather than hidden: the quote states the category it was priced
+ * from, which is the snapped one.
+ */
+const terrainCategorySchema = z
+  .number()
+  .finite()
+  /*
+   * A value that cannot be a terrain category must **fail**, not transform to `NaN`.
+   *
+   * `transform` cannot reject: it would return `NaN` and zod would call that a success, so a corrupt
+   * row would reach the config as `NaN` and every comparison downstream would be false without ever
+   * throwing. `pipe` into a refine makes the refusal real, which lets the tolerant schema's `.catch()`
+   * put the documented default in its place.
+   */
+  .pipe(
+    z
+      .number()
+      .refine((value) => value >= 1 && value <= 4, 'A terrain category is between 1 and 4.')
+      .transform((value) => nearestTerrainCategory(value)),
+  );
 /**
  * BCA importance level, 1 to 4.
  *
@@ -576,9 +637,16 @@ const tolerantShedConfigSchema = z.object({
     .catch(DEFAULT_SHED.colors),
   displayUnit: z.enum(['mm', 'm']).catch(DEFAULT_SHED.displayUnit),
   internalPressure: z.enum(['closed', 'open']).catch(DEFAULT_SHED.internalPressure),
-  // Every site field falls back to the default rather than vanishing: a config
-  // that lost its wind region would be priced against region A silently.
+  /*
+   * A wind region that fails to parse falls back to the default — but the default is `A`, and the
+   * fallback is now **rare** rather than routine: the schema above accepts every code ShedSafe issues
+   * (`A1`, `A2`, `A5`, `B1`) and every obsolete one an old file carries (`W41`, `N2`). Before
+   * 2026-11-10 the enum accepted only four strings, so `"A5"` took this branch on **every real
+   * certificate** and became `"A"`. See `wind.ts` for what that cost.
+   */
   windRegion: windRegionSchema.catch(DEFAULT_SHED.windRegion),
+  // A certificate reports a fraction (`2.68`, `2.92`); the book lists 2, 2.5 and 3, so the value is
+  // snapped to the nearest listed category rather than making every lookup miss.
   terrainCategory: terrainCategorySchema.catch(DEFAULT_SHED.terrainCategory),
   shieldingFactor: factorSchema.catch(DEFAULT_SHED.shieldingFactor),
   importanceLevel: importanceLevelSchema.catch(DEFAULT_SHED.importanceLevel),
@@ -935,7 +1003,14 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
       series: opening.type === 'roller_door' ? (opening.series ?? null) : null,
       windlock:
         opening.type === 'roller_door'
-          ? (opening.windlock ?? (parsed.windRegion === 'C' || parsed.windRegion === 'D'))
+          /*
+           * Default on in regions C and D, read by **letter**: the stored value is a certificate
+           * code (`C2`, `D3`), so comparing the whole string never matched after the field began
+           * holding what ShedSafe returns — and a roller door missing its windlocks is the physical
+           * failure this default exists to prevent.
+           */
+          ? (opening.windlock ??
+              (['C', 'D'] as const).includes(windRegionLetter(parsed.windRegion) as 'C' | 'D'))
           : false,
       prepOnly: opening.prepOnly ?? false,
       sku: opening.sku ?? null,

@@ -21,6 +21,7 @@
  */
 
 import type { ShedConfig } from '@/domain/types';
+import { windRegionCode } from '@/domain/wind';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { DEFAULT_BOM_RULES, type BomRules } from './rules';
@@ -100,23 +101,28 @@ function maxBay(shed: ShedConfig): number {
 }
 
 /**
- * The wind code the span table is keyed by: the region letter plus a terrain
- * digit. The desktop builds this from `WindRegion` and the terrain category; a
- * region the table does not know still produces a code, and the lookup simply
- * finds no rows, which the caller turns into a mocked frame.
+ * The wind code the span table is keyed by.
+ *
+ * ## What this used to do, and why it was wrong
+ *
+ * It concatenated the stored region with `Math.floor(terrain)`. That is only sound when the stored
+ * region is a **bare letter**. ShedSafe does not answer with a bare letter: across the 47 real
+ * buildings in the legacy database it returned `A1`, `A2`, `A5`, `B1`. Concatenation then produced
+ * `"A52"`, which matched nothing, so the frame fell back to a mocked section on real certificates.
+ *
+ * ## What it does now
+ *
+ * `windRegionCode` decides. A specific code the certificate already carries (`A5`) is used **as it
+ * is**, because that is what the book is indexed by — and the codes are not interchangeable: on the
+ * reference book `A2` gives purlin_span 720, `A5` gives 830, `A6` gives 1 300. A bare letter is
+ * combined with the desktop's terrain digit. Anything else is returned unchanged and misses, which
+ * the caller turns into a labelled assumption rather than a substitute price.
+ *
+ * The book's own codes are passed in so `A` on a book that lists only `A` stays `A`, while the same
+ * `A` on a book with `A2` rows becomes `A2`.
  */
-function windCode(shed: ShedConfig): string {
-  const region = shed.windRegion ?? 'A';
-  // The desktop maps terrain 2.5 to code **4**. This build maps it to 2, and the
-  // reason is a gap in the book rather than a preference: the imported price book
-  // carries no `A4` rows at all (A2, A3, A5, A6, A7 and the B/C/D equivalents
-  // exist, A4 does not), so the desktop's own mapping finds nothing here and the
-  // frame comes back unpriced. A mocked frame is not an acceptable default, so the
-  // nearest code the book does carry is used and the choice is recorded at
-  // `/deviations`. Flip this to the desktop's mapping when a book with `A4` rows
-  // is imported.
-  const terrain = Math.floor(shed.terrainCategory ?? 2.5);
-  return `${region}${terrain}`;
+function windCode(shed: ShedConfig, bookCodes?: readonly string[]): string {
+  return windRegionCode(shed.windRegion, shed.terrainCategory ?? 2.5, bookCodes);
 }
 
 /**
@@ -151,7 +157,7 @@ export function optimise(
   // A partial book — a dump without the span table — must fall through to the
   // mocked frame, not throw: the quote can still be produced and marked
   // incomplete, which is far more useful than a crash on a demo.
-  const rows = safeCall(() => lookup.devided(windCode(shed), bayStandard, openDesign)) ?? [];
+  const rows = safeCall(() => lookup.devided(windCode(shed, safeCall(() => lookup.windCodes?.())), bayStandard, openDesign)) ?? [];
   if (rows.length === 0) {
     return {
       purlinMaterial: 'MOCK',

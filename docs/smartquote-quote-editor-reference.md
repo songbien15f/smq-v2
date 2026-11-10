@@ -2667,10 +2667,100 @@ hiển thị chúng khác nhau.
 
 ---
 
+## 13.23 Wind region là **mã chứng chỉ**, không phải chữ cái (2026-11-10)
+
+Yêu cầu: *"windRegion từ sitecheck nên có thể có nhiều mã khác nhé. ko phải chỉ trong 1 list combobox"*.
+
+### Đo trước khi sửa: ShedSafe trả gì
+
+Đọc 47 building thật trong `legacy.dbo_building` → gọi `GET /building/get/{SSId}` cho từng cái:
+
+```
+"A1" × 16    "A2" × 16    "A5" × 12    "B1" × 5
+terrain: 1, 1.5, 2, 2.68, 2.7, 2.81, 2.92, 2.95, 3
+```
+
+Bảng `devided` của sách: `A2 A3 A5 A6 B2 B3 B4 B5 B6 B7 C2 C3 C4 D2 D3 D4`.
+
+**Hai điều cùng đúng:** schema v2 chỉ nhận `'A'|'B'|'C'|'D'` + `.catch()`, nên **mọi chứng chỉ thật**
+bị hạ về `A`; và các mã **không tương đương** — đo trên sách: `A2` → purlin_span **720**, `A5` → **830**,
+`A6` → **1300**. Hạ `A5` về `A` rồi ghép thành `A2` là **purlin nhỏ hơn ở nhịp ngắn hơn** so với chứng
+chỉ. Cùng họ với Importance Level 3→1, nặng hơn: đổi **số lượng thép**, không chỉ đổi nhãn.
+
+### Sửa: tách "in chứng chỉ" khỏi "tra bảng"
+
+`packages/core/src/domain/wind.ts` (mới): `WindRegion` thành `string`; schema nhận `[A-D][0-9]{0,2}`
+hoặc mã cũ `W41`/`N2`; `windRegionCode(region, terrain, bookCodes)` trả khoá tra `devided`;
+`windRegionLetter` đọc vùng; `nearestTerrainCategory` xử lý terrain lẻ (2.68 → 2.5).
+
+**Thứ tự ưu tiên của `windRegionCode`:**
+
+| | |
+|---|---|
+| 1 | Mã cụ thể (`A5`) — dùng **nguyên văn**, vì đó là thứ sách đánh khoá |
+| 2 | Vùng trơn + digit terrain (`A` + 2 → `A2`), khi sách có dòng đó |
+| 3 | Digit **gần nhất trong cùng vùng**, khi sách không có mã ghép |
+| 4 | Trả nguyên văn — lookup miss, frame báo giả định. **Không thay bằng mã khác** |
+
+Bước 3 là chỗ một hồi quy thật lộ ra: desktop đánh terrain 2.5 là digit **4**, mà sách **không có `A4`**.
+Trả `A4` làm lookup miss → cả frame rơi về tiết diện giả định — đúng lý do báo giá `terrainCategory: 2.5`
+(trường hợp rất phổ biến ở Úc) ra giá không đầy đủ. Nay lấy `A3`, ghi lại là giả định.
+
+### Ba chỗ so sánh chuỗi phải đổi theo
+
+Khi giá trị thành `"C2"` thay vì `"C"`, ba phép so sánh cũ **im lặng ngừng chạy**:
+
+| Chỗ | Cũ | Nay | Hệ quả nếu không sửa |
+|---|---|---|---|
+| `purlin.ts` lapFraction | `=== 'C'` | `windRegionLetter(...) === 'C'` | Mất lap 15% → **thiếu mét purlin** |
+| `schema.ts` windlock | `=== 'C' \|\| === 'D'` | letter ∈ {C, D} | Cửa cuốn thiếu windlock ở vùng cyclonic |
+| `optimise.ts` windCode | `region + floor(terrain)` | `windRegionCode(...)` | `"A52"` — không khớp gì |
+
+### Đo được
+
+| | |
+|---|---|
+| `normaliseShedConfig({windRegion:'A5'})` | `'A5'` (trước: `'A'`) |
+| `A5` / terrain 3 | tra **`A5`** (trước: `A2` — sai vùng) |
+| `A2` / terrain 2.92 | terrain → 3, tra `A2` |
+| legacy default `A` / terrain 2.5 | tra `A3` (không còn `A4` miss) |
+| vùng `B` không mượn dòng `A` | giữ trong vùng `B` |
+
+### Dữ liệu thật: tài khoản demo → tài khoản thật
+
+`apps/api/scripts/import-legacy-accounts.ts` (mới, `pnpm --filter @sq/api legacy:accounts`):
+`dbo_salesman.FranchiseId` → tenants (6 salesman → 2 company); `dbo_account.Email` → role
+(RoleId=1 Admin → `company_admin`).
+
+Kết quả: `HEADOFFICE` (`hoangduy7617@gmail.com` = company_admin), `BRANCH01`
+(`hoangduy7617+1@gmail.com`). Đăng nhập thật: `HEADOFFICE` / `hoangduy7617` → **200**, membership
+`company_admin`. Mật khẩu dùng chung `Temp-Import-2026!` với `must_change_password = 1` — mật khẩu dùng
+chung không được sống quá lần đăng nhập đầu.
+
+### Ba lỗi tôi tự tạo trong lúc làm, và cách chúng lộ ra
+
+1. **Postgres hạ chữ thường alias không trích dẫn.** `"FranchiseId" AS franchiseId` trả cột
+   `franchiseid`, nên `row.franchiseId` là `undefined` → 6 salesman gộp vào head office, `Branch_01`
+   biến mất. Lộ ra vì output không có `BRANCH01`. Sửa: trích dẫn mọi alias.
+2. **Xoá tenant đâm vào trigger append-only.** `quote_revisions` từ chối `DELETE` — đúng thiết kế. Sửa:
+   script **từ chối** xoá công ty có quote và nói rõ số lượng, thay vì tắt guard.
+3. **`transform` của zod không từ chối được.** Trả `NaN` vẫn là "thành công", nên terrain 9 lọt qua.
+   Sửa: `.pipe(z.refine(...))`.
+
+### Còn lại
+
+- **47 quote demo chưa xoá** — đều `draft` do e2e tạo (`Q-2026-0001…0047`, từ 2026-11-01). Xoá được
+  nhưng phải tắt trigger append-only trong một transaction: quyết định của người vận hành, và script đã
+  từ chối thay vì tự làm.
+- **Điều kiện để pin thật:** email user phải khớp một salesman trong `dbo_salesman`. Đó là điều kiện của
+  **dữ liệu**, không phải của code; ở production công ty phải đảm bảo user được đăng ký làm salesman.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 1 001 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**) |
+| `@sq/core` | 1 016 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**) |
 | `@sq/api` | 282 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |

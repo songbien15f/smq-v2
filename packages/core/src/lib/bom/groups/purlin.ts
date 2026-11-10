@@ -23,6 +23,7 @@
  */
 
 import type { ShedConfig } from '@/domain/types';
+import { windRegionLetter } from '@/domain/wind';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -44,7 +45,14 @@ function maxBay(shed: ShedConfig): number {
 /** The lap fraction for this shed. */
 function lapFraction(shed: ShedConfig, rules: BomRules): number {
   const topHat = shed.structureType === 'gable' || shed.structureType === 'skillion';
-  return topHat && shed.windRegion === 'C' ? rules.lapWindCToHat : rules.lapNormal;
+  /*
+   * Region C by **letter**, not by exact string.
+   *
+   * The stored value is a certificate code — `C2`, `C3`, `C4` — so an equality test against `'C'`
+   * stopped applying the heavier lap the moment the field began holding what ShedSafe returns. The
+   * heavier lap is a physical requirement, not a label: missing it under-states the purlin metres.
+   */
+  return topHat && windRegionLetter(shed.windRegion) === 'C' ? rules.lapWindCToHat : rules.lapNormal;
 }
 
 /**

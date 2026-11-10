@@ -356,13 +356,27 @@ export interface ShedConfig {
    */
   internalPressure: 'closed' | 'open';
   /**
-   * Site conditions, in the vocabulary ShedSafe publishes.
+   * The wind region **as the certificate states it** — not a fixed list.
    *
-   * These are not decoration: the purlin/girt span table is indexed by the wind
-   * region and terrain, and an Australian quote must state them (ShedSafe warns
-   * that a quote using obsolete `W41`/`N2` codes is a red flag). They live on the
-   * config rather than being passed alongside it so that freezing a quote
-   * revision freezes the conditions it was priced under.
+   * ## Why this is a string, not `'A' | 'B' | 'C' | 'D'`
+   *
+   * ShedSafe does not answer with a letter. Across the 47 real buildings in the legacy licence
+   * database the values it returned were `"A1"`, `"A2"`, `"A5"`, `"B1"` — and those are not cosmetic:
+   * the price book's `devided` table is keyed by exactly those codes and they disagree. Measured
+   * 2026-11-10 on the reference book:
+   *
+   * ```
+   * A2 → purlin_span 720    A5 → purlin_span 830    A6 → purlin_span 1300
+   * ```
+   *
+   * A wind region narrowed to `A` and then recombined as `A2` prices a **level-5 site as level 2**:
+   * a smaller purlin at a shorter span, i.e. less steel than the certificate requires. That is the
+   * same class of failure as the importance level being rewritten from 3 to 1, and it is worse
+   * because it moves quantities rather than a label.
+   *
+   * So the stored value is whatever the certificate says, and `windRegionCode()` decides how to turn
+   * it into a book key — keeping "what the certificate states" and "what the book is indexed by" as
+   * two separate questions.
    */
   windRegion: WindRegion;
   /** AS/NZS 1170.2 terrain category. */
@@ -420,8 +434,20 @@ export interface ShedConfig {
   displayUnit: DisplayUnit;
 }
 
-/** The four AS/NZS 1170.2 wind regions. */
-export type WindRegion = 'A' | 'B' | 'C' | 'D';
+/**
+ * A wind region code, as the certificate states it.
+ *
+ * The four AS/NZS 1170.2 regions are `A`–`D`, but ShedSafe issues **site codes** that carry a terrain
+ * digit as well — `A1`, `A2`, `A5`, `B1` — and the price book is indexed by those codes, not by the
+ * bare region. See `ShedConfig.windRegion` for the measured difference between them.
+ *
+ * Typed as `string` rather than a union on purpose: a certificate is an external document, and a
+ * union would make the compiler reject a valid code the day ShedSafe adds one — turning a data fact
+ * into a build error, and tempting the next person to add a `.catch()` that silently substitutes
+ * another code. The known codes are documented on `KNOWN_WIND_REGIONS` instead, for a UI that wants
+ * to offer them.
+ */
+export type WindRegion = string;
 
 /** Terrain categories used for Australian shed design. */
 export type TerrainCategory = 2 | 2.5 | 3;

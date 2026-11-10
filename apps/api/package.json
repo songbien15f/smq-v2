@@ -12,6 +12,7 @@
     "test": "vitest run",
     "clean": "rimraf dist .turbo",
     "seed": "node --env-file-if-exists=../../.env --import tsx scripts/seed.ts",
+    "legacy:accounts": "node --env-file-if-exists=../../.env --import tsx scripts/import-legacy-accounts.ts",
     "install:company": "node --env-file-if-exists=../../.env --import tsx scripts/install.ts",
     "publish-book": "node --env-file-if-exists=../../.env --import tsx scripts/publish-book.ts",
     "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts"

@@ -19,4 +19,5 @@ export * from "./skylightSnap";
 export * from "./types";
 export * from "./units";
 export * from "./walls";
+export * from "./wind";
 export * from "./vqu";
