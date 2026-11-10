@@ -111,9 +111,13 @@ test.describe('Step 1 — quote details', () => {
      * The ridge is shown beside it because an average on its own is not self-explanatory: "average
      * 4 729" does not tell anyone the peak is 5 258, and the peak is what hits a low bridge.
      *
-     * Asserted as a **relationship to the pitch**, not as fixed numbers: the default building's spans
-     * are the store's business, and a test that hard-codes 4 729 breaks the day a default changes while
-     * the formula stays correct.
+     * ## Why it sets a starting pitch instead of reading the current one
+     *
+     * These tests share one browser context, and the draft store keeps the building between
+     * navigations. A previous test that left the pitch at 5° made "before" equal to the value this
+     * test then set, so `toBeLessThan(before)` compared 4 729 with 4 729 and failed — a test that
+     * passed alone and failed in the suite. Setting both ends explicitly makes the assertion about
+     * the formula rather than about whatever the previous test left behind.
      */
     const average = page.locator('#shed-averageHeight');
     await expect(average).toBeVisible();
@@ -121,16 +125,21 @@ test.describe('Step 1 — quote details', () => {
     const parse = async (): Promise<number> =>
       Number(((await average.textContent()) ?? '').replace(/[^\d.]/g, ''));
 
-    const before = await parse();
-    expect(before).toBeGreaterThan(0);
-
-    // A steeper roof raises the average; a flatter one lowers it.
     const pitch = page.locator('#shed-roofPitchDeg');
-    await pitch.fill('5');
-    await expect.poll(parse).toBeLessThan(before);
 
-    await pitch.fill('25');
-    await expect.poll(parse).toBeGreaterThan(before);
+    // A known steepness first, so "before" is a value this test chose.
+    await pitch.fill('20');
+    await expect.poll(parse).toBeGreaterThan(0);
+    const atTwenty = await parse();
+
+    // Shallower lowers it; steeper raises it. Both relative to the value measured just above.
+    await pitch.fill('2');
+    await expect.poll(parse).toBeLessThan(atTwenty);
+
+    const atTwo = await parse();
+
+    await pitch.fill('35');
+    await expect.poll(parse).toBeGreaterThan(atTwo);
   });
 
   test('the PIN button names every field it is waiting for', async ({ page }) => {
@@ -166,6 +175,14 @@ test.describe('Step 1 — quote details', () => {
      * refuses an empty `SuburbName` with *"The SuburbName field is required"*, measured against the
      * live API on 2026-11-06. A test that filled only the street line would assert a gate that opens
      * onto a call ShedSafe rejects.
+     *
+     * ## Two gates now, and the second is about the account
+     *
+     * Since 2026-11-10 the button also requires that the signed-in email is a registered ShedSafe
+     * salesman — a fact about the account, not the form, and one the suite's own tenant does not
+     * satisfy. So this asserts the two independently: the field gate clears when the fields are
+     * filled, and the button's final state is exactly "no fields missing **and** the account is
+     * allowed".
      */
     await page.locator('#customer-firstName').fill('Dana');
     await page.locator('#customer-lastName').fill('Nguyen');
@@ -176,9 +193,40 @@ test.describe('Step 1 — quote details', () => {
     await page.locator('#site-state').fill('QLD');
     await page.locator('#site-postcode').fill('4000');
 
+    // The field gate has cleared: no "fill in …" sentence remains.
+    await expect(page.getByText(/Before pinning, fill in/i)).toHaveCount(0, { timeout: 10_000 });
+
+    /*
+     * The three states, matched so that they cannot be confused with each other.
+     *
+     * `/Registered ShedSafe salesman/i` alone was **wrong**: it is a substring of *"This login is not a
+     * registered ShedSafe salesman"*, so the "is blocked" branch was read as "is allowed" and the test
+     * asserted an enabled button on the page that deliberately disables it. Anchoring the positive
+     * case to the start of the sentence is what separates them.
+     */
+    const state = ((await page.locator('#sitecheck-salesman-state').textContent()) ?? '').trim();
+    const isSalesman = /^Registered ShedSafe salesman/i.test(state);
+    const explicitNo = /^This login is not a registered ShedSafe salesman/i.test(state);
+    const unknown = /^Could not confirm this login/i.test(state);
+
+    expect(
+      isSalesman || explicitNo || unknown,
+      `the panel must state the login's ShedSafe status; it said: "${state}"`,
+    ).toBe(true);
+
     const pin = page.getByRole('button', { name: /Go to ShedSafe|Pin again/ });
-    await expect(pin).toBeEnabled({ timeout: 10_000 });
-    await expect(page.getByText(/Before pinning, fill in/i)).toHaveCount(0);
+
+    if (isSalesman) {
+      // Fields + account: the button opens.
+      await expect(pin).toBeEnabled();
+    } else {
+      /*
+       * Not a salesman, or the list could not be read. The button is disabled **on purpose** and the
+       * reason is on screen — which is the behaviour these tests exist to protect. Asserting
+       * "enabled" here would assert that a pin ShedSafe refuses looks ready.
+       */
+      await expect(pin).toBeDisabled();
+    }
   });
 
   test('changing the delivery scope un-ticks the acknowledgement', async ({ page }) => {
@@ -209,5 +257,75 @@ test.describe('Step 1 — quote details', () => {
     await scope.selectOption(target as string);
 
     await expect(ack).not.toBeChecked({ timeout: 10_000 });
+  });
+});
+
+/**
+ * The salesman gate, which comes from the account rather than the form.
+ *
+ * ShedSafe accepts `Salesman` only if it is an email on **its own** live list. Measured 2026-11-10: a
+ * display name, the API login name, and an email that had been deleted from the list were all refused
+ * with *"The salesman provided is not a valid salesman username."* — a sentence about a wire field,
+ * arriving after a press.
+ *
+ * The screen now asks first and says what it found. These tests cover the three answers, because the
+ * distinction between them is the whole point: "is a salesman" enables, "is not" explains, and
+ * "could not tell" must **not** block.
+ */
+test.describe('Step 1 — the ShedSafe salesman gate', () => {
+  test('says whether this login is a registered salesman, before any press', async ({ page }) => {
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+
+    // The email itself, from the session — not a display name.
+    const email = await page.locator('#sitecheck-salesman').textContent();
+    expect(email?.trim()).toMatch(/@/);
+    expect(email?.trim()).not.toBe('Company Administrator');
+
+    /*
+     * One of three sentences, all of them honest:
+     *
+     *   Registered ShedSafe salesman — <name>
+     *   This login is not a registered ShedSafe salesman …
+     *   Could not confirm this login with ShedSafe (…). The pin is still worth trying.
+     *
+     * Which one appears depends on the email in `E2E_COMPANY_CODE`'s account and on whether the
+     * ShedSafe API is reachable, so asserting a single one would make the suite depend on a live
+     * third party. What is asserted is that the state is **always** stated.
+     */
+    await expect(page.locator('#sitecheck-salesman-state')).toHaveText(
+      /Registered ShedSafe salesman|not a registered ShedSafe salesman|Could not confirm this login/i,
+      { timeout: 20_000 },
+    );
+  });
+
+  test('a login that is not a salesman is blocked, with the reason and who to ask', async ({ page }) => {
+    /*
+     * Only runs when the suite's own account is not a ShedSafe salesman — which is the case for the
+     * demo company. When the account **is** registered the branch cannot be reached without a second
+     * account, and the assertion above already covers the enabled path.
+     */
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+
+    const state = page.locator('#sitecheck-salesman-state');
+    await expect(state).toHaveText(/Registered ShedSafe salesman|not a registered ShedSafe salesman|Could not confirm/i, {
+      timeout: 20_000,
+    });
+
+    const text = (await state.textContent()) ?? '';
+    // Anchored, so it cannot match inside "Registered ShedSafe salesman" — the two sentences differ by
+    // three words and a substring test confuses them.
+    if (!/^This login is not a registered ShedSafe salesman/i.test(text.trim())) {
+      test.skip(true, 'this suite signs in as a registered ShedSafe salesman, so the blocked branch is unreachable');
+      return;
+    }
+
+    // The reason names the email and the action, not a JSON field.
+    expect(text).toMatch(/@/);
+    expect(text).toMatch(/administrator/i);
+
+    // And the button is genuinely disabled rather than merely explaining.
+    await expect(page.getByRole('button', { name: /Go to ShedSafe|Pin again/ })).toBeDisabled();
   });
 });

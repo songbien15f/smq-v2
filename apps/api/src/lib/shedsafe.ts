@@ -118,6 +118,17 @@ export class ShedSafeError extends Error {
   }
 }
 
+/**
+ * True for `00000000-0000-0000-0000-000000000000`.
+ *
+ * ShedSafe uses the all-zero GUID as its "no building" answer to a **successful** create. Measured
+ * 2026-11-10: a rejected create answers HTTP 200 with this id plus an `errorMessage`. Treating it as
+ * a real id is how a failed pin was stored as a pinned site.
+ */
+function isAllZeroGuid(value: string): boolean {
+  return /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(value.trim());
+}
+
 export interface ShedSafeConfig {
   baseUrl: string;
   username: string;
@@ -165,18 +176,46 @@ export function clearShedSafeTokens(): void {
 /** How long before expiry a token is replaced, so a call never races the expiry. */
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
 
+/** A salesman registered in the company's own ShedSafe account. */
+export interface ShedSafeSalesman {
+  /** The email. **This**, not a display name, is what `Salesman` accepts. */
+  email: string;
+  formattedName: string | null;
+  franchiseName: string | null;
+  franchiseId: string | null;
+  /** ShedSafe's own flag: a restricted salesman may be limited in what they can change. */
+  restricted: boolean;
+}
+
 /** The transport, injected so the routes can be tested without ShedSafe. */
 export interface ShedSafeTransport {
+  /**
+   * Create, or update, the building for this site check.
+   *
+   * ## Why `buildingId` is an input and not only an output
+   *
+   * Measured 2026-11-10: `POST /building/create` is **not** idempotent on `Reference`. Sending the
+   * same reference twice with a different height returned **two different building ids**. So the
+   * reference is a label, and re-pinning without an id leaves a second building behind on the
+   * customer's ShedSafe account — which is what this product had been doing on every re-pin.
+   *
+   * When `buildingId` is supplied the transport calls `PUT /building/update` instead, which was
+   * verified to answer 200 and echo the same id. That is the idempotency path; the reference alone
+   * is not.
+   */
   pin(input: {
     reference: string;
+    /** An existing ShedSafe building to update rather than a second one to create. */
+    buildingId?: string | null;
     siteAddress: { addressLine1: string; suburb: string; state: string; postcode: string };
     client: { firstName: string; lastName: string; email: string };
     /**
-     * The salesperson's name or email, sent to ShedSafe so their own site shows who asked.
+     * The **email** of the signed-in person, which ShedSafe matches against its own salesman list.
      *
-     * Optional, and **not** the customer's email: the parameter is the person doing the site check.
-     * The desktop sends an empty string here and lets the operator type one; this does the same when
-     * the caller has nothing to say.
+     * Measured: a display name, the API login name, and an unregistered email are all refused with
+     * *"The salesman provided is not a valid salesman username."* — while a registered salesman's
+     * email is accepted. Optional here so a caller without a session can still be tested; the route
+     * always supplies it.
      */
     salesman?: string;
     /** Metres, as ShedSafe wants them. */
@@ -188,11 +227,20 @@ export interface ShedSafeTransport {
   /**
    * The building's fields, **and whether ShedSafe has calculated them**.
    *
-   * `null` means ShedSafe has no such building (404). A building it has but has not calculated
-   * comes back with `calculated: false` and the raw values, so a caller can say *why* it will not
-   * use them rather than pretending the building does not exist.
+   * `null` means ShedSafe has no such building. Note that a missing building answers **200** with
+   * `message.errorMessage: "Building requested not found."`, not 404 — measured 2026-11-10 — so the
+   * check is on the message, not the status.
    */
   read(buildingId: string): Promise<SiteCheckResult | null>;
+  /**
+   * Every salesman registered in this account.
+   *
+   * The **authority** on who may pin a site check. The old licence database also carries a salesman
+   * table, but it is a stale snapshot: measured against the live list, it was missing five people and
+   * still listed two who had been deleted. A product that trusted the snapshot would offer a pin that
+   * ShedSafe refuses, which is exactly what it did.
+   */
+  salesmen(): Promise<ShedSafeSalesman[]>;
 }
 
 /**
@@ -246,21 +294,31 @@ export function createShedSafeTransport(
   return {
     async pin(input) {
       /*
-       * The create call. The licence server sent PascalCase keys with no explicit mapping and relied
-       * on case-insensitive binding; this sends the same spellings deliberately, because they are
-       * what the upstream accepts.
+       * Create, or update when there is already a building for this check.
+       *
+       * The licence server sent PascalCase keys with no explicit mapping and relied on
+       * case-insensitive binding; this sends the same spellings deliberately, because they are what
+       * the upstream accepts.
+       *
+       * ## Why update, and not a second create
+       *
+       * Measured 2026-11-10: `POST /building/create` with the same `Reference` twice and a different
+       * height returned **two different building ids**. The reference is a label to ShedSafe, not a
+       * key — so re-pinning without an id leaves an orphan building on the customer's account, and
+       * every PIN press did exactly that. `PUT /building/update` answers 200 and echoes the same id,
+       * which is the behaviour this path needs.
        */
-      const created = await call('/building/create', {
-        method: 'POST',
+      const updating = typeof input.buildingId === 'string' && input.buildingId !== '';
+      const created = await call(updating ? '/building/update' : '/building/create', {
+        method: updating ? 'PUT' : 'POST',
         body: JSON.stringify({
+          ...(updating ? { BuildingId: input.buildingId, Id: input.buildingId } : {}),
           Reference: input.reference,
           /*
-           * The **salesperson**, never the customer's email.
+           * The **salesperson** email, never the customer's email and never a display name.
            *
-           * This read `input.client.email` until 2026-11-06, so the person who asked for a site
-           * check appeared at ShedSafe as the customer, and nobody at the company could tell whose
-           * visit it was. The desktop sends an empty string here and carries the name on the site
-           * link instead; this sends the typed name when there is one.
+           * Measured against the live API: a display name, the API login name and an unregistered
+           * email are all refused — only a registered salesman's email is accepted.
            */
           Salesman: input.salesman ?? '',
           SiteAddress: {
@@ -282,26 +340,45 @@ export function createShedSafeTransport(
         }),
       });
 
+      /*
+       * ## The failure that arrives as success
+       *
+       * ShedSafe answers **HTTP 200** for a rejected create: the body carries
+       * `buildingId: "00000000-0000-0000-0000-000000000000"` and
+       * `message.errorMessage: "The salesman provided is not a valid salesman username."`.
+       *
+       * Measured 2026-11-10. Before this check, `!created.ok` never fired and the all-zero id was
+       * written to the database as a real building — the row that sat in the dev database for weeks
+       * looking like a pinned site. So the response body is inspected, not just the status code.
+       */
+      const rawBody = await created.text().catch(() => '');
+      let parsed: {
+        buildingId?: string;
+        locked?: boolean;
+        message?: { errorMessage?: string | null; informationMessage?: string | null };
+      } = {};
+      try {
+        parsed = JSON.parse(rawBody) as typeof parsed;
+      } catch {
+        /* not JSON — handled by the checks below */
+      }
+
+      const upstreamError = (parsed.message?.errorMessage ?? '').trim();
+      if (upstreamError !== '') {
+        throw new ShedSafeError(upstreamError);
+      }
       if (!created.ok) {
-        const body = await created.text().catch(() => '');
-        let upstreamMessage: string | undefined;
-        try {
-          upstreamMessage = (JSON.parse(body) as { message?: { errorMessage?: string } }).message?.errorMessage;
-        } catch {
-          /* not JSON — fall through to the generic message below */
-        }
         throw new ShedSafeError(
-          upstreamMessage ?? `ShedSafe could not create the building (${created.status}).`,
+          `ShedSafe could not ${updating ? 'update' : 'create'} the building (${created.status}).`,
         );
       }
 
-      const body = (await created.json()) as {
-        buildingId?: string;
-        locked?: boolean;
-        message?: { errorMessage?: string };
-      };
-      if (body.buildingId === undefined || body.buildingId === '') {
-        throw new ShedSafeError(body.message?.errorMessage ?? 'ShedSafe answered without a building id.');
+      const buildingId = (parsed.buildingId ?? '').trim();
+      if (buildingId === '' || isAllZeroGuid(buildingId)) {
+        throw new ShedSafeError(
+          parsed.message?.informationMessage?.trim() ||
+            'ShedSafe answered without a usable building id. The site check was not created.',
+        );
       }
 
       /*
@@ -309,7 +386,7 @@ export function createShedSafeTransport(
        * the endpoint sometimes answers bare text — so both shapes are handled here rather than one.
        */
       const linkResponse = await call(
-        `/building/getsalesmansitelink?id=${encodeURIComponent(body.buildingId)}&salesman=${encodeURIComponent(input.salesman ?? '')}&returnurl=${encodeURIComponent(`https://sitecheck.shedsafe.com.au/Building/Edit/${body.buildingId}`)}`,
+        `/building/getsalesmansitelink?id=${encodeURIComponent(buildingId)}&salesman=${encodeURIComponent(input.salesman ?? '')}&returnurl=${encodeURIComponent(`https://sitecheck.shedsafe.com.au/Building/Edit/${buildingId}`)}`,
       );
       const raw = linkResponse.ok ? (await linkResponse.text()).trim() : '';
       let siteLink = '';
@@ -323,10 +400,63 @@ export function createShedSafeTransport(
         siteLink = raw;
       }
 
-      return { buildingId: body.buildingId, siteLink, locked: body.locked === true };
+      return { buildingId, siteLink, locked: parsed.locked === true };
+    },
+
+    /**
+     * Every salesman registered in this account.
+     *
+     * `GET /building/getsalesmanusers` — found in the old licence server
+     * (`ShedSafeMethods.cs:127`) and measured against the live API on 2026-11-10. The shape it returns
+     * is `{salesman, formattedName, franchiseName, franchiseId, franchiseReference, restricted}`,
+     * where `salesman` is the email.
+     *
+     * This is the authority on who may pin. The `legacy.dbo_salesman` table is a **stale snapshot**:
+     * compared with this list it was missing five people and still carried two who had been deleted,
+     * so a product trusting the snapshot offers pins ShedSafe refuses.
+     */
+    async salesmen() {
+      const response = await call('/building/getsalesmanusers');
+      if (!response.ok) {
+        throw new ShedSafeError(`ShedSafe could not list the salesmen (${response.status}).`);
+      }
+      const body = (await response.json()) as unknown;
+      const rows = Array.isArray(body) ? body : [];
+      const str = (value: unknown): string | null =>
+        typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+
+      return rows
+        .map((row): ShedSafeSalesman | null => {
+          const entry = row as Record<string, unknown>;
+          const email = str(entry.salesman);
+          if (email === null) return null;
+          return {
+            email,
+            formattedName: str(entry.formattedName),
+            /*
+             * The old data pads these with trailing spaces to a fixed width. Trimmed on the way in so
+             * a grouping comparison is about the name, not the padding.
+             */
+            franchiseName: str(entry.franchiseName),
+            franchiseId: str(entry.franchiseId),
+            restricted: entry.restricted === true,
+          };
+        })
+        .filter((entry): entry is ShedSafeSalesman => entry !== null);
     },
 
     async read(buildingId) {
+      /*
+       * A building that does not exist answers **HTTP 200**, not 404.
+       *
+       * Measured 2026-11-10 with two ids the account had never seen — an all-zero GUID and a random
+       * one — both returned `200` with `message.errorMessage: "Building requested not found."` and
+       * every value zero. The 404 branch below therefore never fired, so "no such building" was
+       * indistinguishable from "a building nobody has calculated", and the screen showed `0 kPa`,
+       * `0 m/s` and `0` as if they were readings.
+       *
+       * The message is the signal, and the status code is only a fallback.
+       */
       const response = await call(`/building/get/${encodeURIComponent(buildingId)}`);
       if (!response.ok) {
         if (response.status === 404) return null;
@@ -339,24 +469,54 @@ export function createShedSafeTransport(
       const str = (value: unknown): string | null =>
         typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 
+      const message = (body.message ?? {}) as { errorMessage?: unknown };
+      const errorMessageText = str(message.errorMessage);
+      if (errorMessageText !== null && /not found/i.test(errorMessageText)) {
+        return null;
+      }
+
+      /*
+       * Whether the values can be trusted, decided **before** they are read.
+       *
+       * The zero rule below depends on it, so it cannot be computed afterwards.
+       */
+      const calculated = body.autoCalc === true && (errorMessageText === null || errorMessageText === '');
+
+      /*
+       * Zero is a reading only when the building has been calculated.
+       *
+       * ShedSafe **zero-fills** every numeric field of a building it has not Auto Calculated, so
+       * `snowLoad: 0` and `vSite1: 0` reach the screen as "0 kPa" and "0 m/s" — values nobody measured,
+       * in the same ink as a certified number.
+       *
+       * But on a **calculated** building a zero can be real: a Brisbane site genuinely has a ground
+       * snow load of 0 kPa, and a test asserts exactly that. So the rule is conditional rather than
+       * absolute — null while uncalculated, kept once calculated. Making it unconditional would erase
+       * a true zero, which is the same class of error in the other direction.
+       */
+      const reading = (value: unknown): number | null => {
+        const parsed = num(value);
+        if (parsed === null) return null;
+        return parsed === 0 && !calculated ? null : parsed;
+      };
+
       const values: SiteCheckValues = {
-        importanceLevel: num(body.importanceLevel),
+        importanceLevel: reading(body.importanceLevel),
         windRegion: str(body.windRegion),
-        terrainCategory: num(body.terrainCategory),
+        terrainCategory: reading(body.terrainCategory),
         buildingClass: str(body.buildingClass),
-        snowLoad: num(body.snowLoad),
-        designWindSpeed: num(body.vSite1),
-        // The seven geographic parameters, same null-when-absent rule: a zero here would be a
-        // reading nobody took.
-        shielding: num(body.shielding),
-        topographicFactor: num(body.topographicFactor),
+        snowLoad: reading(body.snowLoad),
+        designWindSpeed: reading(body.vSite1),
+        // The seven geographic parameters, same rule: a zero here would be a reading nobody took.
+        shielding: reading(body.shielding),
+        topographicFactor: reading(body.topographicFactor),
         snowLoadRegion: str(body.snowLoadRegion),
-        earthquakeHazardFactor: num(body.earthquakeHazardFactor),
-        elevation: num(body.elevation),
-        latitude: num(body.latitude),
-        longitude: num(body.longitude),
-        rainfallIntensity100Years: num(body.rainfallIntensity100Years),
-        rainfallIntensity20Years: num(body.rainfallIntensity20Years),
+        earthquakeHazardFactor: reading(body.earthquakeHazardFactor),
+        elevation: reading(body.elevation),
+        latitude: reading(body.latitude),
+        longitude: reading(body.longitude),
+        rainfallIntensity100Years: reading(body.rainfallIntensity100Years),
+        rainfallIntensity20Years: reading(body.rainfallIntensity20Years),
         rainfallIntensityTown: str(body.rainfallIntensityTown),
       };
 
@@ -371,11 +531,10 @@ export function createShedSafeTransport(
        * Keyed on `autoCalc` **and** an empty error, exactly as the desktop does, because
        * `windRegion` is populated before Auto Calc and would pass as "calculated" if it were the
        * signal. That is the whole reason this is not a check on whether the values look plausible.
+       *
+       * `calculated` itself is computed earlier, because the zero rule above depends on it.
        */
-      const errorMessage = str((body.message as Record<string, unknown> | undefined)?.errorMessage);
-      const calculated = body.autoCalc === true && (errorMessage === null || errorMessage === '');
-
-      return { calculated, errorMessage, values };
+      return { calculated, errorMessage: errorMessageText, values };
     },
   };
 }

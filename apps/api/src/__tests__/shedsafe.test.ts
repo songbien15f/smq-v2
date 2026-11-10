@@ -366,3 +366,185 @@ describe('read', () => {
     expect(await createShedSafeTransport(config, fetch).read('nope')).toBeNull();
   });
 });
+
+/**
+ * The failures that arrive as HTTP 200.
+ *
+ * ## What was measured on 2026-11-10, against the live API
+ *
+ * ```
+ * POST /building/create with an unregistered salesman
+ *   → 200, buildingId "00000000-0000-0000-0000-000000000000",
+ *     message.errorMessage "The salesman provided is not a valid salesman username."
+ *
+ * GET /building/get/<random uuid>
+ *   → 200, message.errorMessage "Building requested not found.", every value 0
+ *
+ * POST /building/create twice with the SAME Reference and a different height
+ *   → two DIFFERENT building ids. The reference is a label, not a key.
+ * ```
+ *
+ * The old code tested `!response.ok` and `buildingId === ''`, so none of the three was noticed:
+ * a failed pin was stored as a pinned site with an all-zero id, an unknown building looked like an
+ * uncalculated one, and every re-pin created an orphan building on the customer's account.
+ */
+describe('refusals that arrive as success', () => {
+  const config = { username: 'u', password: 'p', baseUrl: 'https://shedsafe.test' };
+
+  it('treats an errorMessage on a 200 create as a failure', async () => {
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/create': () =>
+        new Response(
+          JSON.stringify({
+            buildingId: '00000000-0000-0000-0000-000000000000',
+            message: { errorMessage: 'The salesman provided is not a valid salesman username.' },
+          }),
+          { status: 200 },
+        ),
+      '/building/getsalesmansitelink': () => new Response('', { status: 200 }),
+    });
+    const transport = createShedSafeTransport(config, fetch);
+
+    await expect(
+      transport.pin({
+        reference: 'R-1',
+        siteAddress: { addressLine1: '1 St', suburb: 'Brisbane', state: 'QLD', postcode: '4000' },
+        client: { firstName: 'A', lastName: 'B', email: 'a@b.com' },
+        salesman: 'nobody@example.com',
+        height: 4.2,
+        span: 12,
+        length: 24,
+        importanceLevel: 2,
+      }),
+    ).rejects.toThrow(/valid salesman username/i);
+  });
+
+  it('refuses an all-zero building id even when no message came with it', async () => {
+    // A zero GUID is ShedSafe's "no building". Storing it is how a failed pin looked pinned.
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/create': () =>
+        new Response(JSON.stringify({ buildingId: '00000000-0000-0000-0000-000000000000' }), {
+          status: 200,
+        }),
+      '/building/getsalesmansitelink': () => new Response('', { status: 200 }),
+    });
+
+    await expect(
+      createShedSafeTransport(config, fetch).pin({
+        reference: 'R-2',
+        siteAddress: { addressLine1: '1 St', suburb: 'Brisbane', state: 'QLD', postcode: '4000' },
+        client: { firstName: 'A', lastName: 'B', email: 'a@b.com' },
+        salesman: 'x@y.z',
+        height: 4.2,
+        span: 12,
+        length: 24,
+        importanceLevel: 2,
+      }),
+    ).rejects.toThrow(/without a usable building id/i);
+  });
+
+  it('updates rather than creating when a building id is supplied', async () => {
+    /*
+     * The idempotency path. `POST /building/create` was measured to return a **different** id for the
+     * same reference, so re-pinning has to go through `PUT /building/update` — which echoes the id
+     * back. This proves the transport chooses the update call, not just that it works.
+     */
+    const { fetch, calls } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/update': () =>
+        new Response(JSON.stringify({ buildingId: 'build-1', locked: false }), { status: 200 }),
+      '/building/getsalesmansitelink': () => new Response('https://sitecheck.test/x', { status: 200 }),
+    });
+
+    const pinned = await createShedSafeTransport(config, fetch).pin({
+      reference: 'R-3',
+      buildingId: 'build-1',
+      siteAddress: { addressLine1: '1 St', suburb: 'Brisbane', state: 'QLD', postcode: '4000' },
+      client: { firstName: 'A', lastName: 'B', email: 'a@b.com' },
+      salesman: 'x@y.z',
+      height: 5,
+      span: 12,
+      length: 24,
+      importanceLevel: 2,
+    });
+
+    expect(pinned.buildingId).toBe('build-1');
+    const update = calls.find((call) => call.url.includes('/building/update'));
+    expect(update?.init?.method).toBe('PUT');
+    // The id goes in the body as well, which is what ShedSafe keys the update on.
+    expect(String(update?.init?.body)).toContain('build-1');
+    // And no create was attempted.
+    expect(calls.some((call) => call.url.includes('/building/create'))).toBe(false);
+  });
+
+  it('answers null for an unknown building that ShedSafe reports with a 200', async () => {
+    // Measured: a random uuid answers 200 with "Building requested not found." and zeros everywhere.
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/get/': () =>
+        new Response(
+          JSON.stringify({
+            autoCalc: false,
+            importanceLevel: 0,
+            vSite1: 0,
+            message: { errorMessage: 'Building requested not found.' },
+          }),
+          { status: 200 },
+        ),
+    });
+
+    expect(await createShedSafeTransport(config, fetch).read('random-uuid')).toBeNull();
+  });
+
+  it('zero-fills nothing on a calculated building — a real zero stays zero', async () => {
+    /*
+     * The other direction, and the reason the zero rule is conditional. A Brisbane site genuinely has
+     * a ground snow load of 0 kPa; erasing it would be the same class of error as inventing one.
+     */
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/get/': () =>
+        new Response(
+          JSON.stringify({
+            autoCalc: true,
+            importanceLevel: 2,
+            windRegion: 'A5',
+            terrainCategory: 3,
+            snowLoad: 0,
+            vSite1: 37.4,
+            message: { errorMessage: null },
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await createShedSafeTransport(config, fetch).read('b-1');
+    expect(result?.calculated).toBe(true);
+    expect(result?.values.snowLoad).toBe(0);
+    expect(result?.values.windRegion).toBe('A5');
+    expect(result?.values.designWindSpeed).toBe(37.4);
+  });
+
+  it('lists the salesmen, whose email is the field a pin needs', async () => {
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/getsalesmanusers': () =>
+        new Response(
+          JSON.stringify([
+            { salesman: 'a@x.com', formattedName: 'A One', franchiseName: 'Head Office', franchiseId: 'f-1', restricted: false },
+            { salesman: 'b@x.com', formattedName: 'B Two', franchiseName: 'Branch_01', franchiseId: 'f-2', restricted: true },
+            // A row with no email cannot be a salesman; it is dropped rather than listed blank.
+            { formattedName: 'No Email' },
+          ]),
+          { status: 200 },
+        ),
+    });
+
+    const salesmen = await createShedSafeTransport(config, fetch).salesmen();
+    expect(salesmen).toHaveLength(2);
+    expect(salesmen[0]?.email).toBe('a@x.com');
+    expect(salesmen[1]?.restricted).toBe(true);
+  });
+});

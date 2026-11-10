@@ -86,6 +86,16 @@ const ALLOWED_PREFIXES = [
    * ShedSafe site checks. The credentials stay on the API; the browser only sees our routes.
    */
   'quotes',
+  /*
+   * The salesmen registered in this company's ShedSafe account.
+   *
+   * Read before a pin so the screen can say "this login is not a ShedSafe salesman" instead of
+   * failing with ShedSafe's own sentence about a wire field. This list said only `quotes`, `site-checks`
+   * and friends, so `/shedsafe/salesmen` answered 404 through the proxy — and the panel, unable to
+   * tell "not a salesman" from "could not check", correctly fell back to not blocking. The visible
+   * effect was a pin that ShedSafe then refused for a reason the screen never showed.
+   */
+  'shedsafe',
   'auth/session',
   'auth/password',
   /*

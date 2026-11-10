@@ -28,6 +28,7 @@ import { useDraftStore } from '@/store/useDraftStore';
 import {
   numberOf,
   stringOf,
+  useShedSafeIdentity,
   useSiteCheck,
   type SiteCheck,
   type SiteCheckValues,
@@ -87,6 +88,7 @@ export function SiteCheckPanel({
    * result through `replace()` so both update in the same commit.
    */
   const { check, configured, replace } = useSiteCheck();
+  const identity = useShedSafeIdentity();
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
   /**
    * The salesman is the **signed-in person's email**, and it is not editable.
@@ -155,7 +157,37 @@ export function SiteCheckPanel({
     return missing;
   })();
 
+  /**
+   * Whether this login may pin at all, asked **before** the button is pressed.
+   *
+   * `identity.you === null` means the answer is unknown — ShedSafe unconfigured, unreachable, or
+   * nobody signed in. Unknown does **not** block: a pre-flight check that failed must not stop an
+   * action that would work, and the pin has its own error message.
+   *
+   * `isSalesman === false` does block, because it is a fact about the account rather than a transient
+   * failure: ShedSafe measured 2026-11-10 refuses every email not on its list, with a sentence about
+   * a field nobody on this screen can see.
+   */
+  const notASalesman = identity.you !== null && !identity.you.isSalesman;
+  const blockedBy = notASalesman ? ('salesman' as const) : missingForPin.length > 0 ? ('fields' as const) : null;
+
   const pin = async (): Promise<void> => {
+    /*
+     * The salesman check first, because it cannot be fixed from this screen.
+     *
+     * A disabled button already stops the click, but this handler is also reachable from a keyboard
+     * activation of an element that re-enables between renders, and ShedSafe's own refusal is a
+     * sentence about a wire field. Answering with the account-level fact is the difference between
+     * "something is wrong" and "ask an administrator to add your email".
+     */
+    if (notASalesman) {
+      setMessage({
+        tone: 'danger',
+        text: `ShedSafe does not know ${salesman} as a salesman, so it will refuse this pin. Ask an administrator to add this email as a salesman in your ShedSafe account.`,
+      });
+      return;
+    }
+
     /*
      * The same list the button is gated on, reported all at once.
      *
@@ -690,14 +722,52 @@ export function SiteCheckPanel({
               <span className="text-sq-micro font-medium text-sq-ink">Salesperson</span>
               <output
                 id="sitecheck-salesman"
-                className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+                className={[
+                  'sq-numeric min-h-[38px] rounded-md border px-sq-2 py-sq-1 text-sq-body',
+                  notASalesman
+                    ? 'border-sq-danger/50 bg-sq-danger/5 text-sq-ink'
+                    : 'border-sq-line bg-sq-ground/40 text-sq-ink',
+                ].join(' ')}
               >
                 {salesman === '' ? '— nobody signed in' : salesman}
               </output>
-              <span className="text-sq-micro text-sq-ink-muted">
-                The site check is issued under this login. ShedSafe only accepts an email registered as
-                a salesman in your account.
-              </span>
+              {/*
+                The state of this login on ShedSafe, said plainly.
+
+                Three answers and three sentences, because "could not check" is not "not a salesman":
+                the first must not block anything, the second must. A person who is not on the list is
+                told what to do about it — an administrator adds them — instead of being left with a
+                refusal that names a JSON field.
+              */}
+              {notASalesman ? (
+                <span id="sitecheck-salesman-state" className="text-sq-micro text-sq-danger">
+                  This login is not a registered ShedSafe salesman, so ShedSafe will refuse the pin. Ask
+                  an administrator to add <strong>{salesman}</strong> as a salesman in your ShedSafe
+                  account.
+                  {identity.salesmen.length > 0 && (
+                    <>
+                      {' '}
+                      Registered on this account: {identity.salesmen.map((s) => s.email).join(', ')}.
+                    </>
+                  )}
+                </span>
+              ) : identity.you !== null && identity.you.isSalesman ? (
+                <span id="sitecheck-salesman-state" className="text-sq-micro text-sq-ink-muted">
+                  Registered ShedSafe salesman
+                  {identity.you.formattedName === null ? '' : ` — ${identity.you.formattedName}`}
+                  {identity.you.franchiseName === null ? '' : `, ${identity.you.franchiseName}`}.
+                </span>
+              ) : identity.listingError !== null ? (
+                <span id="sitecheck-salesman-state" className="text-sq-micro text-sq-attention">
+                  Could not confirm this login with ShedSafe ({identity.listingError}). The pin is still
+                  worth trying.
+                </span>
+              ) : (
+                <span id="sitecheck-salesman-state" className="text-sq-micro text-sq-ink-muted">
+                  The site check is issued under this login. ShedSafe only accepts an email registered as
+                  a salesman in your account.
+                </span>
+              )}
             </div>
             {/*
               Gated on the same list the click handler checks, so "enabled" and "will work" are the
@@ -710,14 +780,19 @@ export function SiteCheckPanel({
             */}
             <Button
               loading={busy === 'pinning'}
-              disabled={missingForPin.length > 0}
+              disabled={blockedBy !== null}
               onClick={() => void pin()}
             >
               {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
             </Button>
-            {missingForPin.length > 0 && (
+            {blockedBy === 'fields' && (
               <span className="max-w-[22rem] text-sq-micro text-sq-attention">
                 Before pinning, fill in {missingForPin.join(', ')}.
+              </span>
+            )}
+            {blockedBy === 'salesman' && (
+              <span className="max-w-[22rem] text-sq-micro text-sq-danger">
+                ShedSafe will refuse this login — see the reason beside the salesperson above.
               </span>
             )}
             {check !== null && (

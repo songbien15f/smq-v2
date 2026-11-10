@@ -107,7 +107,45 @@ interface SiteCheckContextValue {
   replace: (next: SiteCheck | null) => void;
 }
 
+/**
+ * Who the signed-in person is, as ShedSafe knows them.
+ *
+ * ## Why this is fetched before anything is pinned
+ *
+ * ShedSafe accepts `Salesman` only if it is an email on **its own** salesman list. Measured
+ * 2026-11-10: a display name, the API login name, and an email that had been deleted from the list
+ * all fail with *"The salesman provided is not a valid salesman username."* — a sentence that names
+ * a wire field and arrives after a press.
+ *
+ * Asking first turns that into a sentence on screen **before** the operator acts: *"this login is not
+ * a registered ShedSafe salesman — ask an administrator to add it"*.
+ *
+ * ## `null` means "could not tell", not "not a salesman"
+ *
+ * When ShedSafe cannot be reached the answer is `null` and the panel does **not** block the pin: a
+ * failed pre-flight check must not stop an action that might still work. The three states are
+ * deliberately distinct — unknown, is one, is not one.
+ */
+export interface ShedSafeIdentity {
+  email: string;
+  isSalesman: boolean;
+  formattedName: string | null;
+  franchiseName: string | null;
+  restricted: boolean;
+}
+
+interface ShedSafeIdentityValue {
+  /** `null` when ShedSafe is unconfigured, unreachable, or nobody is signed in. */
+  you: ShedSafeIdentity | null;
+  /** Every salesman in the account, for the administrator-facing message. */
+  salesmen: ShedSafeIdentity[];
+  /** True when the list could not be read — shown, so a blocked pin is not mysterious. */
+  listingError: string | null;
+  loading: boolean;
+}
+
 const SiteCheckContext = createContext<SiteCheckContextValue | null>(null);
+const IdentityContext = createContext<ShedSafeIdentityValue | null>(null);
 
 export function SiteCheckProvider({
   quoteId,
@@ -120,6 +158,47 @@ export function SiteCheckProvider({
   const [check, setCheck] = useState<SiteCheck | null>(null);
   const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [identity, setIdentity] = useState<ShedSafeIdentityValue>({
+    you: null,
+    salesmen: [],
+    listingError: null,
+    loading: true,
+  });
+
+  /*
+   * Read once per step, not per render: the salesman list changes when an administrator adds
+   * somebody, which is not while a form is open.
+   */
+  useEffect(() => {
+    let alive = true;
+    void api<{
+      configured: boolean;
+      salesmen: Array<{ email: string; formattedName: string | null; franchiseName: string | null; restricted: boolean }>;
+      you: ShedSafeIdentity | null;
+      listingError?: string;
+    }>('shedsafe/salesmen').then((result) => {
+      if (!alive) return;
+      if (!result.ok) {
+        setIdentity({ you: null, salesmen: [], listingError: result.message, loading: false });
+        return;
+      }
+      setIdentity({
+        you: result.data.you,
+        salesmen: result.data.salesmen.map((entry) => ({
+          email: entry.email,
+          isSalesman: true,
+          formattedName: entry.formattedName,
+          franchiseName: entry.franchiseName,
+          restricted: entry.restricted,
+        })),
+        listingError: result.data.listingError ?? null,
+        loading: false,
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const reload = useCallback(async (): Promise<void> => {
     if (quoteId === null) return;
@@ -161,7 +240,25 @@ export function SiteCheckProvider({
     [check, configured, loading, state, reload, replace],
   );
 
-  return <SiteCheckContext.Provider value={value}>{children}</SiteCheckContext.Provider>;
+  return (
+    <SiteCheckContext.Provider value={value}>
+      <IdentityContext.Provider value={identity}>{children}</IdentityContext.Provider>
+    </SiteCheckContext.Provider>
+  );
+}
+
+/**
+ * Whether the signed-in person may pin a site check.
+ *
+ * Must be inside a `SiteCheckProvider`. Returns `you: null` when the answer is unknown, which callers
+ * treat as "do not block" — a failed pre-flight check must not stop an action that would work.
+ */
+export function useShedSafeIdentity(): ShedSafeIdentityValue {
+  const value = useContext(IdentityContext);
+  if (value === null) {
+    throw new Error('useShedSafeIdentity must be used inside <SiteCheckProvider>');
+  }
+  return value;
 }
 
 /** The check for the quote on screen. Must be inside a `SiteCheckProvider`. */

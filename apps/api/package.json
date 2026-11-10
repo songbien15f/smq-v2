@@ -13,6 +13,7 @@
     "clean": "rimraf dist .turbo",
     "seed": "node --env-file-if-exists=../../.env --import tsx scripts/seed.ts",
     "legacy:accounts": "node --env-file-if-exists=../../.env --import tsx scripts/import-legacy-accounts.ts",
+    "sync:salesmen": "node --env-file-if-exists=../../.env --import tsx scripts/sync-shedsafe-salesmen.ts",
     "install:company": "node --env-file-if-exists=../../.env --import tsx scripts/install.ts",
     "publish-book": "node --env-file-if-exists=../../.env --import tsx scripts/publish-book.ts",
     "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts"

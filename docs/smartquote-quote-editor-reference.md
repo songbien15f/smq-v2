@@ -2757,15 +2757,119 @@ chung không được sống quá lần đăng nhập đầu.
 
 ---
 
+## 13.24 ShedSafe: bốn thứ nó trả về HTTP 200 mà thực ra là từ chối (2026-11-10)
+
+Đọc trace `2026-11-10-sitecheck-map-pin-api-trace.md` + đo API live. Bốn phát hiện, cùng một dạng:
+**thành công giả**.
+
+### 1. `POST /building/create` trả 200 khi thất bại
+
+```
+salesman không hợp lệ → 200, buildingId "00000000-…-000000000000",
+                        message.errorMessage "The salesman provided is not a valid salesman username."
+```
+
+Code cũ chỉ kiểm `!response.ok` và `buildingId === ''` — không kiểm `errorMessage`, không nhận ra
+UUID toàn số 0. Nên **một lần pin hỏng được lưu là "pinned"** với id giả. Đó chính là dòng
+`00000000-…` nằm trong dev DB nhiều tuần.
+
+Nay: `errorMessage` khác rỗng → ném lỗi; UUID toàn số 0 → ném lỗi.
+
+### 2. `GET /building/get/{id}` trả 200 cho building không tồn tại
+
+UUID ngẫu nhiên → `200`, `errorMessage "Building requested not found."`, mọi giá trị `0`. Nhánh
+`status === 404` **không bao giờ chạy**, nên "không có building" trông giống "có nhưng chưa tính", và
+màn hình hiện `0 kPa`, `0 m/s` như số thật.
+
+Nay: kiểm **message**, không kiểm status. Và `0` chỉ là số thật khi `autoCalc === true` — Brisbane
+thật sự có `snowLoad: 0`, nên luật phải có điều kiện, không tuyệt đối.
+
+### 3. `Reference` KHÔNG phải khoá idempotency
+
+Đo: gửi cùng `Reference` hai lần (Height khác) → **hai buildingId khác nhau**. Nên mỗi lần bấm PIN lại
+tạo một building rác trên tài khoản ShedSafe của khách.
+
+`PUT /building/update` thì trả 200 và giữ nguyên id. Nay transport chọn `update` khi biết `buildingId`,
+và route truyền id của check đã có.
+
+### 4. Danh sách salesman thật: `GET /building/getsalesmanusers`
+
+Tìm thấy trong licence server cũ (`ShedSafeMethods.cs:127`), gọi thử: **9 salesman thật**.
+
+| | |
+|---|---|
+| Có trên ShedSafe, thiếu trong `legacy.dbo_salesman` | `+3`, `+5`, `+7`, `thienduro@`, `thingo79+1@yahoo.com` |
+| Có trong snapshot, **đã bị xoá** khỏi ShedSafe | **`+1`**, **`nguyen.an@`** |
+
+**`legacy.dbo_salesman` là ảnh chụp lỗi thời.** Đó là lý do `+1` báo "not a valid salesman username"
+dù vẫn đăng nhập được vào sitecheck.shedsafe.com.au — đăng nhập và làm salesman là hai quyền khác nhau.
+
+### Sửa: kiểm trước khi cho PIN
+
+`GET /shedsafe/salesmen` trả `you: { email, isSalesman, formattedName, franchiseName }`. Panel hiện
+**một trong ba** câu, và nút bị chặn khi `isSalesman === false`:
+
+| Trạng thái | Hiện | Nút |
+|---|---|---|
+| Là salesman | *Registered ShedSafe salesman — Jayy Ngo, Head Office.* | bật (nếu đủ field) |
+| Không phải | *This login is not a registered ShedSafe salesman… Ask an administrator…* + danh sách email hợp lệ | **tắt** |
+| Không kiểm được | *Could not confirm this login with ShedSafe (…). The pin is still worth trying.* | không chặn |
+
+Ba trạng thái vì **"không kiểm tra được" không phải "không phải salesman"**: pre-flight hỏng không được
+chặn một hành động có thể vẫn chạy.
+
+### `sync-shedsafe-salesmen.ts` thay nguồn legacy
+
+`pnpm --filter @sq/api sync:salesmen` — đọc danh sách thật, tạo user/membership theo franchise, và
+**suspend** (không xoá) membership khi người đó không còn là salesman. Lần chạy đầu:
+
+```
+suspended: owner@demo-sheds.local (DEMOSHEDS), +1@ (BRANCH01), nguyen.an@ (HEADOFFICE)
+moved:     +2@ và +6@ rời HEADOFFICE → COMPANYAAA / BRANCH01
+```
+
+**Salesman chuyển franchise** là trường hợp riêng: họ vẫn là salesman nên luật "không còn salesman"
+không bắt, và họ sẽ giữ membership `active` ở công ty **cũ** mãi mãi — hai công ty, một người. Nay
+membership ở tenant khác franchise hiện tại cũng bị suspend.
+
+### E2E phải có tenant riêng
+
+Demo owner bị suspend → suite không đăng nhập được. Không khôi phục demo (nó chính là thứ vừa bị bỏ);
+tạo `E2ESHEDS` bằng `seed.ts` với `SEED_COMPANY_CODE=E2ESHEDS`. **Một suite không được phụ thuộc tenant
+mà người thật dùng.**
+
+### Ba lỗi trong chính code tôi viết, lộ ra khi đo
+
+1. **`'shedsafe'` không có trong allow-list của bridge** → `/shedsafe/salesmen` trả 404 "No such route",
+   panel rơi về "could not confirm" và **không chặn** — đúng thiết kế nhưng vô dụng. Trùng lỗi `members`
+   vs `team` đã ghi trong file đó.
+2. **Regex `/Registered ShedSafe salesman/i` khớp cả câu "not a registered…"** → test đọc nhánh "được
+   phép" trong khi trang cố ý chặn. Phải neo `^`.
+3. **Test height dùng `before` từ state còn sót của test trước** → xanh khi chạy riêng, đỏ trong suite.
+   Sửa: tự đặt cả hai đầu.
+
+### Đo được
+
+| | |
+|---|---|
+| `POST /building/create` cùng Reference 2 lần | **2 id khác nhau** (trước khi sửa) |
+| `PUT /building/update` | 200, giữ id |
+| `getsalesmanusers` | 9 salesman |
+| Panel, login hợp lệ | *Registered ShedSafe salesman — Jayy Ngo, Head Office.* |
+| Panel, `+1` (đã xoá khỏi ShedSafe) | *not a registered…* + nút **tắt** |
+| Login của user bị suspend | 401 |
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 1 016 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**) |
-| `@sq/api` | 282 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
+| `@sq/api` | 288 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 26 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **9 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 28 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **11 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, **2 salesman gate** — trạng thái luôn được nói, login không phải salesman thì chặn kèm lý do) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

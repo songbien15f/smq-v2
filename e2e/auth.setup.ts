@@ -15,9 +15,20 @@ import { expect, test as setup } from '@playwright/test';
  * form: this is the real three-field sign-in, not a shortcut through the API.
  */
 
-const COMPANY = process.env.E2E_COMPANY_CODE ?? 'DEMOSHEDS';
+/**
+ * A tenant that exists **only** for this suite.
+ *
+ * These used to default to `DEMOSHEDS` / `owner`, the demo company `seed.ts` created. That stopped
+ * being safe on 2026-11-10, when the demo accounts were replaced by real ones imported from ShedSafe:
+ * the demo owner is no longer a ShedSafe salesman, so it is suspended and cannot sign in — and the
+ * suite would be testing a login that the product now deliberately refuses.
+ *
+ * A suite must not depend on a tenant a person uses. `E2ESHEDS` is created by `seed.ts` with
+ * `SEED_COMPANY_CODE=E2ESHEDS`, holds no real data, and can be wiped without consequence.
+ */
+const COMPANY = process.env.E2E_COMPANY_CODE ?? 'E2ESHEDS';
 const USERNAME = process.env.E2E_USERNAME ?? 'owner';
-const PASSWORD = process.env.E2E_PASSWORD ?? 'a-long-enough-password';
+const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-long-password-2026';
 
 /** Where the cookies are written. Git-ignored: it is a live session. */
 export const STATE = 'e2e/.auth/state.json';

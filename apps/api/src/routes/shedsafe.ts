@@ -427,6 +427,65 @@ function transport(): ShedSafeTransport | null {
 
 export function registerShedSafe(app: FastifyInstance, db: Db): void {
   /** The check for a quote's site, or `null`. Read-only, so a viewer may see it. */
+  /**
+   * The salesmen registered in this company's ShedSafe account, and whether the caller is one.
+   *
+   * ## Why the screen needs this before a pin
+   *
+   * ShedSafe accepts only an email on its own list of salesmen. Measured 2026-11-10: a display name,
+   * the API login name, and an email that was deleted from the list all fail with *"The salesman
+   * provided is not a valid salesman username."* — a sentence about a wire field that names nothing
+   * on the screen, arriving **after** a press.
+   *
+   * So the panel asks first: `you: { email, isSalesman }`. When `isSalesman` is false the pin button
+   * explains that the account needs a salesman, instead of failing in somebody else's words.
+   *
+   * ## Why the list, not a stored copy
+   *
+   * The old licence database has a salesman table too, and it is a stale snapshot: compared with this
+   * live list on 2026-11-10 it was missing five people and still carried two who had been deleted.
+   * Trusting the copy is what made the product offer pins ShedSafe refuses.
+   */
+  app.get('/shedsafe/salesmen', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:read');
+    if (session === null) return;
+
+    const shedSafe = transport();
+    if (shedSafe === null) {
+      return sendOk(reply, { configured: false, salesmen: [], you: null });
+    }
+
+    try {
+      const salesmen = await shedSafe.salesmen();
+      const email = (session.email ?? '').trim().toLowerCase();
+      const mine = salesmen.find((entry) => entry.email.toLowerCase() === email);
+      return sendOk(reply, {
+        configured: true,
+        salesmen,
+        you:
+          email === ''
+            ? null
+            : {
+                email,
+                isSalesman: mine !== undefined,
+                formattedName: mine?.formattedName ?? null,
+                franchiseName: mine?.franchiseName ?? null,
+                restricted: mine?.restricted ?? false,
+              },
+      });
+    } catch (error) {
+      /*
+       * A failure to list is reported as `configured: true` with no list, not as a 500.
+       *
+       * The panel must not block a pin because a *pre-flight check* failed — ShedSafe may be briefly
+       * unreachable, and the pin itself would still be worth attempting. The button falls back to its
+       * old behaviour, and the failure is named so it is not silent.
+       */
+      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
+      return sendOk(reply, { configured: true, salesmen: [], you: null, listingError: message });
+    }
+  });
+
   app.get<{ Params: { quoteId: string } }>('/quotes/:quoteId/site-check', async (request, reply) => {
     const session = requireCompanyCapability(request, reply, 'quote:read');
     if (session === null) return;
@@ -474,12 +533,32 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
     );
     if (quote === null) return sendFail(reply, 'not_found', 'Not found.');
 
-    const reference = body.reference ?? newReference();
+    /*
+     * Reuse the existing check — its reference **and** its ShedSafe building id.
+     *
+     * `POST /building/create` is not idempotent on `Reference`: measured 2026-11-10, sending the same
+     * reference twice with a different height returned two different building ids. So re-pinning used
+     * to leave an orphan building on the customer's ShedSafe account every time. Passing the id makes
+     * the transport call `PUT /building/update` instead, which answers 200 and keeps the same id.
+     *
+     * A check with **no** id (a pin that failed, or one made before ids were recorded) creates.
+     */
+    const prior =
+      quote.site_check_id === null
+        ? null
+        : await db.get<{ reference: string; building_id: string | null }>(
+            'SELECT reference, building_id FROM site_checks WHERE id = ? AND tenant_id = ?',
+            [quote.site_check_id, tenantId],
+          );
+
+    const reference = body.reference ?? prior?.reference ?? newReference();
+    const buildingId = prior?.building_id ?? null;
     const at = now();
 
     try {
       const pinned = await shedSafe.pin({
         reference,
+        buildingId,
         siteAddress: body.siteAddress,
         client: body.client,
         // ShedSafe takes metres; the editor holds millimetres.
@@ -644,12 +723,28 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
     if (body === null) return;
 
     const tenantId = session.tenantId as string;
+
+    /*
+     * Reuse this tenant's existing check for the same reference, so a second press **updates**.
+     *
+     * The body may carry a `reference` (the client remembers it per draft), and the row for it may
+     * already hold a ShedSafe building id. Passing that id makes the transport call
+     * `PUT /building/update` — measured to keep the same building — instead of creating a second one.
+     * `POST /building/create` is not idempotent on the reference, so without this each press left an
+     * orphan building on the customer's ShedSafe account.
+     */
     const reference = body.reference ?? newReference();
+    const prior = await db.get<{ building_id: string | null }>(
+      'SELECT building_id FROM site_checks WHERE tenant_id = ? AND reference = ?',
+      [tenantId, reference],
+    );
+    const buildingId = prior?.building_id ?? null;
     const at = now();
 
     try {
       const pinned = await shedSafe.pin({
         reference,
+        buildingId,
         siteAddress: body.siteAddress,
         client: body.client,
         height: body.heightMm / 1000,
