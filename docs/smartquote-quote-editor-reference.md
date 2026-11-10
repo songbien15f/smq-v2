@@ -2169,8 +2169,24 @@ chuyển phép thay thế về lại trang, test đỏ.
 
 ### `/dashboard/docs` — cùng nội dung với `docs/PRICING-PIPELINE.md`
 
-Bốn mục: 10 bước · công thức · nguồn dữ liệu · "assumption không phải lỗi". Sơ đồ dùng `<pre>` ASCII,
-**không** Mermaid: trang này server-render, Mermaid cần client bundle cho một sơ đồ không bao giờ đổi.
+Bảy mục: pipeline · nguồn dữ liệu · một thanh thép · một revision · chuỗi giá · wind code · những gì
+báo giá **không** biết.
+
+Bốn sơ đồ là **SVG viết tay** trong `components/vendor/PricingDiagrams.tsx` (`Frame`/`Box`/`Arrow`/
+`Caption` tự dựng), **không** Mermaid và **không** client JS: trang này server-render, Mermaid cần
+bundle cho một hình không bao giờ đổi.
+
+| Sơ đồ | Trả lời |
+|---|---|
+| `PipelineDiagram` | năm chặng: building + money → sách giá → 12 nhóm BOM → chuỗi giá → revision đóng băng |
+| `DataMapDiagram` | **nhóm BOM nào đọc bảng giá nào**; hai đường chéo đáng chú ý: `devided` quyết số hàng purlin, `frameSchedule` quyết mọi tiết diện thép (hoặc rơi về một tiết diện giả định) |
+| `PriceChainDiagram` | chuỗi giá dạng thác nước với số thật của một revision đã lưu |
+| `SaveGateDiagram` | cổng lúc Save quyết định "complete" hay "draft" |
+
+Hình học được **đo bằng số**, không bằng mắt: một script so từng hộp chữ với mọi hộp khác và với
+`viewBox`. Nó bắt được hai lỗi sẽ ship nếu nhìn bằng mắt — hộp "frozen revision" đè lên banner kết quả
+8px ở hai chỗ (1.600px² mỗi chỗ), và một tiêu đề rộng 221px trong hộp 200px. Sau khi sửa: 0 đè nhau,
+0 chữ ngoài `viewBox`. Ở 390px bốn sơ đồ cuộn **trong khung** của nó, trang không cuộn ngang.
 
 Nguồn sự thật là `docs/PRICING-PIPELINE.md` (đọc cùng code khi review). Trang chỉ được khác về **cách
 trình bày**, không được khác về **công thức** — sai là bug ở trang.
@@ -2406,6 +2422,55 @@ thật và cột hiện địa chỉ đó. Phép thử với IP giả ở trên 
 **Một phép che phải được thử với dữ liệu ngắn nhất có thể xảy ra, không phải điển hình nhất.** Test cũ
 của tôi dùng `203.0.113.7` — trường hợp đẹp — nên `::1` lọt qua. Nay test có cả `::1`, `127.0.0.1`,
 IPv4, và IPv6 dài.
+
+---
+
+## 13.20 Bốn sơ đồ trong `/dashboard/docs` — vẽ bằng tay, đo bằng số (2026-11-09)
+
+Yêu cầu: *"bổ sung thêm diagram, workflow chart, dạng sơ đồ các mối liên quan đầy đủ… cho tôi nhìn trực
+quan"*. Trang `/dashboard/docs` trước đó giải thích pipeline bằng văn xuôi và để người đọc tự hình dung.
+
+### Bốn hình, và câu hỏi mỗi hình trả lời
+
+| Component | Câu hỏi |
+|---|---|
+| `PipelineDiagram` | **Toàn cảnh**: từ building + money trong trình duyệt → sách giá → 12 nhóm BOM → chuỗi giá → revision đóng băng → BOM / tài liệu / share link. Mũi tên đáng nhìn hai lần: **mọi thứ bên phải KHÔNG tính lại** |
+| `DataMapDiagram` | **Nhóm BOM nào đọc bảng nào.** Hai đường chéo: `devided` quyết số hàng purlin (input công trình), `frameSchedule` quyết mọi tiết diện thép — hoặc rơi về **một** tiết diện giả định |
+| `PriceChainDiagram` | **Chuỗi giá dạng thác nước** với số thật của một revision đã lưu |
+| `SaveGateDiagram` | **Cổng lúc Save**: cái gì làm một báo giá là "draft" thay vì "complete" |
+
+### Vì sao SVG viết tay, không Mermaid, không thư viện chart
+
+Trang này **server-render**. Mermaid cần một client bundle để vẽ một hình **không bao giờ đổi** — trả
+JS cho một ảnh tĩnh. Bốn primitive (`Frame`, `Box`, `Arrow`, `Down`, `Caption`) đủ cho cả bốn hình, và
+chúng in ra được.
+
+### Hình học được đo, không được nhìn
+
+Mô hình này **không đọc được ảnh**, nên "trông ổn" không phải bằng chứng. Một script đo mọi hộp chữ
+với mọi hộp khác và với `viewBox`. Nó bắt hai lỗi mà mắt người sẽ thấy là cẩu thả và tôi sẽ ship:
+
+1. hộp "frozen revision" **đè** lên banner kết quả 8px ở hai chỗ — 1.600px² mỗi chỗ (sửa: `height`
+   230 → 268, banner xuống `y=218`);
+2. một tiêu đề rộng **221px trong hộp 200px** (sửa: rút chữ).
+
+Sau khi sửa, cả bốn hình: **0 đè nhau, 0 chữ ngoài `viewBox`, 0 tràn thật**. Ở 390px: 4 hình, mỗi SVG
+720px trong khung 318px có `overflow-x: auto`, **trang không cuộn ngang**.
+
+### Test
+
+`e2e/vendorDashboard.spec.ts` khẳng định: 4 `svg[role="img"]`, mỗi cái có `aria-label` ≥ 20 ký tự
+(SVG không nhãn là vô hình với screen reader), và những con số trang tồn tại để nói: `31 553`,
+`8,185.68`, `13,326.29`, `GIRT_PRICE_FROM_PURLIN`.
+
+### Hai lần đỏ không phải lỗi sản phẩm
+
+- **API đã chết** trong lúc dọn tiến trình (14+ node, 4 bộ `tsup --watch` tranh nhau ghi `dist`).
+  Trang báo "Could not read the figures" — đúng hành vi (nó từ chối hiện số cũ), nhưng test đỏ.
+- **`/vendor/usage` trả 404 khi dò trần** vì route nằm dưới prefix `/api/v1`; gọi đúng prefix thì 200.
+  Một lần dò sai đường đọc thành "route hỏng".
+
+Bài học: khi một test đỏ ngay sau khi sửa hạ tầng, **kiểm tiến trình trước khi kiểm code**.
 
 ---
 
