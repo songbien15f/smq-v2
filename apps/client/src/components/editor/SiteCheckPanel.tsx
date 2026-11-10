@@ -89,14 +89,37 @@ export function SiteCheckPanel({
   const { check, configured, replace } = useSiteCheck();
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
   /**
-   * Who is doing the check, as ShedSafe shows it on their side.
+   * The salesman is the **signed-in person's email**, and it is not editable.
    *
-   * Defaults to the signed-in person but stays editable, because the salesperson who arranged a site
-   * visit is often not the person at the keyboard. It must never be **empty**: ShedSafe refuses that
-   * with "The Salesman field is required", so the button is disabled until there is something to
-   * send rather than letting the pin fail on their side.
+   * ## What ShedSafe actually accepts
+   *
+   * Measured against the live API on 2026-11-10, by trying each shape:
+   *
+   * ```
+   * "Dana Nguyen"                     → "The salesman provided is not a valid salesman username."
+   * "wdsapi1"        (API login name) → same rejection
+   * ""                                → 400 "The Salesman field is required."
+   * "owner@demo-sheds.local"          → same rejection (not registered)
+   * "songbien15f@gmail.com"           → ACCEPTED, real building id
+   * "hoangduy7617@gmail.com"          → ACCEPTED, real building id
+   * ```
+   *
+   * So `Salesman` is an email that must belong to a salesman in the company's own ShedSafe account.
+   * A person registered as a salesman is created by an administrator — the old licence server did it
+   * through `SalesmanController`, keyed on `Email` — and that same email is this product's user email.
+   * One login, one salesman.
+   *
+   * ## Why it is read-only now
+   *
+   * It used to be a free-text box defaulting to the display name ("Company Administrator"), which
+   * could never work: a display name is not a ShedSafe login, so **every** pin failed with a message
+   * about a field the operator had not been shown. Typing somebody else's email would also issue a
+   * certificate in their name, which is the one thing site-check attribution exists to prevent.
+   *
+   * The value is still sent from state so the pin path did not change; the difference is that the
+   * operator cannot edit it.
    */
-  const [salesman, setSalesman] = useState(defaultSalesman);
+  const salesman = defaultSalesman;
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const setSiteCheckId = useDraftStore((state) => state.setSiteCheckId);
 
@@ -653,21 +676,29 @@ export function SiteCheckPanel({
         {configured && canWrite && (
           <div className="flex flex-wrap items-end gap-sq-2">
             {/*
-              Who the check is for. Sent to ShedSafe, which shows it on its own screen — so a
-              franchise with several salespeople can tell whose site visit this was. Optional: the
-              desktop sent an empty string and let the operator decide.
+              The salesman, shown but not editable.
+
+              It is the signed-in email because that is what ShedSafe matches against its own list of
+              registered salesmen — a display name is rejected, and so is any email the account does
+              not hold. Letting the operator type here would either fail (a name) or issue a
+              certificate under somebody else's name, which is exactly what attribution is for.
+
+              Rendered as text rather than a disabled input: a disabled field looks like something
+              that could be enabled, and this one cannot. The sentence beneath says why.
             */}
-            <label className="flex flex-col gap-sq-1">
+            <div className="flex flex-col gap-sq-1">
               <span className="text-sq-micro font-medium text-sq-ink">Salesperson</span>
-              <input
-                type="text"
-                value={salesman}
-                onChange={(event) => setSalesman(event.target.value.slice(0, 200))}
-                placeholder="Who is doing the check"
-                required
-                className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body text-sq-ink"
-              />
-            </label>
+              <output
+                id="sitecheck-salesman"
+                className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+              >
+                {salesman === '' ? '— nobody signed in' : salesman}
+              </output>
+              <span className="text-sq-micro text-sq-ink-muted">
+                The site check is issued under this login. ShedSafe only accepts an email registered as
+                a salesman in your account.
+              </span>
+            </div>
             {/*
               Gated on the same list the click handler checks, so "enabled" and "will work" are the
               same fact. The desktop had two lists that disagreed — a button could look ready, be

@@ -682,9 +682,17 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                       spanMm={config.span}
                       lengthMm={config.length}
                       importanceLevel={config.importanceLevel}
-                      // ShedSafe refuses an empty salesman, and the person at the keyboard is the
-                      // honest default. They can still type somebody else's name.
-                      defaultSalesman={session.displayName !== '' ? session.displayName : session.email}
+                      /*
+                       * The **email**, because that is the ShedSafe salesman key.
+                       *
+                       * Measured against the live API: a display name ("Dana Nguyen"), the API login
+                       * name ("wdsapi1") and an unregistered email are all refused with *"The
+                       * salesman provided is not a valid salesman username"*, while a registered
+                       * salesman's email is accepted and returns a real building id. Defaulting to
+                       * the display name meant every pin failed, with a message about a field the
+                       * operator had not been shown.
+                       */
+                      defaultSalesman={session.email}
                       canWrite={session.capabilities.includes('quote:write')}
                       onImported={(values) => {
                         // The certified values replace what was typed. Only the ones ShedSafe
