@@ -480,16 +480,26 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
    * save while the save was available. A save that can proceed gets a sentence about what it will
    * do, not a caveat.
    */
-  const gateMessage =
-    pricedAt === 'stale'
-      ? gate.blocked
-        ? 'Calculate the price again before saving — the building or the money changed.'
-        : undefined
-      : pricedAt === 'current'
-        ? quoteId === null
-          ? 'Saves revision 1 and freezes the price shown on the right.'
-          : `Saves revision ${expectedRev + 1} and freezes the price on the right. Revision ${expectedRev} stays as it was sent.`
-        : gate.reasons[0];
+  /**
+   * The line beside the Save button.
+   *
+   * ## The rule: a blocked button explains the block, a working button says what it will do
+   *
+   * It used to branch on `pricedAt` alone and say *"Saves revision 1 and freezes the price…"*
+   * whenever the price was current. On a **blank** quote the price is current (the automatic
+   * evaluation ran) while the gate is blocked by five empty fields — so the screen showed a reason
+   * to save next to a button that could not be pressed. Measured 2026-11-10 in the browser: the
+   * button read `disabled` and the sentence underneath described a save.
+   *
+   * `gate.reasons[0]` is the authority: it already says "3 fields need attention", "nothing has
+   * changed", "no price yet" or "the building changed" in the order a person fixes them. Only when
+   * there is no reason does the button need describing.
+   */
+  const gateMessage = gate.blocked
+    ? gate.reasons[0]
+    : quoteId === null
+      ? 'Saves revision 1 and freezes the price shown on the right.'
+      : `Saves revision ${expectedRev + 1} and freezes the price on the right. Revision ${expectedRev} stays as it was sent.`;
 
   /*
    * The staged figures, computed **once** and handed to both places that show the price.
@@ -623,13 +633,85 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       <div className="mx-auto grid w-full max-w-[1400px] flex-1 gap-sq-3 px-sq-3 py-sq-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,300px)]">
         {/* ------------------------------------------------------------ left: the step */}
         <div className="flex min-w-0 flex-col gap-sq-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-sq-2">
-            <h1 id="editor-step-heading" tabIndex={-1} className="text-sq-title font-semibold outline-none">
-              {STEP_LABEL[step]}
-            </h1>
-            <span className="text-sq-micro text-sq-ink-muted">
-              {quoteNumber === null ? 'New quote' : `${quoteNumber} · revision ${expectedRev}`}
-            </span>
+          {/*
+            ## The header sticks, because Save lives in it
+
+            Measured 2026-11-10 at 1280×900: after filling step 1's fields the header sat at
+            `top: -563` — Save existed on every step but was 563 px above the viewport while the
+            operator was typing. A control you must scroll back to find is not "available on every
+            step"; it is available at the top of it.
+
+            `sticky top-0` with a background and a bottom hairline, so the form scrolls under it
+            rather than through it. On a phone the price strip above is sticky too and 61 px tall,
+            so this offsets below it — `top-[3.9rem]` clears that strip and `xl` returns to `top-0`
+            where the strip does not render.
+
+            `z-10` puts it above the fields but below the price strip (`z-20`), which must stay on
+            top: the strip is the number being quoted, and a header sliding over it would hide it.
+          */}
+          <div className="sticky top-[3.9rem] z-10 -mx-sq-1 flex flex-wrap items-start justify-between gap-sq-2 border-b border-sq-line bg-sq-ground/95 px-sq-1 pb-sq-2 backdrop-blur xl:top-0">
+            <div className="flex min-w-0 flex-col">
+              <h1 id="editor-step-heading" tabIndex={-1} className="text-sq-title font-semibold outline-none">
+                {STEP_LABEL[step]}
+              </h1>
+              <span className="text-sq-micro text-sq-ink-muted">
+                {quoteNumber === null ? 'New quote' : `${quoteNumber} · revision ${expectedRev}`}
+              </span>
+            </div>
+
+            {/*
+              ## Save lives here, on every step
+
+              It used to exist only on step 3, inside the bottom bar, and the two earlier steps
+              carried a sentence saying so: *"The quote is saved on the last step — step 3, Cost and
+              price."* That is a rule the product invented, not one the work has: `save()` reads the
+              draft and the evaluation out of the stores and never looks at `step`, so the server has
+              always accepted a save from any step. The screen was the only thing refusing.
+
+              The cost of refusing is real: an operator who has typed the customer's name, address
+              and building in step 1 and is called away has nothing to go back to. Worse, the steps
+              are not a wizard that must be finished — they are three views of one quote.
+
+              `justify-between` on the row and `ml-auto` here keep it at the right edge while the
+              heading keeps the left. `min-h-11` because it is the primary action on the screen and a
+              30 px target is not a target.
+            */}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-sq-2">
+              {saved !== null && (
+                <span className="flex items-center gap-sq-2" role="status">
+                  <StatusPill tone="ok" label={`Saved ${saved.number} · rev ${saved.revision}`} />
+                  <a
+                    href={`/quotes/${quoteId}`}
+                    className="text-sq-micro font-medium text-sq-brand underline underline-offset-2"
+                  >
+                    Open
+                  </a>
+                </span>
+              )}
+              <div className="flex flex-col items-end">
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  disabled={gate.blocked}
+                  aria-describedby="save-reason"
+                  className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  {saving ? 'Saving…' : quoteId === null ? 'Save quote' : 'Save revision'}
+                </button>
+                {/*
+                  The reason sits with the button, always — not only on step 3, and not in a tooltip.
+                  A tooltip cannot be read on a phone and cannot be reached by a keyboard, and the
+                  commonest state here is a disabled button: a person who cannot save needs the reason
+                  in the page, not behind a hover.
+
+                  `aria-live="polite"` because the reason changes as fields are filled in, and it is
+                  the only feedback that the button just became available.
+                */}
+                <span id="save-reason" aria-live="polite" className="mt-sq-1 max-w-[22rem] text-right text-sq-micro text-sq-ink-muted">
+                  {gateMessage}
+                </span>
+              </div>
+            </div>
           </div>
 
           <ErrorSummary
@@ -753,7 +835,16 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
             </>
           )}
 
-          {/* -------------------------------------------------------- the gate */}
+          {/*
+            ------------------------------------------------ step navigation only
+
+            Save is **not** here any more. It moved to the header, so it is on every step and there
+            is exactly one of it — two buttons for one action is how somebody presses the wrong one
+            and believes they saved twice.
+
+            What is left is navigation, plus the line that says why it is blocked. That line is about
+            *this* button now: the fields still needed to move forward, not the save's gate.
+          */}
           <div className="sticky bottom-0 -mx-sq-3 border-t border-sq-line bg-sq-surface/95 px-sq-3 py-sq-2 backdrop-blur">
             <div className="flex flex-wrap items-center gap-sq-2">
               {step !== 'details' && (
@@ -766,17 +857,14 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                 </button>
               )}
 
-              {step !== 'cost' ? (
+              {step !== 'cost' && (
                 /*
-                 * A **navigation** button, not a save — and it used to say "Save & next".
+                 * A **navigation** button, and its label has to say so.
                  *
-                 * That one word cost a real operator the whole feature: the button was labelled
-                 * "Save & next" while it only moved to the next step, and its adjacent line
-                 * announced "Saves revision 1 and freezes the price" because that line describes
-                 * the *gate*, not this control. Pressing it, seeing the step change with nothing
-                 * saved, and then opening the quote list to find no quote is a reasonable
-                 * conclusion that saving does not work. The label now says what it does, and the
-                 * reason it is disabled says which fields are missing.
+                 * It once said "Save & next" while only moving to the next step — an operator pressed
+                 * it, saw the step change, opened the quote list, and concluded saving was broken.
+                 * The label now states the destination, and the sentence beside it names the fields
+                 * that stop it.
                  */
                 <button
                   type="button"
@@ -786,23 +874,9 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                 >
                   {step === 'details' ? 'Next: the plan' : 'Next: cost'}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={gate.blocked}
-                  className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  {saving ? 'Saving…' : quoteId === null ? 'Save quote' : 'Save revision'}
-                </button>
               )}
 
-              {/*
-                The line under the buttons explains whichever one is showing. On the first two
-                steps that is the navigation button, so it names the fields still needed rather
-                than describing a save that cannot happen there.
-              */}
-              {step !== 'cost' ? (
+              {step !== 'cost' && (
                 <span className="text-sq-micro text-sq-ink-muted" aria-live="polite">
                   {issues.length > 0
                     ? issues.length === 1
@@ -810,25 +884,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                       : `${issues.length} fields still need attention before the next step.`
                     : evaluation === null
                       ? 'Calculate the price first.'
-                      : `The quote is saved on the last step — step 3, Cost and price.`}
-                </span>
-              ) : (
-                gateMessage !== undefined && (
-                  <span className="text-sq-micro text-sq-ink-muted" aria-live="polite">
-                    {gateMessage}
-                  </span>
-                )
-              )}
-
-              {saved !== null && (
-                <span className="ml-auto flex items-center gap-sq-2" role="status">
-                  <StatusPill tone="ok" label={`Saved ${saved.number} · rev ${saved.revision}`} />
-                  <a
-                    href={`/quotes/${quoteId}`}
-                    className="text-sq-micro font-medium text-sq-brand underline underline-offset-2"
-                  >
-                    Open the quote
-                  </a>
+                      : 'This step is ready. Save stays available in the top right on every step.'}
                 </span>
               )}
             </div>

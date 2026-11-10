@@ -2979,6 +2979,71 @@ và thêm một biến thể nữa là thêm một chỗ để hai bản lệch 
 
 ---
 
+## 13.27 Save ở góc phải trên, mọi step (2026-11-10)
+
+Yêu cầu: *"làm button save ở trên right-top đi, step nào cũng có thể save quote được ko cần done 3 step"*.
+
+### Trước: nút Save chỉ có ở step 3
+
+Nằm trong thanh `sticky bottom-0`. Step 1–2 có nút **điều hướng** (`Next: the plan`, `Next: cost`) và
+một câu giải thích: *"The quote is saved on the last step — step 3, Cost and price."*
+
+Câu đó là **luật do giao diện tự đặt**, không phải của nghiệp vụ: `save()` đọc draft và evaluation từ
+store, **không đọc `step`**. Server chưa bao giờ từ chối lưu từ step 1. Chỉ màn hình từ chối.
+
+Hệ quả thật: người dùng điền khách + địa chỉ + công trình ở step 1 rồi bị gọi đi — không có gì để quay
+lại. Và ba step không phải wizard phải đi hết; chúng là ba góc nhìn của **một** quote.
+
+### Sửa
+
+| | |
+|---|---|
+| Vị trí | header step, cạnh `h1`, `justify-between` + `ml-auto` |
+| Hiện ở | **cả 3 step**, đúng **một** nút (không hai nút cho một hành động) |
+| Nhãn | `Save quote` khi chưa có quote → `Save revision` sau khi lưu |
+| Lý do khi tắt | `#save-reason`, nằm **trong trang**, không phải tooltip |
+| Thanh bottom | chỉ còn `Back` + `Next`, và câu "This step is ready. Save stays available in the top right on every step." |
+| `StatusPill "Saved …"` | cạnh nút, để phản hồi ở đúng chỗ vừa bấm |
+
+### Hai lỗi đo được trong lúc làm
+
+**1. Lý do nghịch với nút.** `gateMessage` rẽ nhánh theo `pricedAt` một mình, nên trên quote **trống**
+— giá đã tự tính (`current`) nhưng 6 field còn rỗng — nó in *"Saves revision 1 and freezes the price…"*
+cạnh một nút **disabled**. Nay `gate.reasons[0]` là nguồn: chỉ khi không bị chặn mới mô tả lần lưu.
+
+**2. Nút cuộn khỏi màn hình.** Đo ở 1280×900: sau khi điền step 1, header ở `top: −563`. Nút "có ở mọi
+step" nhưng cách 563 px phía trên khi người dùng đang gõ. Header thành `sticky top-[3.9rem] z-10`
+(offset `3.9rem` để né dải giá cao 61 px ở dưới `xl`; `xl:top-0` vì dải đó không render ở đó). `z-10`
+thấp hơn dải giá (`z-20`) vì con số đang báo giá không được bị che.
+
+### Đo được
+
+| | |
+|---|---|
+| `saveCount` ở cả 3 step | **1** |
+| Cuộn 1200 px | Save ở `top: 56`, `onScreen: true` |
+| Quote trống, lý do | *"6 fields need attention."* (không phải "Saves revision 1…") |
+| Điền đủ → lưu **từ step 1** | URL `/quotes/84d9b25d…/edit`, **step vẫn "Quote details"**, nhãn đổi thành `Save revision` |
+| 390 px | nút `111×44`, `overflowX: 0` |
+| `pageOverflowX` ở 1280 px | 0 |
+
+### E2E (3 test mới)
+
+- Save có trên cả ba step, đúng một nút, và **vẫn thấy sau khi cuộn 900 px** ở từng step.
+- Nút tắt thì lý do nằm trong trang, và **không** phải "Saves revision" khi bị chặn.
+- Lưu từ step 1: URL đổi, step **không** đổi, nhãn thành `Save revision`.
+
+Lỗi trong chính test: tôi tìm `getByRole('tab')` nhưng `StepRail` là `<ol>` chứa `<button>` với
+`aria-current="step"`. Locator không tồn tại, `.catch()` chờ hết 60 giây. Sửa thành `ol button` + khẳng
+định heading của step, để một cú click rail không làm gì cũng không thể "pass".
+
+### Giữ nguyên có chủ ý
+
+**Vẫn chặn lưu khi giá lỗi thời.** Sửa span ở step 1 → giá cũ → nút tắt với lý do *"Calculate the price
+again before saving"*. Bỏ luật đó là cho phép đóng băng một revision có giá không khớp công trình.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -2987,7 +3052,7 @@ và thêm một biến thể nữa là thêm một chỗ để hai bản lệch 
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 28 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **11 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, **2 salesman gate** — trạng thái luôn được nói, login không phải salesman thì chặn kèm lý do) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 31 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **11 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, **2 salesman gate** — trạng thái luôn được nói, login không phải salesman thì chặn kèm lý do; **3 Save từ mọi step** — có mặt cả 3 step đúng 1 nút + vẫn thấy khi cuộn, lý do trong trang, lưu từ step 1 ở lại step 1) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

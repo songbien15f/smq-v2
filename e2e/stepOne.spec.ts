@@ -329,3 +329,116 @@ test.describe('Step 1 — the ShedSafe salesman gate', () => {
     await expect(page.getByRole('button', { name: /Go to ShedSafe|Pin again/ })).toBeDisabled();
   });
 });
+
+/**
+ * Save is on every step, in the top right, and always reachable.
+ *
+ * ## The rule this replaces
+ *
+ * Save used to live only on step 3, and steps 1–2 carried a sentence saying so: *"The quote is saved
+ * on the last step — step 3, Cost and price."* That was the screen refusing something the server has
+ * always allowed: `save()` reads the draft and the evaluation out of the stores and never looks at
+ * `step`. An operator who typed the customer, the address and the building and was then called away
+ * had nothing to come back to.
+ *
+ * ## Three things a browser has to check
+ *
+ * 1. The button exists on all three steps — **one** of it, not one per step in the DOM.
+ * 2. It stays on screen while the form scrolls. Measured before the fix: `top: −563` after filling
+ *    step 1, i.e. "available on every step" was true only at the top of each one.
+ * 3. A disabled button says why, in the page rather than in a tooltip — a tooltip cannot be read on a
+ *    phone or reached by a keyboard, and a disabled button is the commonest state here.
+ */
+test.describe('Step 1 — Save from anywhere', () => {
+  const STEPS = ['Quote details', 'Options on the plan', 'Cost and price'] as const;
+
+  test('the Save button is on every step, once, and stays on screen', async ({ page }) => {
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+
+    const save = page.getByRole('button', { name: /^(Save quote|Save revision)$/ });
+    for (const step of STEPS) {
+      /*
+       * Reach the step through the rail. `StepRail` is an `<ol>` of buttons with
+       * `aria-current="step"`, not `role="tab"` — a first version looked for tabs, found none, and
+       * spent 60 s in a `.catch()` waiting for a locator that could never resolve.
+       */
+      const railItem = page.locator('ol button').filter({ hasText: new RegExp(step) }).first();
+      if (await railItem.count()) {
+        await railItem.click();
+        await page.waitForTimeout(900);
+      }
+      // Heading proves which step is on screen; asserting it here means a rail click that silently
+      // did nothing cannot pass as "the step was reached".
+      await expect(page.getByRole('heading', { name: step, level: 1 })).toBeVisible({ timeout: 10_000 });
+
+      await expect(save, `Save must be present on “${step}”`).toHaveCount(1);
+      await expect(save, `Save must be visible on “${step}”`).toBeVisible();
+
+      // Scroll far enough that a non-sticky control would be gone, then check again.
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await page.waitForTimeout(400);
+      const onScreen = await save.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight;
+      });
+      expect(onScreen, `Save scrolled out of view on “${step}”`).toBe(true);
+      await page.evaluate(() => window.scrollTo(0, 0));
+    }
+  });
+
+  test('a disabled Save says why, beside the button', async ({ page }) => {
+    // A blank quote: the price is current (it was evaluated automatically) but six fields are empty.
+    // The old code branched on the price alone and printed "Saves revision 1 and freezes the price…"
+    // next to a button that could not be pressed — measured 2026-11-10.
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+
+    const save = page.getByRole('button', { name: /^(Save quote|Save revision)$/ });
+    await expect(save).toBeDisabled();
+
+    const reason = page.locator('#save-reason');
+    await expect(reason).toBeVisible();
+    // It names the block, and it is not a description of a save that cannot happen.
+    await expect(reason).toHaveText(/need attention|Nothing has been changed|price/i);
+    await expect(reason).not.toHaveText(/Saves revision/);
+
+    // Not a tooltip: the text is in the document, reachable by keyboard and by a screen reader.
+    await expect(page.getByText(/Saves revision 1/)).toHaveCount(0);
+  });
+
+  test('saving from step 1 keeps the operator on step 1 and in the same quote', async ({ page }) => {
+    /*
+     * The behaviour the change exists for. Filling step 1 and saving must not move the screen to
+     * another step: the operator is in the middle of step 1 and the save is a checkpoint, not a
+     * "next".
+     */
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+    await page.waitForTimeout(1500);
+
+    await page.locator('#customer-firstName').fill('Save');
+    await page.locator('#customer-lastName').fill('From step one');
+    await page.locator('#customer-email').fill('save@example.com');
+    await page.locator('#customer-address').fill('1 Test Street');
+    await page.locator('#site-address').fill('1 Test Street');
+    await page.locator('#site-suburb').fill('Brisbane');
+    await page.locator('#site-state').fill('QLD');
+    await page.locator('#site-postcode').fill('4000');
+
+    // The delivery acknowledgement is required and lives in a collapsed group.
+    const delivery = page.getByRole('button', { name: /^Delivery/ });
+    if ((await delivery.getAttribute('aria-expanded')) === 'false') await delivery.click();
+    await page.locator('#site-deliveryAcknowledged').check();
+
+    const save = page.getByRole('button', { name: /^Save (quote|revision)$/ });
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    await save.click();
+
+    // The address changes from /quotes/new to the quote's own, and the step does not.
+    await expect(page).toHaveURL(/\/quotes\/[0-9a-f-]{36}\/edit/, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible();
+    // The label moves on, which is how a person knows the save happened.
+    await expect(page.getByRole('button', { name: /^Save revision$/ })).toBeVisible();
+  });
+});
