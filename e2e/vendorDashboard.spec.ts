@@ -158,6 +158,10 @@ test.describe('vendor dashboard', () => {
     /*
      * The page is worked through with real figures, so the assertions are the figures: a heading per
      * stage, the four diagrams, and the numbers a newcomer has to be able to find.
+     *
+     * All nine headings, not the interesting seven. A rewrite that quietly drops "what the quote does
+     * not know" would still pass a test that only checked the sections it expected to be there — the
+     * whole point of that section is that it is the one a reader skips.
      */
     for (const heading of [
       /The whole pipeline, in one picture/,
@@ -167,6 +171,8 @@ test.describe('vendor dashboard', () => {
       /The price chain, with the real figures/,
       /The wind code/,
       /What the quote honestly does not know/,
+      /Two properties worth knowing/,
+      /Where to read the code/,
     ]) {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible();
     }

@@ -2169,8 +2169,9 @@ chuyển phép thay thế về lại trang, test đỏ.
 
 ### `/dashboard/docs` — cùng nội dung với `docs/PRICING-PIPELINE.md`
 
-Bảy mục: pipeline · nguồn dữ liệu · một thanh thép · một revision · chuỗi giá · wind code · những gì
-báo giá **không** biết.
+**Chín mục**: một hình toàn cảnh, rồi ① nguồn dữ liệu (80 bảng / 31.553 dòng) · ② một thanh thép được
+định giá thế nào · ③ một revision, từng dòng · ④ chuỗi giá với số thật · ⑤ wind code · ⑥ những gì báo
+giá **không** biết · ⑦ hai thuộc tính đáng biết · ⑧ đọc code ở đâu.
 
 Bốn sơ đồ là **SVG viết tay** trong `components/vendor/PricingDiagrams.tsx` (`Frame`/`Box`/`Arrow`/
 `Caption` tự dựng), **không** Mermaid và **không** client JS: trang này server-render, Mermaid cần
