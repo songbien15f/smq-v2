@@ -21,80 +21,17 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Panel, StatusPill } from '@sq/ui';
+import { Button, StatusPill } from '@sq/ui';
+import { Group } from './QuoteDetailsPanel';
 import { api } from '@/lib/sq';
 import { useDraftStore } from '@/store/useDraftStore';
-
-/** The six certified fields, as ShedSafe names them. */
-interface SiteCheckValues {
-  importanceLevel: number | null;
-  windRegion: string | null;
-  terrainCategory: number | null;
-  buildingClass: string | null;
-  snowLoad: number | null;
-  designWindSpeed: number | null;
-}
-
-interface SiteCheck {
-  id: string;
-  buildingId: string | null;
-  reference: string;
-  siteLink: string | null;
-  status: string;
-  lastError: string | null;
-  pinnedAt: string;
-  importedAt: string | null;
-  /**
-   * True only when ShedSafe has Auto Calculated the building and reported no error.
-   *
-   * The **one** property that answers "is there a rating". `windRegion` is populated before Auto
-   * Calc, so a screen that inferred this from a non-empty wind region would be wrong on exactly the
-   * sites that matter. Matches `data.AutoCalc && noError` in the desktop.
-   */
-  calculated: boolean;
-  /**
-   * The raw readings ShedSafe returns before Auto Calc.
-   *
-   * Shown, never priced: the six `values` stay null until the site is calculated, because a quote
-   * priced from a raw `topographicFactor` is a quote against a rating nobody issued.
-   */
-  provisional: Record<string, unknown> | null;
-  values: SiteCheckValues;
-  /**
-   * The site's geographic readings, or `null` for a check imported before they were stored.
-   *
-   * Separate from `values` on purpose: those six price the building, these describe the place.
-   * `null` means "never fetched", which is different from a site at sea level with no rain.
-   */
-  site: {
-    shielding: number | null;
-    topographicFactor: number | null;
-    snowLoadRegion: string | null;
-    earthquakeHazardFactor: number | null;
-    elevation: number | null;
-    latitude: number | null;
-    longitude: number | null;
-    rainfallIntensity100Years: number | null;
-    rainfallIntensity20Years: number | null;
-    rainfallIntensityTown: string | null;
-  } | null;
-  /**
-   * What the building was when ShedSafe was asked to rate it.
-   *
-   * The rating is about a **building**, not a site. A shed widened from 12 m to 15 m after the pin is
-   * not the shed the certificate describes, and `calculated` alone cannot say so — it only knows that
-   * a rating exists.
-   *
-   * `null` for a check pinned before this was recorded. Unknown is not "matches": the panel says it
-   * cannot tell, rather than showing green agreement it has not verified.
-   */
-  pinnedFor: {
-    spanMm: number | null;
-    heightMm: number | null;
-    lengthMm: number | null;
-    importanceLevel: number | null;
-  } | null;
-}
+import {
+  numberOf,
+  stringOf,
+  useSiteCheck,
+  type SiteCheck,
+  type SiteCheckValues,
+} from './siteCheckState';
 
 export interface SiteCheckPanelProps {
   quoteId: string | null;
@@ -120,26 +57,13 @@ export interface SiteCheckPanelProps {
   onImported?: (values: SiteCheckValues) => void;
 }
 
+/** One certified value: what to print, and what it is. */
+type Entry = { text: string; state: 'certified' | 'provisional' | 'unchecked'; value: string | number | null };
+
 /** How one of the six fields reads. A null is "not calculated", never a zero. */
 function value(value: number | string | null, suffix = ''): string {
   if (value === null) return 'Not calculated yet';
   return `${value}${suffix}`;
-}
-
-/**
- * A number out of the provisional block, or `null`.
- *
- * The block is `Record<string, unknown>` because it is ShedSafe's own JSON, so every read has to be
- * checked. A cast would compile and then print `undefined` on screen the first time the upstream
- * renamed a field.
- */
-function num(raw: unknown): number | null {
-  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
-}
-
-/** A string out of the provisional block, or `null`. */
-function str(raw: unknown): string | null {
-  return typeof raw === 'string' && raw !== '' ? raw : null;
 }
 
 export function SiteCheckPanel({
@@ -154,8 +78,15 @@ export function SiteCheckPanel({
   canWrite,
   onImported,
 }: SiteCheckPanelProps) {
-  const [check, setCheck] = useState<SiteCheck | null>(null);
-  const [configured, setConfigured] = useState(true);
+  /*
+   * The check comes from the provider, not from a fetch here.
+   *
+   * The Design group renders the same six values read-only, a few hundred pixels above this panel.
+   * Two independent fetches would let them disagree — the panel could say "Rating imported" while the
+   * fields still showed the pre-import numbers. One provider, one fetch, and an import publishes its
+   * result through `replace()` so both update in the same commit.
+   */
+  const { check, configured, replace } = useSiteCheck();
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
   /**
    * Who is doing the check, as ShedSafe shows it on their side.
@@ -168,19 +99,6 @@ export function SiteCheckPanel({
   const [salesman, setSalesman] = useState(defaultSalesman);
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
   const setSiteCheckId = useDraftStore((state) => state.setSiteCheckId);
-
-  const load = useCallback(async (): Promise<void> => {
-    if (quoteId === null) return;
-    const result = await api<{ configured: boolean; check: SiteCheck | null }>(`quotes/${quoteId}/site-check`);
-    if (result.ok) {
-      setConfigured(result.data.configured);
-      setCheck(result.data.check);
-    }
-  }, [quoteId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   /**
    * Everything ShedSafe needs before it will create a building, named in this screen's own words.
@@ -263,7 +181,7 @@ export function SiteCheckPanel({
 
     setBusy(null);
     if (result.ok) {
-      setCheck(result.data.check);
+      replace(result.data.check);
       if (quoteId === null && result.data.check !== null) {
         setSiteCheckId(result.data.check.id);
       }
@@ -313,7 +231,7 @@ export function SiteCheckPanel({
     setBusy(null);
     if (result.ok) {
       const next = result.data.check;
-      setCheck(next);
+      replace(next);
       if (next.calculated) {
         setMessage({ tone: 'ok', text: 'The certified rating was imported.' });
         onImported?.(next.values);
@@ -373,12 +291,57 @@ export function SiteCheckPanel({
   /** A rating exists and nothing recorded what it was for — so nothing can vouch for it. */
   const ratingUnverified = check !== null && check.calculated && pinned === null;
 
+  /**
+   * One certified value, with what it *is*.
+   *
+   * Three sources, in this order of trust: a certified import, the raw readings ShedSafe holds, and
+   * nothing. `text` is what a person reads; `state` is what the styling and the "provisional" tag key
+   * off, so the same markup cannot present an uncertified number as a certified one.
+   */
+  const entryOf = (
+    read: (values: SiteCheckValues) => string | number | null,
+    rawKey: string,
+    readRaw: (raw: unknown) => string | number | null,
+    suffix = '',
+  ): Entry => {
+    if (check !== null && check.calculated) {
+      const v = read(check.values);
+      return { text: v === null ? 'Not calculated yet' : `${v}${suffix}`, state: 'certified', value: v };
+    }
+    if (check !== null && check.provisional !== null) {
+      const v = readRaw(check.provisional[rawKey]);
+      if (v !== null) return { text: `${v}${suffix}`, state: 'provisional', value: v };
+    }
+    return { text: '— not from a site check', state: 'unchecked', value: null };
+  };
+
+  const importanceShown = entryOf((v) => v.importanceLevel, 'importanceLevel', numberOf);
+  const windShown = entryOf((v) => v.windRegion, 'windRegion', stringOf);
+  const terrainShown = entryOf((v) => v.terrainCategory, 'terrainCategory', numberOf);
+  const buildingClassShown = entryOf((v) => v.buildingClass, 'buildingClass', stringOf);
+  const snowShown = entryOf((v) => v.snowLoad, 'snowLoad', numberOf, ' kPa');
+  const windSpeedShown = entryOf((v) => v.designWindSpeed, 'designWindSpeed', numberOf, ' m/s');
+
+  /*
+   * The same collapsible shell as the other six groups on this step, not a floating card.
+   *
+   * It reads as the seventh group of Step 1 because that is what it is: the part of the form that
+   * answers "what does the certificate say". A `Panel` here made it look like a side feature.
+   *
+   * Open by default while the site is unchecked, because until a rating exists this is the only thing
+   * on the step with work left in it. Collapsed once certified, so a finished step is quiet.
+   */
   return (
-    <Panel
+    <Group
       title="ShedSafe site check"
-      description="The wind rating this quote is priced against. The certificate is issued in your own ShedSafe account."
+      issueCount={check === null || !check.calculated ? 1 : 0}
+      defaultOpen={check === null || !check.calculated}
     >
       <div className="flex flex-col gap-sq-3">
+        <p className="text-sq-micro text-sq-ink-muted">
+          The wind rating this quote is priced against. The certificate is issued in your own ShedSafe
+          account.
+        </p>
         {!configured && (
           <p className="text-sq-body text-sq-ink-muted">
             ShedSafe is not configured on this server, so the wind fields below are typed by hand.
@@ -537,54 +500,63 @@ export function SiteCheckPanel({
         )}
 
         {/*
-          The provisional readings, in their own block and visibly marked.
+          The provisional block is gone as a separate disclosure.
 
-          Shown because "not calculated" alone leaves the operator wondering whether ShedSafe was
-          even reached. Marked because a number on a screen is a number somebody will quote from.
+          It existed because the six-value table only rendered when certified, so there was nowhere to
+          show what ShedSafe held in the meantime. The table below renders in all three states now and
+          tags the provisional rows itself — one place to look, not two.
         */}
-        {check !== null && !check.calculated && check.provisional !== null && (
-          <details className="rounded-md border border-sq-line px-sq-2 py-sq-2">
-            <summary className="cursor-pointer text-sq-micro font-medium text-sq-ink">
-              What ShedSafe currently holds (provisional — not a rating)
-            </summary>
-            <dl className="mt-sq-2 grid gap-sq-2 sm:grid-cols-2">
-              {[
-                ['Importance level', value(num(check.provisional.importanceLevel))],
-                ['Wind region', value(str(check.provisional.windRegion))],
-                ['Terrain category', value(num(check.provisional.terrainCategory))],
-                ['Building class', value(str(check.provisional.buildingClass))],
-                ['Ground snow load', value(num(check.provisional.snowLoad), ' kPa')],
-                ['Design wind speed', value(num(check.provisional.designWindSpeed), ' m/s')],
-              ].map(([label, shown]) => (
-                <div
-                  key={String(label)}
-                  className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1"
-                >
-                  <dt className="text-sq-body text-sq-ink-muted">{String(label)}</dt>
-                  <dd className="sq-numeric text-sq-body text-sq-ink-muted">{String(shown)}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        )}
 
-        {check !== null && check.calculated && (
-          <dl className="grid gap-sq-2 sm:grid-cols-2">
-            {[
-              ['Importance level', value(check.values.importanceLevel)],
-              ['Wind region', value(check.values.windRegion)],
-              ['Terrain category', value(check.values.terrainCategory)],
-              ['Building class', value(check.values.buildingClass)],
-              ['Ground snow load', value(check.values.snowLoad, ' kPa')],
-              ['Design wind speed', value(check.values.designWindSpeed, ' m/s')],
-            ].map(([label, shown]) => (
-              <div key={String(label)} className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1">
-                <dt className="text-sq-body text-sq-ink">{String(label)}</dt>
-                <dd className="sq-numeric text-sq-body text-sq-ink">{String(shown)}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        {/*
+          The six values, **always on screen**, in three states.
+
+          Before 2026-11-10 this block only rendered when `calculated === true`, so a quote with no
+          site check showed nothing at all — and the operator could not tell "ShedSafe was never
+          asked" from "it answered and was empty". A blank area where a table should be is not a
+          neutral fact; it reads as a broken panel.
+
+          So each row always renders, and its state says what it is:
+
+            required but unchecked   `—` with "not from a site check"
+            pinned, not calculated   the raw value, marked provisional, warned not to price from
+            certified                the value, plainly
+
+          `Importance level` behaves differently on purpose: it is editable-by-policy (a certificate
+          can say 3 or 4, and this build records what the certificate says; see KNOWN-DEVIATIONS 31),
+          so this table shows it as the *rating's* answer rather than duplicating the control.
+        */}
+        <dl className="grid gap-sq-2 sm:grid-cols-2" aria-label="Certified site values">
+          {(
+            [
+              ['Importance level', importanceShown],
+              ['Wind region', windShown],
+              ['Terrain category', terrainShown],
+              ['Building class', buildingClassShown],
+              ['Ground snow load', snowShown],
+              ['Design wind speed', windSpeedShown],
+            ] as [string, Entry][]
+          ).map(([label, entry]) => (
+            <div
+              key={String(label)}
+              className="flex items-baseline justify-between gap-sq-2 border-b border-sq-line/60 pb-1"
+            >
+              <dt className="text-sq-body text-sq-ink-muted">
+                {String(label)}
+                {entry.state === 'provisional' && (
+                  <span className="ml-1 text-sq-micro text-sq-attention">provisional</span>
+                )}
+              </dt>
+              <dd
+                className={[
+                  'sq-numeric text-sq-body',
+                  entry.state === 'certified' ? 'text-sq-ink' : 'text-sq-ink-muted',
+                ].join(' ')}
+              >
+                {entry.text}
+              </dd>
+            </div>
+          ))}
+        </dl>
 
         {/*
           The site's geographic readings, in their own group.
@@ -600,32 +572,62 @@ export function SiteCheckPanel({
           the provisional block above shows what it holds, and printing a list of "not calculated"
           rows beside it would say the same thing twice.
         */}
-        {check !== null && check.calculated && check.site !== null && (
-          <details className="rounded-md border border-sq-line px-sq-2 py-sq-2">
+        {check !== null && (check.calculated ? check.site !== null : check.provisional !== null) && (
+          <details className="rounded-md border border-sq-line px-sq-2 py-sq-2" open>
             <summary className="cursor-pointer text-sq-micro font-medium text-sq-ink">
-              Site readings
+              Site readings — shielding, topography, elevation and rainfall
             </summary>
+            <p className="mt-sq-1 text-sq-micro text-sq-ink-muted">
+              These describe the place, not the price: nothing here is used to cost the shed.
+            </p>
             <dl className="mt-sq-2 grid gap-sq-2 sm:grid-cols-2">
               {[
-                ['Shielding', value(check.site.shielding)],
-                ['Topographic factor', value(check.site.topographicFactor)],
-                ['Snow region', value(check.site.snowLoadRegion)],
-                ['Earthquake hazard factor', value(check.site.earthquakeHazardFactor)],
-                ['Elevation', value(check.site.elevation, ' m')],
+                ['Shielding', value(check.calculated ? (check.site?.shielding ?? null) : numberOf(check.provisional?.shielding))],
+                [
+                  'Topographic factor',
+                  value(check.calculated ? (check.site?.topographicFactor ?? null) : numberOf(check.provisional?.topographicFactor)),
+                ],
+                [
+                  'Snow region',
+                  value(check.calculated ? (check.site?.snowLoadRegion ?? null) : stringOf(check.provisional?.snowLoadRegion)),
+                ],
+                [
+                  'Earthquake hazard factor',
+                  value(
+                    check.calculated
+                      ? (check.site?.earthquakeHazardFactor ?? null)
+                      : numberOf(check.provisional?.earthquakeHazardFactor),
+                  ),
+                ],
+                ['Elevation', value(check.calculated ? (check.site?.elevation ?? null) : numberOf(check.provisional?.elevation), ' m')],
                 [
                   'Coordinates',
-                  check.site.latitude === null || check.site.longitude === null
-                    ? 'Not calculated yet'
-                    : `${check.site.latitude}, ${check.site.longitude}`,
+                  (() => {
+                    const lat = check.calculated ? (check.site?.latitude ?? null) : numberOf(check.provisional?.latitude);
+                    const lng = check.calculated ? (check.site?.longitude ?? null) : numberOf(check.provisional?.longitude);
+                    return lat === null || lng === null ? 'Not calculated yet' : `${lat}, ${lng}`;
+                  })(),
                 ],
                 [
                   'Rainfall 100 / 20 year',
-                  check.site.rainfallIntensity100Years === null ||
-                  check.site.rainfallIntensity20Years === null
-                    ? 'Not calculated yet'
-                    : `${check.site.rainfallIntensity100Years} / ${check.site.rainfallIntensity20Years} mm/h`,
+                  (() => {
+                    const y100 = check.calculated
+                      ? (check.site?.rainfallIntensity100Years ?? null)
+                      : numberOf(check.provisional?.rainfallIntensity100Years);
+                    const y20 = check.calculated
+                      ? (check.site?.rainfallIntensity20Years ?? null)
+                      : numberOf(check.provisional?.rainfallIntensity20Years);
+                    return y100 === null || y20 === null ? 'Not calculated yet' : `${y100} / ${y20} mm/h`;
+                  })(),
                 ],
-                ['Rainfall town', value(check.site.rainfallIntensityTown)],
+                [
+                  'Rainfall town',
+                  value(
+                    check.calculated
+                      ? (check.site?.rainfallIntensityTown ?? null)
+                      : stringOf(check.provisional?.rainfallIntensityTown),
+                  ),
+                ],
               ].map(([label, shown]) => (
                 <div
                   key={String(label)}
@@ -701,6 +703,6 @@ export function SiteCheckPanel({
           This panel reads the certified numbers back; it does not issue a certificate.
         </p>
       </div>
-    </Panel>
+    </Group>
   );
 }

@@ -255,12 +255,21 @@ export function validateDraft(draft: DraftForValidation): DraftIssue[] {
   }
 
   // ---------------------------------------------------------------- 5. Site conditions
-  if (config.windRegion === '') {
-    issues.push({
-      path: 'design-windRegion',
-      message: 'Choose the wind region. It is required on an Australian quote, and it selects the span table.',
-    });
-  }
+  /*
+   * Wind region is **not** a blocking issue any more, and that is a deliberate reversal.
+   *
+   * It became read-only on 2026-11-10 (it is a certified value, not a design choice), so a check here
+   * would have produced a red field nobody can edit and a Save button nobody can unblock — the exact
+   * shape of the desktop's `ValidateSiteInfoBlock`, which is why the desktop cannot quote before a site
+   * check has run.
+   *
+   * The decision on record is to keep a quick quote possible: an unchecked quote is priced from the
+   * defaults this state ships with, and both the screen and the printed document say so. Requiring the
+   * certificate would turn "customer is on the phone" into "come back after the site visit".
+   *
+   * What still blocks is `stateCode`, which is editable and selects the material price coefficient —
+   * an empty one is not a default, it is a missing table.
+   */
   if (config.stateCode === '') {
     issues.push({ path: 'design-stateCode', message: 'Choose the state. It selects this state’s prices.' });
   }

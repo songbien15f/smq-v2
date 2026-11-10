@@ -2564,6 +2564,109 @@ biết" thành một con số cụ thể, và con số đó sẽ được in ra 
 
 ---
 
+## 13.22 Step 1 — PIN lên cạnh địa chỉ, sáu giá trị read-only (2026-11-10)
+
+Yêu cầu: *"sau 3 cái address thì tới cái PIN ngay… mục đích là lấy được thông số thật từ sitecheck
+trước khi qua step 2 (và các thông số đồng bộ, cần hiển thị đầy đủ ngoài UI dạng readonly)"*, và
+*"Design parameters phải có đủ: Structure Type edit; Importance Level / Wind Region / Terrain Category /
+Building Class / Ground Snow Load / Design Wind Speed readonly; Internal Pressures, End Opening, Side
+Opening"*.
+
+### 1. PIN từ `top 3572` xuống `top 1616`
+
+Đo trước: địa chỉ site kết thúc ở `top 916`, nút `Go to ShedSafe` ở **`top 3572`** — cách 2.650 px, với
+toàn bộ nhóm Design ở giữa. Ba nhóm địa chỉ tồn tại **để được pin**, và nút mà chúng bật thì ở tận dưới.
+
+Desktop gắn PIN **trong** field Site Address nên "gõ địa chỉ → pin" là một động tác. v2 không gắn trong
+field (một nút trong `<input>` là chỗ đặt tồi trên cảm ứng), nên đặt khối ShedSafe **ngay sau Delivery,
+trước Design** — đúng chỗ địa chỉ kết thúc và cũng đúng chỗ kết quả của nó được đọc.
+
+`QuoteDetailsPanel` nhận một **slot** `siteCheck` chứ không import panel: panel cần `quoteId`, `session`,
+`onImported` — đều sống ở `QuoteEditor`. Truyền xuống sẽ tạo bản sao thứ hai của props, và panel sẽ được
+render từ hai nơi.
+
+Sau khi sửa, đo được thứ tự: Delivery `1250` → ShedSafe `1250` → Design `1814`, nút PIN `1616`.
+
+### 2. Sáu giá trị thành read-only, ba trạng thái
+
+Đúng đặc tả §3.5. Nhưng có một chỗ **không thể chỉ đổi sang read-only**:
+
+**`windRegion` là `required` trong validation.** Đổi nó sang read-only mà giữ luật đó thì một báo giá
+chưa pin sẽ **không bao giờ** qua được Step 2 — đúng cái bẫy làm desktop không báo giá được trước khi có
+site check. Đã bỏ nó khỏi danh sách chặn (`validation.ts` §5), theo lựa chọn **(b)**: cho báo giá nhanh,
+nhưng nói rõ giá đó dựa trên **giá trị mặc định**, không phải chứng chỉ.
+
+Chặn còn lại là `stateCode` — và nó **không** readonly, vì nó không phải dữ liệu của ShedSafe:
+`stateCode` chọn `setting_price_coeffcient` (hệ số giá vật liệu theo bang) và hệ số mezzanine QLD. Nếu
+tắt nó đi thì **không còn** control nào cho giá vật liệu. ShedSafe chứng nhận gió, không chứng nhận lịch
+giá của dealer. `internalPressure` cũng editable — đó là lựa chọn thiết kế.
+
+Ba trạng thái, và trạng thái thứ ba là thứ người dùng hành động theo:
+
+| Trạng thái | Hiện | Nhãn dưới |
+|---|---|---|
+| `unchecked` | `—` | *not from a site check yet* (viền đứt) |
+| `provisional` | số ShedSafe đang giữ | *provisional — not auto calculated* (nền vàng nhạt) |
+| `certified` | số đã import | *from the site check* |
+
+`DesignValue` là **một** component quyết định cả ba — sáu dòng viết tay là sáu cơ hội để một số
+`provisional` in cùng màu với số đã chứng nhận, và một số cùng màu chữ thường là số người ta sẽ báo giá.
+`aria-describedby` trỏ tới câu trạng thái để phân biệt đó tới được screen reader.
+
+**Giá trị mặc định KHÔNG nằm trong chuỗi tin cậy đó.** Hiện `A` vì config mặc định `A` sẽ không phân biệt
+được với `A` của chứng chỉ, và chỉ một trong hai là sự thật.
+
+### 3. Một provider, không phải hai lần fetch
+
+Panel ShedSafe pin/import; nhóm Design hiển thị cùng sáu giá trị cách đó vài trăm px. Hai lần fetch sẽ
+cho phép panel nói "Rating imported" trong khi các field vẫn hiện số **trước** khi import.
+`SiteCheckProvider` giữ một object, và import công bố kết quả qua `replace()` nên cả hai đổi trong cùng
+một commit.
+
+### 4. Bảng sáu giá trị luôn render
+
+Trước: chỉ render khi `calculated === true`, nên báo giá chưa có check hiện **khoảng trắng** — không phân
+biệt được "chưa hỏi ShedSafe" với "hỏi rồi, rỗng". Nay mỗi dòng luôn có, và trạng thái nói nó là gì.
+Khối `provisional` riêng đã bị xoá: nó tồn tại chỉ vì bảng kia không render, nay trùng chức năng.
+
+### 5. Bảy thông số địa lý mở sẵn, và đọc được cả trước Auto Calc
+
+`Site readings` (`shielding`, `topographicFactor`, snow region, earthquake, elevation, toạ độ, rainfall)
+nay `open` mặc định và đọc được cả từ `provisional` — trước chỉ đọc `check.site`, thứ chỉ có sau import.
+Có một dòng nói rõ: *"These describe the place, not the price: nothing here is used to cost the shed."*
+
+### 6. Import xong thì giá tự tính lại
+
+Import đổi `windRegion` và `terrainCategory` — hai field **quyết định giá**. Trước đây `pricedAt` thành
+`'stale'` và người dùng được bảo *"Calculate the price again"* ngay sau khi được bảo import thành công:
+hai thông báo, một hành động, nút Save bị chặn ở giữa. Nay `onImported` gọi `calculate()` qua
+`setTimeout(…, 0)` để mọi `set` của `applyPartial` kịp rơi vào store, và để phép tính không nằm trong
+render đã sinh ra nó.
+
+### Đo được trong trình duyệt
+
+| | |
+|---|---|
+| Thứ tự nhóm | Quote & client `213` · Site `916` · Delivery `1205` · **ShedSafe `1250`** · Design `1814` · Shed `2921` · Colours `3662` |
+| Nút PIN | `1616` (trước: `3572`) |
+| Sáu field, chưa pin | `—` + *not from a site check yet*, `tagName = OUTPUT` |
+| Sáu field, check `pinned` có readings | `2` / `C` / `2.5` / `Class 10a` / `0.1 kPa` / `45.3 m/s`, nhãn *provisional — not auto calculated* |
+| `select#design-windRegion` | **0** (không còn control) |
+| `#design-stateCode`, `#design-internalPressure`, `#design-structureType` | enabled |
+| `Site readings` | `open = true` |
+| `pageOverflowX` ở 390 px | **0** |
+
+### Bài học
+
+**Một field `required` đổi sang read-only là một luật phải đổi theo.** Nếu chỉ đổi control mà giữ
+validation, kết quả là một field đỏ không ai sửa được và một nút Save không ai mở được — cái bẫy mà
+desktop đang mắc. Đổi hình thức hiển thị và đổi luật là **một** thay đổi, không phải hai.
+
+Và: **giá trị mặc định không phải giá trị chứng nhận.** Chúng có thể bằng nhau, và đó chính là lý do phải
+hiển thị chúng khác nhau.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -2572,7 +2675,7 @@ biết" thành một con số cụ thể, và con số đó sẽ được in ra 
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 25 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **6 Step 1** — IL 1–4 + round trip, sách thiếu bảng thì nói, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 26 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **9 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

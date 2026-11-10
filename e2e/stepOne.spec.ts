@@ -18,41 +18,89 @@ test.describe('Step 1 — quote details', () => {
     await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
   });
 
-  test('importance level offers 1 to 4, and a level above 2 is kept', async ({ page }) => {
+  test('the site check sits between Delivery and Design, not at the bottom', async ({ page }) => {
     /*
      * ## The defect
      *
-     * `importanceLevel` was typed `1 | 2` and the store's normaliser repairs with `.catch()` — so
-     * ShedSafe's level 3 became level **1**, silently, and the quote printed "Importance level 1"
-     * against a certificate saying 3. Measured: `normaliseShedConfig({ importanceLevel: 3 })` returned
-     * `1`, and the select offered only two options.
+     * The ShedSafe panel used to be a separate card **below the whole form**. Measured 2026-11-10: the
+     * site address ended at `top 916`, the pin button was at `top 3572` — 2 650 px apart, with the
+     * entire design section in between. The three address groups exist to be pinned, and the button
+     * they enable was nowhere near them.
      *
-     * Both halves are asserted. An option list without the round trip would pass while the store still
-     * rewrote what was chosen.
+     * Asserted as **ordering**, not as pixel offsets: the exact heights move whenever a group gains a
+     * field, and a test that hard-codes 1 616 breaks for a reason that is not a regression.
      */
-    const select = page.locator('#design-importanceLevel');
-    await expect(select).toBeVisible();
+    const order = await page.evaluate(() => {
+      const buttonTop = (pattern: RegExp): number | null => {
+        const button = [...document.querySelectorAll('h3 > button')].find((b) => pattern.test(b.textContent ?? ''));
+        return button === undefined ? null : Math.round(button.getBoundingClientRect().top + window.scrollY);
+      };
+      return {
+        delivery: buttonTop(/^Delivery/),
+        siteCheck: buttonTop(/ShedSafe site check/),
+        design: buttonTop(/^Design/),
+      };
+    });
 
-    const labels = await select.locator('option').allTextContents();
-    expect(labels).toHaveLength(4);
-    expect(labels[2]).toContain('3');
-    expect(labels[3]).toContain('4');
+    expect(order.delivery, 'the Delivery group must exist').not.toBeNull();
+    expect(order.siteCheck, 'the site check must be a group on this step').not.toBeNull();
+    expect(order.design, 'the Design group must exist').not.toBeNull();
 
-    await select.selectOption('3');
-    // The stored value, not the DOM's — this is where the silent downgrade happened.
-    await expect(select).toHaveValue('3');
-
-    // The book has no frame table for level 3, and says so rather than pricing it as level 1.
-    await expect(page.getByText(/no frame table for level 3/i)).toBeVisible();
+    // Between them, in that order.
+    expect(order.siteCheck as number).toBeGreaterThan(order.delivery as number);
+    expect(order.siteCheck as number).toBeLessThan(order.design as number);
   });
 
-  test('a price book that cannot price the level says so, and level 2 does not warn', async ({ page }) => {
-    // The warning must be about the chosen level, not a permanent banner: level 2 is in the book.
-    await page.locator('#design-importanceLevel').selectOption('2');
-    await expect(page.getByText(/no frame table for level/i)).toHaveCount(0);
+  test('the six certified values are read-only, and say they have no source yet', async ({ page }) => {
+    /*
+     * ## The defect
+     *
+     * Before this, the six values rendered **only** when a rating had been imported, so a quote with no
+     * site check showed an empty space where a table should be — indistinguishable from a broken panel.
+     * `windRegion` and `terrainCategory` were also editable selects, which is worse than absent: a
+     * person could type a wind region and believe it came from a certificate.
+     *
+     * Three separate facts, each of which was wrong before:
+     *   1. all six rows exist with no site check at all;
+     *   2. none of them is a form control;
+     *   3. each says where its number came from.
+     */
+    const ids = [
+      'design-importanceLevel',
+      'design-windRegion',
+      'design-terrainCategory',
+      'design-buildingClass',
+      'design-snowLoad',
+      'design-windSpeed',
+    ];
 
-    await page.locator('#design-importanceLevel').selectOption('4');
-    await expect(page.getByText(/no frame table for level 4/i)).toBeVisible();
+    for (const id of ids) {
+      const field = page.locator(`#${id}`);
+      await expect(field, `${id} must render without a site check`).toBeVisible();
+      // `output`, not `select`/`input`: nothing here can be typed over.
+      await expect(field).toHaveJSProperty('tagName', 'OUTPUT');
+      await expect(field).toHaveText('—');
+      await expect(page.locator(`#${id}-source`)).toHaveText(/not from a site check yet/i);
+    }
+
+    // The wind region is no longer a control anywhere on the step.
+    await expect(page.locator('select#design-windRegion')).toHaveCount(0);
+    await expect(page.locator('select#design-terrainCategory')).toHaveCount(0);
+  });
+
+  test('State and Internal pressure stay editable, because the certificate does not carry them', async ({ page }) => {
+    /*
+     * The counter-test to the one above, and the reason the list is not simply "everything read-only".
+     *
+     * `stateCode` picks the material price coefficient (`setting_price_coeffcient.state_code`) and the
+     * Queensland mezzanine factor. ShedSafe reports wind, not price schedules — so if this were
+     * disabled there would be **no** control over material pricing at all. Internal pressure is a
+     * design choice the certificate does not make either.
+     */
+    await expect(page.locator('select#design-stateCode')).toBeVisible();
+    await expect(page.locator('select#design-stateCode')).toBeEnabled();
+    await expect(page.locator('select#design-internalPressure')).toBeVisible();
+    await expect(page.locator('select#design-structureType')).toBeEnabled();
   });
 
   test('average height and ridge height are shown, and follow the roof', async ({ page }) => {

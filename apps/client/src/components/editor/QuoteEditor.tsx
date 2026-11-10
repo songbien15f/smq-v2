@@ -50,6 +50,7 @@ import { CostPanel } from './CostPanel';
 import { SteelworkPanel } from './SteelworkPanel';
 import { PunchingPanel } from './PunchingPanel';
 import { SiteCheckPanel } from './SiteCheckPanel';
+import { SiteCheckProvider } from './siteCheckState';
 import { PricePanel, PriceSummary } from './PricePanel';
 import { ErrorSummary, focusErrorSummary } from './ErrorSummary';
 import { deriveStages } from './stages';
@@ -645,52 +646,87 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           />
 
           {step === 'details' && (
+            /*
+             * One provider for the whole step, because two components read the same check: the
+             * ShedSafe panel pins and imports, and the Design group shows the six certified values
+             * read-only a few hundred pixels below it. Two fetches would let the panel announce
+             * "Rating imported" while the fields still showed the previous numbers.
+             */
+            <SiteCheckProvider quoteId={quoteId}>
             <div className="flex flex-col gap-sq-3">
               <div className="rounded-lg border border-sq-line bg-sq-surface">
-                <QuoteDetailsPanel issuesByPath={issuesByPath} unit={unit} onUnitChange={setUnit} />
+                {/*
+                  The site check is rendered **into** the details panel, between Delivery and Design,
+                  rather than beside it.
+
+                  Measured 2026-11-10: as a separate card below the form, the site address sat at
+                  `top 916` and the pin button at `top 3572` — 2 650 px apart, with the whole design
+                  section in between. The three address groups are what a pin is *for*, so the button
+                  now sits where the addresses end.
+                */}
+                <QuoteDetailsPanel
+                  issuesByPath={issuesByPath}
+                  unit={unit}
+                  onUnitChange={setUnit}
+                  siteCheck={
+                    <SiteCheckPanel
+                      quoteId={quoteId}
+                      site={{
+                        address: site.address,
+                        suburb: site.suburb,
+                        state: site.state,
+                        postcode: site.postcode,
+                      }}
+                      client={{ firstName: customer.firstName, lastName: customer.lastName, email: customer.email }}
+                      heightMm={config.height}
+                      spanMm={config.span}
+                      lengthMm={config.length}
+                      importanceLevel={config.importanceLevel}
+                      // ShedSafe refuses an empty salesman, and the person at the keyboard is the
+                      // honest default. They can still type somebody else's name.
+                      defaultSalesman={session.displayName !== '' ? session.displayName : session.email}
+                      canWrite={session.capabilities.includes('quote:write')}
+                      onImported={(values) => {
+                        // The certified values replace what was typed. Only the ones ShedSafe
+                        // actually returned: a null is "not calculated", and writing it would blank
+                        // a real value.
+                        if (values.windRegion !== null) applyPartial({ windRegion: values.windRegion as never });
+                        if (values.terrainCategory !== null) {
+                          applyPartial({ terrainCategory: values.terrainCategory as never });
+                        }
+                        if (values.importanceLevel !== null) {
+                          applyPartial({ importanceLevel: values.importanceLevel as never });
+                        }
+                        if (values.buildingClass !== null) {
+                          applyPartial({ buildingClass: values.buildingClass });
+                        }
+                        if (values.snowLoad !== null) applyPartial({ snowLoad: values.snowLoad });
+                        if (values.designWindSpeed !== null) {
+                          applyPartial({ designWindSpeed: values.designWindSpeed });
+                        }
+                        /*
+                         * Price it again, because an import always changes something that prices.
+                         *
+                         * `windRegion` and `terrainCategory` select the purlin span table and the
+                         * frame schedule, so importing a rating **invalidates the price** — before
+                         * this, `pricedAt` became `'stale'` and the operator was told to press
+                         * "calculate again" immediately after being told the import succeeded. Two
+                         * messages, one action, and the Save button blocked in between.
+                         *
+                         * `applyPartial` is called several times above, and each call is synchronously
+                         * applied to the store, so reading the store here sees the imported values.
+                         * The calculation is deferred one macrotask to let every `set` land and to keep
+                         * it out of the render that produced it — the same rule `calculate` follows
+                         * everywhere else: read the stores at call time, never from a closure.
+                         */
+                        setTimeout(() => void calculate(), 0);
+                      }}
+                    />
+                  }
+                />
               </div>
-              {/*
-                The site check sits under the design fields because that is what it fills. It needs a
-                saved quote — a check belongs to one — so it says so rather than offering a button
-                that would fail.
-              */}
-              <SiteCheckPanel
-                quoteId={quoteId}
-                site={{
-                  address: site.address,
-                  suburb: site.suburb,
-                  state: site.state,
-                  postcode: site.postcode,
-                }}
-                client={{ firstName: customer.firstName, lastName: customer.lastName, email: customer.email }}
-                heightMm={config.height}
-                spanMm={config.span}
-                lengthMm={config.length}
-                importanceLevel={config.importanceLevel}
-                // ShedSafe refuses an empty salesman, and the person at the keyboard is the honest
-                // default. They can still type somebody else's name.
-                defaultSalesman={session.displayName !== '' ? session.displayName : session.email}
-                canWrite={session.capabilities.includes('quote:write')}
-                onImported={(values) => {
-                  // The certified values replace what was typed. Only the ones ShedSafe actually
-                  // returned: a null is "not calculated", and writing it would blank a real value.
-                  if (values.windRegion !== null) applyPartial({ windRegion: values.windRegion as never });
-                  if (values.terrainCategory !== null) {
-                    applyPartial({ terrainCategory: values.terrainCategory as never });
-                  }
-                  if (values.importanceLevel !== null) {
-                    applyPartial({ importanceLevel: values.importanceLevel as never });
-                  }
-                  if (values.buildingClass !== null) {
-                    applyPartial({ buildingClass: values.buildingClass });
-                  }
-                  if (values.snowLoad !== null) applyPartial({ snowLoad: values.snowLoad });
-                  if (values.designWindSpeed !== null) {
-                    applyPartial({ designWindSpeed: values.designWindSpeed });
-                  }
-                }}
-              />
             </div>
+            </SiteCheckProvider>
           )}
 
           {step === 'options' && <PlanPanel />}

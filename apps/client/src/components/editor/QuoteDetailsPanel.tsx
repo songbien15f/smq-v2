@@ -32,12 +32,13 @@ import { AddressField } from './AddressField';
 import { DimensionField } from './DimensionField';
 import type { DraftIssue } from './validation';
 import { useDraftStore } from '@/store/useDraftStore';
+import { useSiteCheck } from './siteCheckState';
 import { useShedStore } from '@/store/useShedStore';
 import { useCatalogue } from '@/hooks/useCatalogue';
 import { useCompanyPricing } from '@/hooks/useCompanyPricing';
 
 /** A group that can be collapsed, remembering nothing between visits on purpose. */
-function Group({
+export function Group({
   title,
   count,
   issueCount,
@@ -109,9 +110,33 @@ export interface QuoteDetailsPanelProps {
   issuesByPath: Map<string, DraftIssue>;
   unit: DisplayUnit;
   onUnitChange: (unit: DisplayUnit) => void;
+  /**
+   * The ShedSafe site check, dropped in **after Delivery and before Design**.
+   *
+   * A slot rather than importing the panel here, because the panel needs the quote id, the session and
+   * the import callback — all of which live in `QuoteEditor`. Passing them down would give this file a
+   * second copy of props it does not otherwise use, and the panel would be rendered from two places.
+   *
+   * ## Why exactly here
+   *
+   * The desktop puts PIN inside the Site Address field, so "type the address, pin the site" is one
+   * motion. The panel used to sit below the whole form — measured 2026-11-10: the site address at
+   * `top 916`, the pin button at `top 3572`. A person filled three address groups, then had to scroll
+   * past the entire design section to find the one thing those addresses were for.
+   *
+   * Between Delivery and Design is where the *result* is needed too: the six values it returns are
+   * read by the Design group immediately below, so pin → import → Design fills in is one downward
+   * scroll with nothing else in between.
+   */
+  siteCheck?: React.ReactNode;
 }
 
-export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDetailsPanelProps) {
+export function QuoteDetailsPanel({
+  issuesByPath,
+  unit,
+  onUnitChange,
+  siteCheck,
+}: QuoteDetailsPanelProps) {
   const customer = useDraftStore((state) => state.customer);
   const site = useDraftStore((state) => state.site);
   const setCustomer = useDraftStore((state) => state.setCustomer);
@@ -473,6 +498,9 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
         </label>
       </Group>
 
+      {/* The site check: the addresses above are what it pins, the Design group below reads it back. */}
+      {siteCheck}
+
       <DesignGroup issuesByPath={issuesByPath} catalogue={catalogue} />
       <ShedGroup
         issuesByPath={issuesByPath}
@@ -538,6 +566,43 @@ function DesignGroup({
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
 
+  /**
+   * The six certified values, read from the **same** check the ShedSafe panel pins and imports.
+   *
+   * `useSiteCheck` rather than a second `GET`: two fetches on one screen would let the panel say
+   * "Rating imported" while these fields still showed the values from before the import.
+   */
+  const { check, state: siteState } = useSiteCheck();
+
+  /**
+   * One certified value, resolved into what to print and what it is.
+   *
+   * The order of trust is the whole point: a certified import, then what ShedSafe currently holds
+   * (marked provisional and muted), then nothing. A default that the quote happens to be *priced* from
+   * is deliberately **not** in that chain — showing `A` because the config defaults to `A` would be
+   * indistinguishable from showing the certificate's `A`, and only one of those is a fact.
+   */
+  const siteValue = (
+    key: 'importanceLevel' | 'windRegion' | 'terrainCategory' | 'buildingClass' | 'snowLoad' | 'designWindSpeed',
+  ): { text: string; state: 'certified' | 'provisional' | 'unchecked' } => {
+    const suffix = key === 'snowLoad' ? ' kPa' : key === 'designWindSpeed' ? ' m/s' : '';
+    if (check !== null && check.calculated) {
+      const raw = check.values[key];
+      return {
+        text: raw === null || raw === '' ? 'Not in the rating' : `${raw}${suffix}`,
+        state: 'certified',
+      };
+    }
+    if (check !== null && check.provisional !== null) {
+      const raw = check.provisional[key];
+      const shown = typeof raw === 'number' || typeof raw === 'string' ? raw : null;
+      if (shown !== null && shown !== '') {
+        return { text: `${shown}${suffix}`, state: 'provisional' };
+      }
+    }
+    return { text: '—', state: 'unchecked' };
+  };
+
   /*
    * Whether this book lists the chosen importance level at all.
    *
@@ -588,7 +653,9 @@ function DesignGroup({
     <Group
       title="Design"
       issueCount={
-        ['design-windRegion', 'design-stateCode'].filter((path) => issuesByPath.has(path)).length
+        // Wind region is no longer among these: it is read-only now, so an issue there would be a red
+        // mark on a field nobody can fix. See `validation.ts` §5.
+        ['design-stateCode'].filter((path) => issuesByPath.has(path)).length
       }
     >
       <SelectField
@@ -609,61 +676,87 @@ function DesignGroup({
         hint="Changing this resets the building’s geometry and any openings."
       />
 
-      <div className="grid grid-cols-2 gap-sq-2">
-        <SelectField
-          id="design-windRegion"
-          label="Wind region"
-          value={config.windRegion}
-          options={WIND_REGIONS}
-          required
-          error={errorAt('design-windRegion')}
-          onChange={(value) => applyPartial({ windRegion: value as never })}
-          hint="Selects the purlin span table."
-        />
-        <SelectField
-          id="design-terrainCategory"
-          label="Terrain category"
-          value={String(config.terrainCategory)}
-          options={TERRAIN}
-          onChange={(value) => applyPartial({ terrainCategory: Number(value) as never })}
-        />
-      </div>
+      {/*
+        The six values a site check certifies, read-only.
 
-      <div className="grid grid-cols-2 gap-sq-2">
-        <div className="flex flex-col gap-sq-1">
-          <SelectField
+        ## Why they are not controls any more
+
+        These are not design choices — ShedSafe computes them, and typing over one produces a quote
+        priced against a rating the certificate does not carry. The desktop made all six
+        `Enable = false` for the same reason, with the placeholder *"Autofill from shedsafe."*
+
+        ## Three states, because a field with no value still has to say something
+
+        A read-only box showing `—` is indistinguishable from a broken one. Each row therefore states
+        where its number came from:
+
+          not pinned          `—` + "not from a site check"
+          pinned, no AutoCalc the raw reading, tagged provisional and visibly muted
+          imported            the certified value
+
+        A quote may still be **priced** from the defaults while unchecked — that is the decision on
+        record (KNOWN-DEVIATIONS 31 and the "quick quote" path) — but the screen must never let a
+        default look like a certificate. `DesignValue` is the one component that decides that, so the
+        three states cannot drift apart between the six rows.
+      */}
+      <fieldset className="flex flex-col gap-sq-2 rounded-md border border-sq-line p-sq-2">
+        <legend className="px-1 text-sq-micro font-medium text-sq-ink">
+          From the site check{siteState === 'certified' ? '' : ' — not yet a rating'}
+        </legend>
+
+        <div className="grid grid-cols-2 gap-sq-2">
+          <DesignValue
             id="design-importanceLevel"
             label="Importance level"
-            value={String(config.importanceLevel)}
-            options={IMPORTANCE}
-            onChange={(value) => applyPartial({ importanceLevel: Number(value) as never })}
+            entry={siteValue('importanceLevel')}
           />
-          {/*
-            The book is consulted, not the certificate. When it has no frame table for the chosen
-            level, the frame is priced from one assumed section — `frameSchedule` misses, the fallback
-            runs, and the BOM carries an `ASSUMED` line saying so. Saying it here as well is not
-            duplication: the BOM warning appears two steps later, and a person choosing level 3 needs
-            to know *while choosing* that this book cannot price it.
-          */}
-          {bookCannotPrice && (
-            <p className="text-sq-micro text-sq-attention">
-              This price book has no frame table for level {config.importanceLevel}. The frame will be
-              priced from one assumed section — the certificate is what matters, so keep the level it
-              states and read the assumption on the BOM.
-            </p>
-          )}
+          <DesignValue id="design-windRegion" label="Wind region" entry={siteValue('windRegion')} />
+          <DesignValue id="design-terrainCategory" label="Terrain category" entry={siteValue('terrainCategory')} />
+          <DesignValue id="design-buildingClass" label="Building class" entry={siteValue('buildingClass')} />
+          <DesignValue id="design-snowLoad" label="Ground snow load" entry={siteValue('snowLoad')} />
+          <DesignValue id="design-windSpeed" label="Design wind speed" entry={siteValue('designWindSpeed')} />
         </div>
-        <SelectField
-          id="design-stateCode"
-          label="State"
-          value={config.stateCode}
-          options={STATES.map((state) => ({ value: state, label: state }))}
-          required
-          error={errorAt('design-stateCode')}
-          onChange={(value) => applyPartial({ stateCode: value as never })}
-          hint="Selects this state’s prices."
-        />
-      </div>
+
+        {/*
+          The book's own warning, kept where the level is read: it has no frame table above level 2, so
+          the frame falls back to one assumed section. The value itself still comes from the
+          certificate — see KNOWN-DEVIATIONS 31.
+        */}
+        {bookCannotPrice && (
+          <p className="text-sq-micro text-sq-attention">
+            This price book has no frame table for importance level {config.importanceLevel}. The frame
+            will be priced from one assumed section — the certificate is what matters, so keep the
+            level it states and read the assumption on the BOM.
+          </p>
+        )}
+
+        {siteState === 'unchecked' && (
+          <p className="text-sq-micro text-sq-ink-muted">
+            Run the site check above to fill these in. Until then the quote is priced from this state’s
+            defaults, and the document says so.
+          </p>
+        )}
+      </fieldset>
+
+      {/*
+        State stays editable, and it is not in the desktop's Design group.
+
+        It is here because it is the **only** thing that picks the price coefficient for a bill of
+        materials (`setting_price_coeffcient`, keyed by `state_code`) and the Queensland factor on a
+        mezzanine. ShedSafe does not report it — a certificate is about wind, not about which price
+        schedule a dealer buys from. Making it read-only would remove the only control over material
+        pricing, so it sits beside the certified block with a hint saying what it does.
+      */}
+      <SelectField
+        id="design-stateCode"
+        label="State"
+        value={config.stateCode}
+        options={STATES.map((state) => ({ value: state, label: state }))}
+        required
+        error={errorAt('design-stateCode')}
+        onChange={(value) => applyPartial({ stateCode: value as never })}
+        hint="Selects this state’s material prices. Not part of the site check."
+      />
 
       <SelectField
         id="design-internalPressure"
@@ -676,24 +769,6 @@ function DesignGroup({
         onChange={(value) => applyPartial({ internalPressure: value as never })}
         hint="A closed building pushes on the frame from inside as well as outside."
       />
-
-      {/*
-        The certified values the site check returned. Read-only here because they are
-        not a design choice: ShedSafe computed them, and typing over one would produce
-        a quote priced against a rating the certificate does not carry.
-      */}
-      <dl className="grid grid-cols-3 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
-        {[
-          ['Building class', config.buildingClass ?? '—'],
-          ['Ground snow', config.snowLoad === null ? '—' : `${config.snowLoad} kPa`],
-          ['Wind speed', config.designWindSpeed === null ? '—' : `${config.designWindSpeed} m/s`],
-        ].map(([label, shown]) => (
-          <div key={label} className="flex flex-col">
-            <dt className="text-sq-micro text-sq-ink-muted">{label}</dt>
-            <dd className="sq-numeric text-sq-body text-sq-ink">{shown}</dd>
-          </div>
-        ))}
-      </dl>
 
       <fieldset className="flex flex-col gap-sq-1">
         <legend className="text-sq-micro font-medium text-sq-ink">Walls left open</legend>
@@ -1294,6 +1369,63 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
 }
 
 /* ------------------------------------------------------------------ Shared */
+
+/**
+ * One read-only value that came from a site check.
+ *
+ * ## Why a component and not six copies of a `<div>`
+ *
+ * The three states have to be decided **once**. Six hand-written rows is six chances for one of them
+ * to print a provisional reading in the same colour as a certified one — and a number in the normal
+ * ink colour is a number somebody quotes from.
+ *
+ * `aria-describedby` points at the state sentence, so the distinction reaches a screen reader too,
+ * where colour and a small grey word do not exist.
+ */
+function DesignValue({
+  id,
+  label,
+  entry,
+}: {
+  id: string;
+  label: string;
+  entry: { text: string; state: 'certified' | 'provisional' | 'unchecked' };
+}) {
+  const note =
+    entry.state === 'certified'
+      ? 'from the site check'
+      : entry.state === 'provisional'
+        ? 'provisional — not auto calculated'
+        : 'not from a site check yet';
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sq-micro font-medium text-sq-ink">{label}</span>
+      <output
+        id={id}
+        aria-describedby={`${id}-source`}
+        className={[
+          'sq-numeric min-h-[38px] rounded-md border px-sq-2 py-sq-1 text-sq-body',
+          entry.state === 'unchecked'
+            ? 'border-dashed border-sq-line bg-sq-ground/40 text-sq-ink-muted'
+            : entry.state === 'provisional'
+              ? 'border-sq-attention/40 bg-sq-attention/5 text-sq-ink'
+              : 'border-sq-line bg-sq-ground/40 text-sq-ink',
+        ].join(' ')}
+      >
+        {entry.text}
+      </output>
+      <span
+        id={`${id}-source`}
+        className={[
+          'text-sq-micro',
+          entry.state === 'provisional' ? 'text-sq-attention' : 'text-sq-ink-muted',
+        ].join(' ')}
+      >
+        {note}
+      </span>
+    </div>
+  );
+}
 
 /** A labelled checkbox, sized to the same touch target as the other controls. */
 function Switch({
