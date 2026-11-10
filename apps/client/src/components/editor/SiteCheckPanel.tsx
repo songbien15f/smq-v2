@@ -87,7 +87,7 @@ export function SiteCheckPanel({
    * fields still showed the pre-import numbers. One provider, one fetch, and an import publishes its
    * result through `replace()` so both update in the same commit.
    */
-  const { check, configured, replace } = useSiteCheck();
+  const { check, configured, replace, watching, stopWatching, waitingError } = useSiteCheck();
   const identity = useShedSafeIdentity();
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
   /**
@@ -540,11 +540,45 @@ export function SiteCheckPanel({
               <li>
                 Press <strong>Auto Calc</strong> and wait for it to finish.
               </li>
-              <li>Come back here and press “Check and import the rating”.</li>
+              <li>
+                {watching
+                  ? 'Come back to this tab — the rating is picked up automatically.'
+                  : 'Come back here and press “Check and import the rating”.'}
+              </li>
             </ol>
             {check.lastError !== null && check.lastError !== '' && (
               <p className="mt-sq-2 text-sq-body text-sq-danger">{check.lastError}</p>
             )}
+
+            {/*
+              The watch, said out loud.
+
+              Auto Calc happens on ShedSafe's own tab and there is no API to trigger or stream it — so
+              this panel asks again every ten seconds. Saying so is not decoration: a page quietly
+              calling a partner's API on a timer is exactly the behaviour a person should be able to
+              see and stop. `aria-live="polite"` because it changes state on its own, so it must be
+              announced without stealing focus.
+            */}
+            <div className="mt-sq-2 flex flex-wrap items-center gap-sq-2 border-t border-sq-attention/30 pt-sq-2">
+              {waitingError === null ? (
+                <>
+                  <span role="status" aria-live="polite" className="text-sq-micro text-sq-ink-muted">
+                    {watching
+                      ? 'Watching ShedSafe for Auto Calc — checking every 10 seconds. Nothing is saved until it finishes.'
+                      : 'Not watching. Press “Check again after Auto Calc” when you are ready.'}
+                  </span>
+                  {watching && (
+                    <Button variant="ghost" onClick={stopWatching}>
+                      Stop watching
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <p role="alert" className="text-sq-micro text-sq-danger">
+                  ShedSafe reported a problem: {waitingError}
+                </p>
+              )}
+            </div>
           </div>
         )}
 

@@ -125,7 +125,7 @@ export class ShedSafeError extends Error {
  * 2026-11-10: a rejected create answers HTTP 200 with this id plus an `errorMessage`. Treating it as
  * a real id is how a failed pin was stored as a pinned site.
  */
-function isAllZeroGuid(value: string): boolean {
+export function isAllZeroGuid(value: string): boolean {
   return /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(value.trim());
 }
 

@@ -105,6 +105,20 @@ interface SiteCheckContextValue {
   reload: () => Promise<void>;
   /** Adopt a check the panel just received, so the read-only fields follow in the same commit. */
   replace: (next: SiteCheck | null) => void;
+  /**
+   * True while the panel is watching ShedSafe for Auto Calc to finish.
+   *
+   * Shown, not implied: something checking a third-party API every ten seconds has to say so, or the
+   * first person to notice it in a network tab will not trust it.
+   */
+  watching: boolean;
+  /** Stop watching. The manual "check and import" button keeps working. */
+  stopWatching: () => void;
+  /**
+   * Why the rating did not arrive: an Auto Calc that failed on ShedSafe's side, or a request that did
+   * not come back. `null` while everything is merely slow.
+   */
+  waitingError: string | null;
 }
 
 /**
@@ -143,6 +157,19 @@ interface ShedSafeIdentityValue {
   listingError: string | null;
   loading: boolean;
 }
+
+/**
+ * How often the panel asks ShedSafe whether Auto Calc has finished.
+ *
+ * **Ten seconds, deliberately not five.** One read is ~1 361 bytes and ~300 ms on ShedSafe's side, and
+ * a five-second timer is 720 requests an hour for one open panel — the shape of traffic that gets a
+ * partner API to rate-limit a company. Ten seconds still feels live to a person who has just pressed a
+ * button on another tab, and it halves the traffic.
+ *
+ * There is no long-poll or webhook to use instead: ShedSafe offers neither, and `autoCalc` is only
+ * visible by reading the building.
+ */
+const AUTO_CALC_POLL_MS = 10_000;
 
 const SiteCheckContext = createContext<SiteCheckContextValue | null>(null);
 const IdentityContext = createContext<ShedSafeIdentityValue | null>(null);
@@ -220,6 +247,119 @@ export function SiteCheckProvider({
   }, []);
 
   /*
+   * ## Watching for Auto Calc
+   *
+   * Auto Calc lives in ShedSafe's own web app and there is no API for it — measured, not assumed: the
+   * fifteen plausible endpoint names all answer "no such route". So the pin opens a tab we do not
+   * control, and the operator finishes the check over there.
+   *
+   * What makes this watchable is that `autoCalc` sits on the same building record `read()` already
+   * fetches, and it flips the instant they finish. One read costs 1 361 bytes and ~300 ms.
+   *
+   * Three rules, each for a specific reason:
+   *
+   * 1. **Every 10 seconds, not 5.** Frequent enough to feel live, far enough apart to look like a
+   *    person checking rather than a scraper. The operator said so explicitly.
+   * 2. **Not while the tab is hidden.** They are on ShedSafe's tab; asking from a background tab is
+   *    traffic nobody is looking at.
+   * 3. **Immediately on return.** `visibilitychange` is the cheapest and most accurate signal there
+   *    is — they just came back from doing the thing, so check then rather than wait out the interval.
+   */
+  const [watching, setWatching] = useState(true);
+  const [waitingError, setWaitingError] = useState<string | null>(null);
+  const stopWatching = useCallback((): void => {
+    setWatching(false);
+  }, []);
+
+  useEffect(() => {
+    if (quoteId === null || check === null || check.calculated || !watching) return;
+
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const checkOnce = async (): Promise<void> => {
+      const result = await api<{
+        configured: boolean;
+        calculated: boolean;
+        missing: boolean;
+        errorMessage: string | null;
+        transientError?: string;
+      }>(`site-checks/${check.id}/status`);
+      if (!alive) return;
+
+      if (!result.ok) {
+        setWaitingError(result.message);
+        return;
+      }
+      setWaitingError(null);
+
+      /*
+       * A failed Auto Calc on their side is reported once and stops the watch: `errorMessage` means
+       * ShedSafe answered something other than success, and polling it again will say the same thing.
+       * Waiting silently would look like the check was still running.
+       */
+      if (!result.data.missing && result.data.errorMessage !== null && result.data.errorMessage !== '') {
+        setWaitingError(result.data.errorMessage);
+        setWatching(false);
+        return;
+      }
+
+      if (result.data.calculated) {
+        /*
+         * ## Import, then reload — in that order
+         *
+         * The operator asked for this by pressing Auto Calc; making them come back and press a second
+         * button for the same decision is a step that gets missed. So the rating is applied, and the
+         * panel says so — a change that happens on its own must never be silent.
+         *
+         * **`reload()` alone does nothing here, and that was a real defect.** It reads
+         * `GET /quotes/:id/site-check`, which answers from the `site_checks` **columns** — and those
+         * stay null until an import writes them. So the poll correctly saw `calculated: true`, called
+         * `reload()`, got `calculated: false` back from our own database, and the panel went on saying
+         * "not Auto Calculated yet" while `still watching` stayed true forever. Measured in the
+         * browser: the status route said `true` and the pill never changed.
+         *
+         * The import is what copies ShedSafe's values into the row; the reload then reads what it
+         * wrote. Skipping the first step makes the second a no-op.
+         */
+        const path =
+          quoteId === null ? `site-checks/${check.id}/import` : `quotes/${quoteId}/site-check/import`;
+        const imported = await api<{ check: SiteCheck }>(path, { method: 'POST' });
+        if (!alive) return;
+        setWatching(false);
+
+        if (!imported.ok) {
+          // The import is the step that can fail in a way the operator must see; a silent stop would
+          // leave the panel reading "not calculated" with no explanation.
+          setWaitingError(imported.message);
+          return;
+        }
+        replace(imported.data.check);
+        return;
+      }
+
+      timer = setTimeout(() => void checkOnce(), AUTO_CALC_POLL_MS);
+    };
+
+    const onVisible = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      // Came back from the other tab: ask now rather than wait out the interval.
+      if (timer !== null) clearTimeout(timer);
+      void checkOnce();
+    };
+
+    // The first read waits one interval: the operator has only just left for the other tab.
+    timer = setTimeout(() => void checkOnce(), AUTO_CALC_POLL_MS);
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      alive = false;
+      if (timer !== null) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [quoteId, check, watching, reload]);
+
+  /*
    * The state a field labels itself with.
    *
    * `provisional` needs the check to **have readings**, not merely to exist: a check that was pinned
@@ -236,8 +376,18 @@ export function SiteCheckProvider({
           : 'provisional';
 
   const value = useMemo(
-    () => ({ check, configured, loading, state, reload, replace }),
-    [check, configured, loading, state, reload, replace],
+    () => ({
+      check,
+      configured,
+      loading,
+      state,
+      reload,
+      replace,
+      watching: watching && check !== null && !check.calculated,
+      stopWatching,
+      waitingError,
+    }),
+    [check, configured, loading, state, reload, replace, watching, stopWatching, waitingError],
   );
 
   return (

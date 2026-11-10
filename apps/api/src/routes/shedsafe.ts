@@ -31,6 +31,7 @@ import {
   ShedSafeError,
   ShedSafeNotConfigured,
   createShedSafeTransport,
+  isAllZeroGuid,
   shedsafeConfigured,
   type ShedSafeTransport,
 } from '../lib/shedsafe.js';
@@ -816,6 +817,84 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
         ]);
       }
       return sendFail(reply, 'internal', message);
+    }
+  });
+
+  /**
+   * Has ShedSafe calculated this building yet? A cheap read, no writes.
+   *
+   * ## Why this exists
+   *
+   * Auto Calc happens **in ShedSafe's own web app** — there is no API for it. Measured 2026-11-10 by
+   * probing fifteen likely endpoint names (`/building/calculate`, `/autocalc`, `/building/process`…):
+   * all answer 403, and a 403 there means "no such route" (adding one letter to
+   * `/building/getsalesmanusers` produces the same response).
+   *
+   * So the product cannot press the button, and the tab it opens is not ours to watch. What it *can*
+   * do is **ask again**: `autoCalc` lives on the same building record the API already reads, and it
+   * flips the moment the operator finishes Auto Calc.
+   *
+   * ## Why `GET` and why no writes
+   *
+   * The panel calls this on a timer, so it must be safe to call when nothing has changed: it touches
+   * no row, records no error, and returns the same shape every time. The import is a separate call
+   * the client makes once this says `true` — keeping "did it happen" apart from "take the values"
+   * means a dropped request can never half-apply a rating.
+   *
+   * A read costs 1 361 bytes and ~300 ms against ShedSafe (measured), which is why the client polls
+   * every **10 seconds** rather than every 5: frequently enough to feel live, far enough apart to look
+   * like a person checking rather than a scraper.
+   */
+  app.get<{ Params: { checkId: string } }>('/site-checks/:checkId/status', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'quote:read');
+    if (session === null) return;
+
+    const shedSafe = transport();
+    if (shedSafe === null) {
+      return sendOk(reply, { configured: false, calculated: false, missing: false, errorMessage: null });
+    }
+
+    const tenantId = session.tenantId as string;
+    const check = await db.get<SiteCheckRow>(
+      'SELECT * FROM site_checks WHERE id = ? AND tenant_id = ?',
+      [request.params.checkId, tenantId],
+    );
+    if (check === null) return sendFail(reply, 'not_found', 'Not found.');
+
+    if (check.building_id === null || isAllZeroGuid(check.building_id)) {
+      /*
+       * A pin that never reached ShedSafe. Reported as `missing`, not as an error: the screen's answer
+       * is "pin the site again", which is a different sentence from "ShedSafe could not be reached".
+       */
+      return sendOk(reply, { configured: true, calculated: false, missing: true, errorMessage: null });
+    }
+
+    try {
+      const result = await shedSafe.read(check.building_id);
+      if (result === null) {
+        return sendOk(reply, { configured: true, calculated: false, missing: true, errorMessage: null });
+      }
+      return sendOk(reply, {
+        configured: true,
+        calculated: result.calculated,
+        missing: false,
+        // Named so a failed Auto Calc on their side is not reported as "still waiting".
+        errorMessage: result.errorMessage,
+      });
+    } catch (error) {
+      /*
+       * A transient failure while polling is **not** surfaced as an error, and does not stop the
+       * timer: ShedSafe being briefly unreachable is not information the operator can act on, and a
+       * poller that gives up on one bad response stops exactly when the network is flaky.
+       */
+      const message = error instanceof ShedSafeError ? error.message : 'ShedSafe could not be reached.';
+      return sendOk(reply, {
+        configured: true,
+        calculated: false,
+        missing: false,
+        errorMessage: null,
+        transientError: message,
+      });
     }
   });
 

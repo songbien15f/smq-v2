@@ -372,3 +372,138 @@ describe('what the building was when it was pinned', () => {
     expect(detail.pinnedFor?.importanceLevel).toBe(3);
   });
 });
+
+/**
+ * The Auto Calc watch: a cheap read that answers one question.
+ *
+ * ## Why a separate route rather than reusing import
+ *
+ * The panel polls while the operator is on ShedSafe's own tab finishing Auto Calc. Import **writes** —
+ * it stores values and can record a failure — so polling it would rewrite the same row every ten
+ * seconds and turn a network hiccup into a stored error. This route writes nothing, so it is safe to
+ * call when nothing has changed, which is exactly what a poller does.
+ *
+ * ## Why it must not "fail" on a transient error
+ *
+ * A poll that reports an error stops being a poll. ShedSafe being briefly unreachable is not something
+ * the operator can act on, and giving up on one bad response means giving up precisely when the network
+ * is flaky.
+ */
+describe('has ShedSafe finished Auto Calc', () => {
+  it('answers calculated when the building is, and writes nothing', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie);
+
+    const before = await ctx.db.get<{ status: string; wind_region: string | null }>(
+      'SELECT status, wind_region FROM site_checks WHERE id = ?',
+      [checkId],
+    );
+
+    stubShedSafe({
+      autoCalc: true,
+      importanceLevel: 2,
+      windRegion: 'A5',
+      terrainCategory: 3,
+      vSite1: 37.4,
+      message: { errorMessage: null },
+    });
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/status`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json().data as { calculated: boolean; missing: boolean; errorMessage: string | null };
+    expect(body.calculated).toBe(true);
+    expect(body.missing).toBe(false);
+    expect(body.errorMessage).toBeNull();
+
+    /*
+     * The point of a separate route: the row is **unchanged**. A poll that wrote would have set
+     * `wind_region` here, and then the import would no longer be the thing that prices the quote.
+     */
+    const after = await ctx.db.get<{ status: string; wind_region: string | null }>(
+      'SELECT status, wind_region FROM site_checks WHERE id = ?',
+      [checkId],
+    );
+    expect(after).toEqual(before);
+  });
+
+  it('answers not-calculated while Auto Calc has not finished', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie);
+    stubShedSafe({ autoCalc: false, windRegion: 'A5', message: { errorMessage: null } });
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/status`,
+      headers: { cookie },
+    });
+    const body = response.json().data as { calculated: boolean };
+    expect(body.calculated).toBe(false);
+  });
+
+  it('reports a failed Auto Calc once, so the panel can stop waiting', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie);
+    stubShedSafe({ autoCalc: false, message: { errorMessage: 'The site could not be calculated.' } });
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/status`,
+      headers: { cookie },
+    });
+    const body = response.json().data as { calculated: boolean; errorMessage: string | null };
+    expect(body.calculated).toBe(false);
+    // Named, so "waiting" and "it failed" are different sentences on screen.
+    expect(body.errorMessage).toMatch(/could not be calculated/i);
+  });
+
+  it('answers missing rather than an error for a pin that never reached ShedSafe', async () => {
+    /*
+     * The all-zero id is what a failed create used to store. It is not a transient failure — the
+     * screen's answer is "pin the site again", which is a different sentence from "ShedSafe is
+     * unreachable", so it is reported as `missing` and not as `errorMessage`.
+     */
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie);
+    await ctx.db.run('UPDATE site_checks SET building_id = ? WHERE id = ?', [
+      '00000000-0000-0000-0000-000000000000',
+      checkId,
+    ]);
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/status`,
+      headers: { cookie },
+    });
+    const body = response.json().data as { missing: boolean; calculated: boolean };
+    expect(body.missing).toBe(true);
+    expect(body.calculated).toBe(false);
+  });
+
+  it('refuses a check belonging to another company', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie);
+    stubShedSafe({ autoCalc: true });
+
+    const other = await seedCompany(ctx.db, {
+      name: 'Other Company',
+      slug: 'other-company',
+      code: 'OTHERCO',
+      username: 'u',
+      email: 'u@other.test',
+      password: 'a-long-enough-password',
+    });
+    const otherCookie = await signIn(ctx.app, other.code, other.username, 'a-long-enough-password');
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/status`,
+      headers: { cookie: otherCookie },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});

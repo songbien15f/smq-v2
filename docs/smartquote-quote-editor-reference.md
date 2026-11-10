@@ -2861,11 +2861,72 @@ mà người thật dùng.**
 
 ---
 
+## 13.25 Tự đồng bộ sau khi Auto Calc — không điều khiển được tab ShedSafe, nhưng **hỏi lại** được (2026-11-10)
+
+Vấn đề: `GO TO SITECHECK` mở tab mới, Auto Calc là thao tác của người dùng **bên đó**, nên sản phẩm
+không biết khi nào xong và không kiểm soát được gì.
+
+### Đo trước: không có API Auto Calc
+
+Dò 15 tên endpoint khả dĩ (`/autocalc`, `/auto-calc`, `/building/calculate`, `/building/process`,
+`/building/pinlocation`…): **tất cả 403**. Và 403 ở đây nghĩa là "route không tồn tại" —
+`/building/getsalesmanusers` → 200, thêm một chữ vào tên nó → 403. Licence server cũ cũng chỉ gọi 8
+endpoint, không có cái nào tính toán.
+
+**Nhưng `autoCalc` nằm trên cùng record mà `read()` đã đọc**, và nó lật ngay khi người dùng bấm xong.
+Một lần đọc: **1 361 bytes, ~300 ms**.
+
+### Cách làm: route nhẹ + polling 10 giây
+
+`GET /site-checks/:id/status` — **không ghi gì**, trả `{ configured, calculated, missing, errorMessage }`.
+Tách khỏi import vì import **ghi** (lưu số, ghi lỗi); poll import sẽ viết lại cùng dòng mỗi 10 giây và
+biến một lần mạng chập thành một lỗi được lưu.
+
+Client (`siteCheckState.tsx`):
+- **10 giây**, không phải 5. Operator chọn vậy: một lần đọc ~300 ms, 5 giây = 720 request/giờ cho một
+  panel mở — đúng kiểu traffic làm partner API rate-limit cả công ty.
+- **Không poll khi tab ẩn** — người dùng đang ở tab ShedSafe.
+- **Poll ngay khi tab hiện lại** (`visibilitychange`) — tín hiệu rẻ và chính xác nhất: họ vừa quay về
+  từ chỗ vừa làm xong.
+- **Dừng khi có lỗi từ ShedSafe** (`errorMessage`) — Auto Calc hỏng thì poll lại cũng nói vậy, và chờ
+  im lặng trông như đang chạy.
+
+### Lỗi tôi tự tạo, và nó chỉ lộ ra khi đo
+
+Lần đầu, khi poll thấy `calculated: true` tôi gọi `reload()`. **Không có gì xảy ra.**
+
+`reload()` đọc `GET /quotes/:id/site-check`, trả từ **cột** của `site_checks` — mà cột đó vẫn null cho
+tới khi **import** ghi vào. Nên: poll đúng `true` → `reload()` trả `false` từ DB của chính mình → panel
+tiếp tục nói "not Auto Calculated yet" và `watching` đứng mãi ở true.
+
+Đo trong trình duyệt: route status nói `true`, wind vẫn `—`, pill không đổi. Phải **import rồi mới
+reload** — import là bước chép số vào dòng, reload đọc thứ nó vừa ghi. Bỏ bước một thì bước hai vô nghĩa.
+
+### Đo được sau khi sửa
+
+| | |
+|---|---|
+| Trước pin | không có banner "Watching" |
+| Sau pin | *"Watching ShedSafe for Auto Calc — checking every 10 seconds. Nothing is saved until it finishes."* + nút **Stop watching** |
+| Bước 4 trong hướng dẫn | đổi thành *"Come back to this tab — the rating is picked up automatically."* |
+| Khi `autoCalc` lật (đo trên building thật `A5`) | **giây thứ 4**: `windRegion` `—` → **`A5`**, nhãn **"from the site check"**, banner chưa-tính biến mất, nút Stop biến mất |
+| Route status, check chưa có building | `missing: true`, không phải lỗi |
+| Route status, cross-company | **404** |
+
+### Vẫn không làm được, phải nói rõ
+
+- **Không tự bấm Auto Calc** — không có endpoint, và kể cả có thì đó là hành động thay mặt kỹ sư trên
+  hệ thống chứng nhận của họ.
+- **Không biết họ pin đúng toạ độ nào** — chỉ biết rating đã được tính.
+- **Không poll khi tab ta đóng** — nhưng mở lại thì panel đọc và thấy ngay.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
 | `@sq/core` | 1 016 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**) |
-| `@sq/api` | 288 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
+| `@sq/api` | 293 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
