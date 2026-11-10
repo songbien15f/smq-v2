@@ -2922,6 +2922,63 @@ reload** — import là bước chép số vào dòng, reload đọc thứ nó v
 
 ---
 
+## 13.26 Logo: SVG shield → file PNG/ICO thật (2026-11-10)
+
+Yêu cầu: *"icon đang xài svg, bạn replace thành Logo.ico"*, chọn phương án **C** (đổi cả ba chỗ).
+
+### Đo trước: file `Logo.ico` là logo **đã có trong repo**
+
+PNG 256×256 bên trong `Logo.ico` **giống byte-for-byte** với `apps/client/public/logo.png` (cả hai
+100.345 byte, `cmp` xác nhận). Không có logo mới — chỉ là cùng một hình ở hai định dạng.
+
+Giải mã `logo.png` (512×512, RGBA, tự viết bộ giải PNG vì không xem được ảnh):
+
+| | |
+|---|---|
+| Nền | **tấm trắng bo góc**, chiếm **41,9%** pixel |
+| Mark | đỏ `rgb(241,37,41)` ở giữa, viền đậm |
+| Trong suốt | chỉ **4,0%** — bốn góc bo |
+| Độ sáng trung bình | 171,1 / 255 |
+
+Điều đó quyết định cách đặt lên thanh navy: logo **tự mang tấm nền trắng**, nên nó hiện thành một ô
+sáng trên nền tối — đọc được, không cần asset thứ hai cho theme tối.
+
+### Ba chỗ, và mỗi chỗ cần một định dạng
+
+| Chỗ | Trước | Sau |
+|---|---|---|
+| favicon (`layout.tsx` × 3 app) | SVG data-URI **vẽ lại** shield | `/favicon.ico` — **8 kích thước** 32→256, browser tự chọn bản nét |
+| `apple-touch-icon` | không có | `/logo.png` 256×256 — iOS **bỏ qua `.ico`**, không có nó thì lưu vào home screen ra ô trắng |
+| `BrandMark` (4 component) | SVG shield | `<img src="/logo.png">` |
+
+### `tone` giữ lại nhưng đổi nghĩa
+
+Bitmap không đổi màu được, nên `tone` **không còn tô màu mark**. Nó quyết định **viền**: trên nền
+trắng, tấm nền nhạt của logo lẫn vào background nên `ink` thêm hairline `border-sq-line`; trên navy thì
+tấm trắng đã là viền. Giữ prop để bốn call site không phải sửa, và ghi rõ trong code để người sau không
+tưởng nó nhuộm ảnh.
+
+### Đo được trong trình duyệt (cả ba app)
+
+| | client | admin | site |
+|---|---|---|---|
+| `link[rel=icon]` | `/favicon.ico`, sizes `32x32 48x48 256x256` | ✓ | ✓ |
+| `link[rel=apple-touch-icon]` | `/logo.png` 256×256 | ✓ | ✓ |
+| logo render | **28×28** | 22×22 | 24×24 |
+| nguồn | `natural 512×512`, HTTP 200 `image/png` | ✓ | ✓ |
+| SVG mark còn lại | **0** | 0 | 0 |
+
+Tương phản trên thanh navy `rgb(7,24,50)`: logo có **44,2%** pixel gần trắng (độ sáng 255), tối nhất
+52 — tấm trắng nổi rõ trên navy, mark đỏ đọc được. Không cần đổi màu gì.
+
+### Vẫn để nguyên, có chủ ý
+
+`logo.png` ở 28 px từ nguồn 512 px là **thu nhỏ 18×**. Trình duyệt lấy mẫu tốt nên vẫn nét, nhưng một
+file 64 px riêng cho thanh bar sẽ còn sạch hơn. Không làm vì: `logo.png` đã dùng cho PDF tài liệu khách,
+và thêm một biến thể nữa là thêm một chỗ để hai bản lệch nhau.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|

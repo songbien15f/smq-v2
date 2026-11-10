@@ -1,90 +1,63 @@
 /**
- * The brand mark: a shield, drawn as geometry rather than shipped as a PNG.
+ * The brand mark: the company's own logo, shipped as an image.
  *
- * Two reasons it is inline SVG. It stays sharp at any size, and it costs no request
- * on a page whose first job is to appear quickly. The gradient ids are per-instance
- * via `useId` because two logos on one page with the same id share the first
- * gradient, and the second renders with the first's colours.
+ * ## Why this is no longer an SVG shield
  *
- * This component is intentionally server-safe (no hooks beyond `useId`, no state),
- * so both a React server component and a client component can render it.
+ * It used to be inline SVG — a shield drawn from paths, sharp at any size and free of a request. That
+ * was the right call while the product had no logo. It has one now (`public/logo.png`, the same
+ * artwork as the Windows icon), and a drawn approximation of a real logo is worse than the logo:
+ * two marks that almost match read as a mistake, and the one on the tab, the one in the app and the
+ * one on a customer's PDF have to be the same thing.
+ *
+ * ## What the artwork is, measured rather than assumed
+ *
+ * Decoding `logo.png` (512×512 RGBA) gives: a white rounded plate covering 41.9% of the pixels, a red
+ * mark at the centre (`rgb(241,37,41)`), a dark outline, and 4% transparency at the rounded corners.
+ * So the mark carries its own white plate and reads on a **navy** bar without a second asset — the
+ * plate becomes the tile, which is what an app icon looks like on a dark surface.
+ *
+ * ## Why `tone` still exists
+ *
+ * A raster cannot be recoloured, so `tone` no longer changes the artwork. It decides the *edge*: on a
+ * white page the logo's own pale plate disappears into the background, so `ink` adds a hairline
+ * border; on navy the plate is already the edge. Keeping the prop means the four call sites did not
+ * have to change, and it is documented here so nobody expects it to tint the image.
  */
-
-import { useId } from 'react';
 
 export interface BrandMarkProps {
   /** Pixel size of the square mark. Default 28. */
   size?: number;
-  /** `brand` draws light-on-navy; `ink` draws navy-on-light. */
+  /** `brand` sits on the navy bar; `ink` sits on a white page and needs a hairline to read. */
   tone?: 'brand' | 'ink';
   /** Accessible name. Pass an empty string when the mark sits next to the wordmark. */
   title?: string;
 }
 
+/**
+ * The logo file, at the path every app serves.
+ *
+ * Overridable through `NEXT_PUBLIC_LOGO_SRC` so a deployment can point at its own file — the same
+ * variable the document renderer reads through `LOGO_FILE`, which is why a customer's PDF and the
+ * app carry one image rather than two that drift. `NEXT_PUBLIC_` because Next inlines it at build
+ * time and a value that changed per request could not reach a client component.
+ */
+const DEFAULT_LOGO_SRC = '/logo.png';
+
 export function BrandMark({ size = 28, tone = 'ink', title = 'SmartQuote' }: BrandMarkProps) {
-  const uid = useId().replace(/:/g, '');
-  const goldId = `sq-gold-${uid}`;
-  const field = tone === 'brand' ? '#ffffff' : 'var(--color-sq-brand)';
-
-  /*
-   * The vendor's mark, when one is configured.
-   *
-   * A URL rather than a file path because this runs in three browsers and one server, and the
-   * document side already reads the same image from disk through `LOGO_FILE`. Unset means the
-   * environment has no logo, and the shield below is the fallback a person still recognises.
-   *
-   * `NEXT_PUBLIC_` so Next inlines it into the client bundle at build time; a value that changed
-   * per request could not reach a client component.
-   */
-  const logoSrc = process.env.NEXT_PUBLIC_LOGO_SRC;
-
-  if (logoSrc !== undefined && logoSrc.trim() !== '') {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- the size is a prop, not a layout, and
-      // this component must render outside Next too.
-      <img
-        src={logoSrc}
-        width={size}
-        height={size}
-        alt={title}
-        aria-hidden={title === '' || undefined}
-        className="object-contain"
-      />
-    );
-  }
+  const configured = process.env.NEXT_PUBLIC_LOGO_SRC;
+  const src = configured !== undefined && configured.trim() !== '' ? configured : DEFAULT_LOGO_SRC;
 
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element -- the size is a prop, not a layout, and this
+    // component must render outside Next too (the site app and tests both use it).
+    <img
+      src={src}
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      role={title === '' ? 'presentation' : 'img'}
-      aria-label={title === '' ? undefined : title}
+      alt={title}
       aria-hidden={title === '' || undefined}
-    >
-      <defs>
-        <linearGradient id={goldId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f9e0a4" />
-          <stop offset="100%" stopColor="#b9902f" />
-        </linearGradient>
-      </defs>
-      {/* The shield: a rounded square with a pointed base — a roof and a wall. */}
-      <path
-        d="M16 2.5 28 7v9.5c0 6.2-4.6 11-12 13-7.4-2-12-6.8-12-13V7L16 2.5Z"
-        fill={field}
-      />
-      {/* The roof line, in gold: the one element that reads as a building at 16px. */}
-      <path
-        d="M9.5 13 16 9.2 22.5 13"
-        stroke={`url(#${goldId})`}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <path d="M11 17.5h10" stroke={`url(#${goldId})`} strokeWidth="1.75" strokeLinecap="round" />
-      <path d="M11 21.5h6" stroke={`url(#${goldId})`} strokeWidth="1.75" strokeLinecap="round" />
-    </svg>
+      className={tone === 'ink' ? 'rounded-sq-sm border border-sq-line object-contain' : 'rounded-sq-sm object-contain'}
+    />
   );
 }
 
