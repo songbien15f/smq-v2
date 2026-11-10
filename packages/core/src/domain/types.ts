@@ -369,8 +369,25 @@ export interface ShedConfig {
   terrainCategory: TerrainCategory;
   /** Wind shielding multiplier: 1.0 down to 0.8. */
   shieldingFactor: number;
-  /** BCA importance level: 1 (normal) or 2. */
-  importanceLevel: 1 | 2;
+  /**
+   * BCA importance level: 1 normal, 2 high consequence, 3, 4.
+   *
+   * ## Why all four, when the price book only lists two
+   *
+   * Because **ShedSafe certifies against all four**, and this product's job is to record the rating
+   * it was given. The type was `1 | 2`, and the store's normaliser is a `catch` chain — so a
+   * certificate reading 3 was stored as **1**, silently, and the quote then printed
+   * "Importance level 1" against a certificate that says 3. Measured 2026-11-10:
+   * `normaliseShedConfig({ importanceLevel: 3 }).importanceLevel === 1`.
+   *
+   * Widening the type does not invent a price for levels 3 and 4: the shipped book has no
+   * `view_system_lookup_data` rows for them (measured: 1 077 rows at level 1, 1 675 at level 2, none
+   * above). It makes the **mismatch visible** instead of a wrong number — `frameSchedule` finds no
+   * row, the frame falls back to one assumed section, and the BOM carries an assumption saying so.
+   * That is the honest failure: a quote that says it could not price the building, rather than one
+   * that prices a level-3 building as if it were level 1.
+   */
+  importanceLevel: ImportanceLevel;
   /** Topographic multiplier; 1.0 for flat ground. */
   topographyFactor: number;
   /** State the site is in, which selects the price margin. */
@@ -408,6 +425,14 @@ export type WindRegion = 'A' | 'B' | 'C' | 'D';
 
 /** Terrain categories used for Australian shed design. */
 export type TerrainCategory = 2 | 2.5 | 3;
+
+/**
+ * BCA importance levels 1 to 4.
+ *
+ * Four values because ShedSafe certifies against four. The price book happens to list only 1 and 2,
+ * and that is a **book** fact, not a limit on what a quote may record — see `ShedConfig.importanceLevel`.
+ */
+export type ImportanceLevel = 1 | 2 | 3 | 4;
 
 /** The eight Australian states and territories, as the price book spells them. */
 export type StateCode = 'ACT' | 'NSW' | 'NT' | 'QLD' | 'SA' | 'TAS' | 'VIC' | 'WA';

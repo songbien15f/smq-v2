@@ -89,13 +89,24 @@ export const DEFAULT_SHED: ShedConfig = {
   charges: [],
   internalPressure: 'closed',
   // Site conditions default to the mildest common Australian case: wind region A,
-  // suburban terrain, no shielding, normal importance, flat ground. A real quote
-  // must set these from the site; the defaults exist so a new shed can be drawn
-  // before anyone has looked at a map.
+  // suburban terrain, no shielding, flat ground. A real quote must set these from
+  // the site; the defaults exist so a new shed can be drawn before anyone has
+  // looked at a map.
   windRegion: 'A',
   terrainCategory: 2.5,
   shieldingFactor: 1,
-  importanceLevel: 1,
+  /*
+   * Importance level 2 — the desktop's default, and this API's own default.
+   *
+   * It was 1 here while `pinRequest` defaulted to 2 and the desktop's panel initialises to 2, so the
+   * same quote could be **pinned at level 2 and then priced at level 1**: the pin recorded one number
+   * and the frame table was read at another. Two of three places said 2; the odd one out was the one
+   * that writes the stored config.
+   *
+   * The real value is the certificate's, not this file's. A default only decides what a brand-new
+   * shed starts from, before anyone has run a site check.
+   */
+  importanceLevel: 2,
   topographyFactor: 1,
   stateCode: 'QLD',
   wallProfile: 'Corro',

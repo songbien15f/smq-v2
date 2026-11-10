@@ -285,3 +285,90 @@ describe('importing a site check', () => {
     expect(check.site).not.toHaveProperty('provisional');
   });
 });
+
+/**
+ * The building ShedSafe was asked to rate, kept on the check.
+ *
+ * ## The defect these exist for
+ *
+ * A rating is about **a building** — `map_pin` sends a span, a height, a length and an importance
+ * level, and ShedSafe rates that. Nothing recorded them, so after an import the screen knew only that
+ * a rating existed. An operator who then widened the shed from 12 m to 15 m kept a green "Rating
+ * imported" beside a building nobody had rated. Measured 2026-11-10: neither the API nor the panel
+ * compared the two.
+ *
+ * The desktop never recorded this either — its "GET SITECHECK REPORT" was equally blind — so this is a
+ * deliberate difference, which is why it is also written into `KNOWN-DEVIATIONS.md`.
+ */
+describe('what the building was when it was pinned', () => {
+  it('lưu span, height, length và importance level lúc pin', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie, {
+      spanMm: 15000,
+      heightMm: 4800,
+      lengthMm: 30000,
+      importanceLevel: 3,
+    });
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/site-checks/${checkId}/import`,
+      headers: { cookie },
+    });
+    // GET on the import path is not a route; read the row through the pin answer instead.
+    expect([404, 405]).toContain(response.statusCode);
+
+    const row = await ctx.db.get<{ detail_json: string | null }>(
+      'SELECT detail_json FROM site_checks WHERE id = ?',
+      [checkId],
+    );
+    const detail = JSON.parse(row?.detail_json ?? '{}') as {
+      pinnedFor?: { spanMm: number; heightMm: number; lengthMm: number; importanceLevel: number };
+    };
+    expect(detail.pinnedFor).toEqual({
+      spanMm: 15000,
+      heightMm: 4800,
+      lengthMm: 30000,
+      importanceLevel: 3,
+    });
+  });
+
+  it('đọc lại pinnedFor qua response của check', async () => {
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie, { spanMm: 9000, heightMm: 3600, lengthMm: 18000 });
+
+    // The import route is what a screen calls; it returns the check even when not calculated.
+    stubShedSafe({ autoCalc: false, windRegion: 'A' });
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/site-checks/${checkId}/import`,
+      headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const check = response.json().data.check as {
+      pinnedFor: { spanMm: number; heightMm: number; lengthMm: number; importanceLevel: number } | null;
+    };
+    expect(check.pinnedFor).not.toBeNull();
+    expect(check.pinnedFor?.spanMm).toBe(9000);
+    expect(check.pinnedFor?.importanceLevel).toBe(2);
+  });
+
+  it('importance level 3 sống sót qua pin — không bị hạ về 1', async () => {
+    /*
+     * The route's own schema allows 1..4, but the *stored config* used to narrow it. This proves the
+     * wire and the row both carry 3, so the regression cannot come back through the API.
+     */
+    const { ctx, cookie } = await signedIn();
+    const checkId = await pinned(ctx, cookie, { importanceLevel: 3 });
+
+    const row = await ctx.db.get<{ detail_json: string | null }>(
+      'SELECT detail_json FROM site_checks WHERE id = ?',
+      [checkId],
+    );
+    const detail = JSON.parse(row?.detail_json ?? '{}') as {
+      pinnedFor?: { importanceLevel: number };
+    };
+    expect(detail.pinnedFor?.importanceLevel).toBe(3);
+  });
+});

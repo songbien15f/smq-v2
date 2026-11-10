@@ -178,6 +178,25 @@ function toView(row: SiteCheckRow) {
           },
     /** Who asked for the check, as recorded at pin time. */
     salesman: typeof detail?.salesman === 'string' ? detail.salesman : null,
+    /**
+     * What the building was when ShedSafe was asked to rate it.
+     *
+     * Stored at pin time because the rating is **about a building**, and a shed whose span grew from
+     * 12 m to 15 m after the pin is no longer the building the certificate describes. Without this the
+     * panel shows a green "Rating imported" beside a building nobody rated.
+     *
+     * `null` for a check pinned before this was recorded — "unknown" is not "matches", and the panel
+     * says so rather than claiming agreement it cannot prove.
+     */
+    pinnedFor:
+      detail !== null && typeof detail.pinnedFor === 'object' && detail.pinnedFor !== null
+        ? (detail.pinnedFor as {
+            spanMm: number | null;
+            heightMm: number | null;
+            lengthMm: number | null;
+            importanceLevel: number | null;
+          })
+        : null,
   };
 }
 
@@ -186,6 +205,34 @@ function newReference(): string {
   const at = new Date();
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `SC-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
+}
+
+/**
+ * What was sent to ShedSafe, kept on the check.
+ *
+ * The rating is about **a building**, not a site: `map_pin` is called with a span, a height, a length
+ * and an importance level, and ShedSafe rates that building. If the operator then widens the shed from
+ * 12 m to 15 m, the certificate still describes a 12 m shed — and the panel, knowing only that a
+ * rating exists, would show it as green and current.
+ *
+ * The desktop never recorded this, so its "GET SITECHECK REPORT" was equally blind; this is a
+ * deliberate difference, recorded in `KNOWN-DEVIATIONS.md`.
+ *
+ * Millimetres, because that is what the editor holds and what a person recognises. Newtons and metres
+ * appear only at the wire boundary.
+ */
+function pinnedFor(body: {
+  spanMm: number;
+  heightMm: number;
+  lengthMm: number;
+  importanceLevel: number;
+}): Record<string, number> {
+  return {
+    spanMm: body.spanMm,
+    heightMm: body.heightMm,
+    lengthMm: body.lengthMm,
+    importanceLevel: body.importanceLevel,
+  };
 }
 
 /**
@@ -452,6 +499,9 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
       // Who asked for the check, kept beside the site's readings. Not a table: the licence server's
       // 72-column `Salesman` existed to manage buildings by franchise, and a quoting product has no
       // franchise to manage. A name on the check is what a support call asks for.
+      //
+      // `pinnedFor` travels with it: the four numbers ShedSafe was asked to rate. Merged into any
+      // existing detail so a re-pin cannot erase the readings a previous import stored.
       const salesperson = body.salesman === '' ? null : body.salesman;
       if (existing === null) {
         await db.run(
@@ -463,18 +513,39 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
             pinned.buildingId,
             reference,
             pinned.siteLink,
-            salesperson === null ? null : JSON.stringify({ salesman: salesperson }),
+            JSON.stringify({ ...(salesperson === null ? {} : { salesman: salesperson }), pinnedFor: pinnedFor(body) }),
             at,
             at,
           ],
         );
       } else {
-        // A retry updates the same row, so the quote keeps pointing at one check rather than
-        // collecting one per attempt.
+        /*
+         * A retry updates the same row, so the quote keeps pointing at one check rather than
+         * collecting one per attempt.
+         *
+         * `detail_json` is **merged**, not replaced. It holds the salesman and any readings a
+         * previous import stored, and writing a fresh object here would delete them — a re-pin is
+         * usually "I changed the span, rate it again", which is exactly when the old readings are
+         * worth keeping until the new import overwrites them deliberately.
+         */
+        const priorDetail = await db.get<{ detail_json: string | null }>(
+          'SELECT detail_json FROM site_checks WHERE id = ?',
+          [checkId],
+        );
+        const merged: Record<string, unknown> =
+          priorDetail?.detail_json == null
+            ? {}
+            : (JSON.parse(priorDetail.detail_json) as Record<string, unknown>);
         await db.run(
-          `UPDATE site_checks SET building_id = ?, site_link = ?, status = 'pinned', last_error = NULL, updated_at = ?
+          `UPDATE site_checks SET building_id = ?, site_link = ?, status = 'pinned', last_error = NULL, detail_json = ?, updated_at = ?
             WHERE id = ?`,
-          [pinned.buildingId, pinned.siteLink, at, checkId],
+          [
+            pinned.buildingId,
+            pinned.siteLink,
+            JSON.stringify({ ...merged, ...(salesperson === null ? {} : { salesman: salesperson }), pinnedFor: pinnedFor(body) }),
+            at,
+            checkId,
+          ],
         );
       }
 
@@ -606,16 +677,31 @@ export function registerShedSafe(app: FastifyInstance, db: Db): void {
             pinned.buildingId,
             reference,
             pinned.siteLink,
-            salesperson === null ? null : JSON.stringify({ salesman: salesperson }),
+            JSON.stringify({ ...(salesperson === null ? {} : { salesman: salesperson }), pinnedFor: pinnedFor(body) }),
             at,
             at,
           ],
         );
       } else {
+        // Merged, not replaced: a re-pin must not delete the readings a previous import stored.
+        const priorDetail = await db.get<{ detail_json: string | null }>(
+          'SELECT detail_json FROM site_checks WHERE id = ?',
+          [checkId],
+        );
+        const merged: Record<string, unknown> =
+          priorDetail?.detail_json == null
+            ? {}
+            : (JSON.parse(priorDetail.detail_json) as Record<string, unknown>);
         await db.run(
-          `UPDATE site_checks SET building_id = ?, site_link = ?, status = 'pinned', last_error = NULL, updated_at = ?
+          `UPDATE site_checks SET building_id = ?, site_link = ?, status = 'pinned', last_error = NULL, detail_json = ?, updated_at = ?
             WHERE id = ?`,
-          [pinned.buildingId, pinned.siteLink, at, checkId],
+          [
+            pinned.buildingId,
+            pinned.siteLink,
+            JSON.stringify({ ...merged, ...(salesperson === null ? {} : { salesman: salesperson }), pinnedFor: pinnedFor(body) }),
+            at,
+            checkId,
+          ],
         );
       }
 

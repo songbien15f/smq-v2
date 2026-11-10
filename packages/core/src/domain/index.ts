@@ -12,6 +12,7 @@ export * from "./placement";
 export * from "./placementRules";
 export * from "./plan";
 export * from "./presets";
+export * from "./roof";
 export * from "./schema";
 export * from "./selection";
 export * from "./skylightSnap";

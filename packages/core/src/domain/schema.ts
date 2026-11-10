@@ -123,6 +123,16 @@ const pitchSchema = z.coerce.number().finite().min(0).max(45);
  */
 const windRegionSchema = z.enum(['A', 'B', 'C', 'D']);
 const terrainCategorySchema = z.union([z.literal(2), z.literal(2.5), z.literal(3)]);
+/**
+ * BCA importance level, 1 to 4.
+ *
+ * Four, not two. ShedSafe certifies against all four, and the narrower union was not a validation
+ * rule — it was a **silent downgrade**: the tolerant schema's `.catch()` turned a certificate's
+ * level 3 into level 1, so the quote printed "Importance level 1" against a level-3 certificate.
+ * Measured 2026-11-10. The price book lists only 1 and 2; that is reported as an assumption when it
+ * causes a lookup to miss, which is visible — a wrong number is not.
+ */
+const importanceLevelSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 const stateCodeSchema = z.enum(['QLD', 'NSW', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT']);
 const factorSchema = z.coerce.number().finite().positive();
 
@@ -519,7 +529,7 @@ export const shedConfigSchema = z.object({
   windRegion: windRegionSchema,
   terrainCategory: terrainCategorySchema,
   shieldingFactor: factorSchema,
-  importanceLevel: z.union([z.literal(1), z.literal(2)]),
+  importanceLevel: importanceLevelSchema,
   topographyFactor: factorSchema,
   stateCode: stateCodeSchema,
   wallProfile: z.string(),
@@ -571,7 +581,7 @@ const tolerantShedConfigSchema = z.object({
   windRegion: windRegionSchema.catch(DEFAULT_SHED.windRegion),
   terrainCategory: terrainCategorySchema.catch(DEFAULT_SHED.terrainCategory),
   shieldingFactor: factorSchema.catch(DEFAULT_SHED.shieldingFactor),
-  importanceLevel: z.union([z.literal(1), z.literal(2)]).catch(DEFAULT_SHED.importanceLevel),
+  importanceLevel: importanceLevelSchema.catch(DEFAULT_SHED.importanceLevel),
   topographyFactor: factorSchema.catch(DEFAULT_SHED.topographyFactor),
   stateCode: stateCodeSchema.catch(DEFAULT_SHED.stateCode),
   wallProfile: z.string().catch(DEFAULT_SHED.wallProfile),

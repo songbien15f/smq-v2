@@ -21,6 +21,7 @@
 
 import { useId, useState } from 'react';
 import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
+import { averageHeightMm, ridgeHeightMm, formatDimension } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
@@ -400,7 +401,19 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
               value={site.deliveryScope}
               options={deliveryScopes.map((scope) => ({ value: scope.name, label: scope.name }))}
               onChange={(value) => {
-                setSite({ deliveryScope: value });
+                /*
+                 * Changing the scope un-ticks the acknowledgement.
+                 *
+                 * The desktop does exactly this (`Events.cs:573-582`), and the reason is that the tick
+                 * is not a property of the quote — it is a statement about **one specific set of
+                 * delivery terms**. Leaving it ticked across a scope change records an acknowledgement
+                 * of terms the customer never saw, which is the opposite of what a delivery-dispute
+                 * record is for. Only reset when the value actually moves: re-selecting the same scope
+                 * is not a new set of terms.
+                 */
+                if (value !== site.deliveryScope) {
+                  setSite({ deliveryScope: value, deliveryAcknowledged: false });
+                }
                 chooseDeliveryScope(value);
               }}
               hint="From this company's price book."
@@ -460,7 +473,7 @@ export function QuoteDetailsPanel({ issuesByPath, unit, onUnitChange }: QuoteDet
         </label>
       </Group>
 
-      <DesignGroup issuesByPath={issuesByPath} />
+      <DesignGroup issuesByPath={issuesByPath} catalogue={catalogue} />
       <ShedGroup
         issuesByPath={issuesByPath}
         unit={unit}
@@ -499,15 +512,43 @@ const TERRAIN: { value: string; label: string }[] = [
 
 const STATES: string[] = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
 
+/**
+ * BCA importance levels, all four, with the meaning a person is choosing between.
+ *
+ * Not read from the price book on purpose. The book lists only the levels it has frame tables for
+ * (today 1 and 2), but the **certificate** may say 3 or 4 — and an importance level that quietly
+ * becomes 1 is the defect this list exists to prevent. The book's own list is used separately, to
+ * say when it cannot price the level that was chosen.
+ */
 const IMPORTANCE: { value: string; label: string }[] = [
   { value: '1', label: '1 — normal' },
   { value: '2', label: '2 — high consequence' },
+  { value: '3', label: '3 — substantial' },
+  { value: '4', label: '4 — exceptional' },
 ];
 
-function DesignGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }) {
+function DesignGroup({
+  issuesByPath,
+  catalogue,
+}: {
+  issuesByPath: Map<string, DraftIssue>;
+  catalogue: Catalogue | null;
+}) {
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
+
+  /*
+   * Whether this book lists the chosen importance level at all.
+   *
+   * Read from the catalogue the app already loaded, so the answer is about **this company's book**
+   * rather than a constant. An empty list means the book never shipped the table, and then saying
+   * nothing is right: the frame path reports its own assumption.
+   */
+  const bookLevels = catalogue?.importanceLevels ?? [];
+  const bookCannotPrice =
+    bookLevels.length > 0 &&
+    !bookLevels.some((level) => Number(level.value) === config.importanceLevel);
 
   const options = config.options;
   const hasGable = (end: 'front' | 'back'): boolean =>
@@ -589,13 +630,29 @@ function DesignGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
       </div>
 
       <div className="grid grid-cols-2 gap-sq-2">
-        <SelectField
-          id="design-importanceLevel"
-          label="Importance level"
-          value={String(config.importanceLevel)}
-          options={IMPORTANCE}
-          onChange={(value) => applyPartial({ importanceLevel: Number(value) as never })}
-        />
+        <div className="flex flex-col gap-sq-1">
+          <SelectField
+            id="design-importanceLevel"
+            label="Importance level"
+            value={String(config.importanceLevel)}
+            options={IMPORTANCE}
+            onChange={(value) => applyPartial({ importanceLevel: Number(value) as never })}
+          />
+          {/*
+            The book is consulted, not the certificate. When it has no frame table for the chosen
+            level, the frame is priced from one assumed section — `frameSchedule` misses, the fallback
+            runs, and the BOM carries an `ASSUMED` line saying so. Saying it here as well is not
+            duplication: the BOM warning appears two steps later, and a person choosing level 3 needs
+            to know *while choosing* that this book cannot price it.
+          */}
+          {bookCannotPrice && (
+            <p className="text-sq-micro text-sq-attention">
+              This price book has no frame table for level {config.importanceLevel}. The frame will be
+              priced from one assumed section — the certificate is what matters, so keep the level it
+              states and read the assumption on the BOM.
+            </p>
+          )}
+        </div>
         <SelectField
           id="design-stateCode"
           label="State"
@@ -741,6 +798,16 @@ function ShedGroup({
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
 
   const perBay = config.bays > 0 ? config.length / config.bays : 0;
+
+  /*
+   * The heights a person has to state on a council application and a delivery quote.
+   *
+   * Computed from the same three inputs the drawing uses, by a pure function in core so the number is
+   * testable without a browser. `null` means the roof cannot be described yet — a zero pitch is a flat
+   * roof, and reporting the wall height as an "average" would be a number nobody measured.
+   */
+  const averageHeight = averageHeightMm(config);
+  const ridgeHeight = ridgeHeightMm(config);
 
   /**
    * Apply a dimension change, asking first when it invalidates placed options.
@@ -1004,6 +1071,34 @@ function ShedGroup({
           <span className="text-sq-micro text-sq-danger">{errorAt('shed-roofPitchDeg')}</span>
         )}
       </label>
+
+      {/*
+        The two heights a person has to state elsewhere: on a council application and on a delivery
+        quote. Both are **read-only** because neither is a decision — they follow from the span, the
+        wall height and the pitch, and typing over one would describe a roof the drawing does not show.
+
+        The desktop shows only the average, in its Building Parameters panel
+        (`UcShowBuildingParameterss.cs:786-841`). The ridge is here as well because an average beside a
+        pitch slider is not self-explanatory: "average 4 404" does not tell anyone the peak is 5 208,
+        and the peak is what hits a car on a truck. The average is the number the certificate wants;
+        both are labelled with which is which.
+      */}
+      <dl className="grid grid-cols-2 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
+        <div className="flex flex-col">
+          <dt className="text-sq-micro text-sq-ink-muted">Average height</dt>
+          <dd id="shed-averageHeight" className="sq-numeric text-sq-body text-sq-ink">
+            {averageHeight === null ? '—' : `${formatDimension(averageHeight, unit)} ${unit}`}
+          </dd>
+        </div>
+        <div className="flex flex-col">
+          <dt className="text-sq-micro text-sq-ink-muted">
+            Ridge {config.structureType === 'skillion' ? '(high side)' : 'height'}
+          </dt>
+          <dd className="sq-numeric text-sq-body text-sq-ink">
+            {ridgeHeight === null ? '—' : `${formatDimension(ridgeHeight, unit)} ${unit}`}
+          </dd>
+        </div>
+      </dl>
     </Group>
   );
 }

@@ -78,6 +78,22 @@ interface SiteCheck {
     rainfallIntensity20Years: number | null;
     rainfallIntensityTown: string | null;
   } | null;
+  /**
+   * What the building was when ShedSafe was asked to rate it.
+   *
+   * The rating is about a **building**, not a site. A shed widened from 12 m to 15 m after the pin is
+   * not the shed the certificate describes, and `calculated` alone cannot say so — it only knows that
+   * a rating exists.
+   *
+   * `null` for a check pinned before this was recorded. Unknown is not "matches": the panel says it
+   * cannot tell, rather than showing green agreement it has not verified.
+   */
+  pinnedFor: {
+    spanMm: number | null;
+    heightMm: number | null;
+    lengthMm: number | null;
+    importanceLevel: number | null;
+  } | null;
 }
 
 export interface SiteCheckPanelProps {
@@ -166,23 +182,53 @@ export function SiteCheckPanel({
     void load();
   }, [load]);
 
+  /**
+   * Everything ShedSafe needs before it will create a building, named in this screen's own words.
+   *
+   * ## The five fields, and why the button is gated on all of them
+   *
+   * The desktop's PIN button requires First Name, Last Name, Email, Customer Address **and** Site
+   * Address (`QuoteDetailsView.Events.cs:2157`, `ValidateMapButtonRequiredFields`). Its own comment on
+   * the wider list is the reason: ShedSafe's refusal names a **wire field** ("The SuburbName field is
+   * required"), which is a sentence about JSON, not about the form in front of the operator.
+   *
+   * Two of those five are measured rather than copied: ShedSafe answers an empty `Salesman` with
+   * *"The Salesman field is required"* and an empty `SuburbName` with *"The SuburbName field is
+   * required"* — measured against the live API on 2026-11-06.
+   *
+   * ## Deliberately different from the desktop
+   *
+   * The desktop has two lists that disagree: the button's enable check falls back to a legacy
+   * `SiteAddressItem`, while the click handler does not — so a button can look ready, be pressed, and
+   * be refused (§4.3 of the trace). Here there is **one** list, used by both the gate and the click,
+   * so "enabled" and "will work" cannot drift apart.
+   */
+  const missingForPin = ((): string[] => {
+    const missing: string[] = [];
+    if (client.firstName.trim() === '') missing.push('the customer’s first name');
+    if (client.lastName.trim() === '') missing.push('the customer’s last name');
+    if (client.email.trim() === '') missing.push('the customer’s email');
+    if (site.address.trim() === '') missing.push('the site address');
+    if (site.suburb.trim() === '') missing.push('the site suburb');
+    if (salesman.trim() === '') missing.push('who is doing the check');
+    return missing;
+  })();
+
   const pin = async (): Promise<void> => {
     /*
-     * What ShedSafe will refuse, refused here first.
+     * The same list the button is gated on, reported all at once.
      *
-     * Both requirements were measured against the live API on 2026-11-06 rather than assumed: it
-     * answers an empty salesperson with *"The Salesman field is required"* and an empty suburb with
-     * *"The SuburbName field is required"*. Those sentences name wire fields, and the second names
-     * one that does not appear on this screen at all — so the check happens before the call, in the
-     * form's own words.
+     * The desktop gathers its errors and shows one message; this keeps that. Naming one missing field
+     * at a time turns a two-minute setup into a guessing game, because the operator fixes what it says
+     * and is told about the next one.
      */
-    const missing: string[] = [];
-    if (salesman.trim() === '') missing.push('who is doing the check');
-    if (site.suburb.trim() === '') missing.push('the site suburb');
-    if (missing.length > 0) {
+    if (missingForPin.length > 0) {
       setMessage({
         tone: 'danger',
-        text: `ShedSafe needs ${missing.join(' and ')}. Fill it in above, then pin the site again.`,
+        text:
+          missingForPin.length === 1
+            ? `ShedSafe needs ${missingForPin[0]}. Fill it in above, then pin the site.`
+            : `ShedSafe needs ${missingForPin.slice(0, -1).join(', ')} and ${missingForPin[missingForPin.length - 1]}. Fill them in above, then pin the site.`,
       });
       return;
     }
@@ -285,7 +331,47 @@ export function SiteCheckPanel({
     }
   };
 
-  const stale = check !== null && check.status === 'failed';
+  const failed = check !== null && check.status === 'failed';
+
+  /*
+   * Whether the building has changed since ShedSafe rated it.
+   *
+   * ## Why this is not `check.calculated`
+   *
+   * `calculated` answers "did ShedSafe issue a rating", and it stays true forever once it does. The
+   * separate question is "is that rating still about **this** building" — and a shed widened from
+   * 12 m to 15 m after the pin keeps its green "Rating imported" while describing a different
+   * building. Measured 2026-11-10: nothing in the panel or the API compared the two.
+   *
+   * A certificate is for a specific span, height, length and importance level. Getting those from
+   * ShedSafe and then letting them drift is the same class of error as pricing from a raw
+   * `topographicFactor` — the number looks certified and is not.
+   *
+   * `null` (a check pinned before this was recorded) is **not** reported as stale: it would be a
+   * claim the data cannot support. It is reported as unverified, and the sentence says so.
+   */
+  const pinned = check?.pinnedFor ?? null;
+  const drift =
+    check !== null && check.calculated && pinned !== null
+      ? [
+          pinned.spanMm !== null && pinned.spanMm !== spanMm
+            ? `span ${pinned.spanMm} → ${spanMm} mm`
+            : null,
+          pinned.heightMm !== null && pinned.heightMm !== heightMm
+            ? `wall height ${pinned.heightMm} → ${heightMm} mm`
+            : null,
+          pinned.lengthMm !== null && pinned.lengthMm !== lengthMm
+            ? `length ${pinned.lengthMm} → ${lengthMm} mm`
+            : null,
+          pinned.importanceLevel !== null && pinned.importanceLevel !== importanceLevel
+            ? `importance level ${pinned.importanceLevel} → ${importanceLevel}`
+            : null,
+        ].filter((entry): entry is string => entry !== null)
+      : [];
+
+  const ratingStale = drift.length > 0;
+  /** A rating exists and nothing recorded what it was for — so nothing can vouch for it. */
+  const ratingUnverified = check !== null && check.calculated && pinned === null;
 
   return (
     <Panel
@@ -302,14 +388,31 @@ export function SiteCheckPanel({
 
         {check !== null && (
           <div className="flex flex-wrap items-center gap-sq-2">
+            {/*
+              Four states, in descending order of "can this be trusted":
+
+                failed      the last attempt errored
+                stale       a rating exists but describes a different building
+                unverified  a rating exists and nothing recorded what it was for
+                ok          a rating exists and matches this building
+
+              `check.calculated` alone is not enough for the first two: it stays true once ShedSafe
+              has issued a rating, whether or not the building has since changed underneath it.
+            */}
             <StatusPill
-              tone={check.calculated ? 'ok' : stale ? 'danger' : 'attention'}
+              tone={
+                failed ? 'danger' : ratingStale ? 'danger' : ratingUnverified ? 'attention' : check.calculated ? 'ok' : 'attention'
+              }
               label={
-                check.calculated
-                  ? 'Rating imported'
-                  : stale
-                    ? 'Last attempt failed'
-                    : 'Pinned — not Auto Calculated yet'
+                failed
+                  ? 'Last attempt failed'
+                  : ratingStale
+                    ? 'Rating is for a different building'
+                    : ratingUnverified
+                      ? 'Rating imported — building not recorded'
+                      : check.calculated
+                        ? 'Rating imported'
+                        : 'Pinned — not Auto Calculated yet'
               }
             />
             <span className="text-sq-micro text-sq-ink-muted">Reference {check.reference}</span>
@@ -324,6 +427,51 @@ export function SiteCheckPanel({
               </a>
             )}
           </div>
+        )}
+
+        {/*
+          The warning for a rating that no longer describes this building.
+
+          `role="alert"`, unlike the not-calculated banner: this appears while the operator is
+          editing, not as the result of pressing a button here, so it must interrupt. The list of
+          what moved is the whole message — "the rating is out of date" sends a person hunting,
+          "span 12 000 → 15 000 mm" tells them what to change back or what to re-rate.
+        */}
+        {ratingStale && (
+          <div role="alert" className="rounded-lg border border-sq-danger/40 bg-sq-danger/5 p-sq-3">
+            <p className="text-sq-body font-semibold text-sq-danger">
+              The rating is for a different building
+            </p>
+            <p className="mt-sq-1 text-sq-body text-sq-ink">
+              ShedSafe rated this site when the building was:
+            </p>
+            <ul className="mt-sq-1 flex list-disc flex-col gap-0.5 pl-sq-4 text-sq-body text-sq-ink">
+              {drift.map((entry) => (
+                <li key={entry} className="sq-numeric">
+                  {entry}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-sq-2 text-sq-body text-sq-ink">
+              The six values below are still the certificate&apos;s, and they are still applied — but
+              they were issued for the old size. Pin again and re-run Auto Calc, or change the building
+              back.
+            </p>
+          </div>
+        )}
+
+        {/*
+          A rating with no record of what it was for.
+
+          Not an error: the check was pinned before this product started recording the parameters, and
+          the rating may well be correct. What it cannot be is **verified**, and saying "Rating
+          imported" in green would be a claim nothing on this screen supports.
+        */}
+        {ratingUnverified && (
+          <p role="status" className="text-sq-body text-sq-ink-muted">
+            This rating was imported before the building&apos;s dimensions were recorded on the check,
+            so it cannot be confirmed against the building as it is now. Pin again to be certain.
+          </p>
         )}
 
         {/*
@@ -519,19 +667,24 @@ export function SiteCheckPanel({
               />
             </label>
             {/*
-              Disabled while empty, with the reason beside it. ShedSafe refuses an empty salesman, so
-              a working button here would only produce a rejection in somebody else's words.
+              Gated on the same list the click handler checks, so "enabled" and "will work" are the
+              same fact. The desktop had two lists that disagreed — a button could look ready, be
+              pressed, and be refused (trace §4.3).
+
+              The button is **not** disabled with no explanation. When something is missing the reason
+              is written beside it, naming every missing field, because a grey button that does not
+              say why sends the operator hunting through a form that is 5 800 px tall.
             */}
             <Button
               loading={busy === 'pinning'}
-              disabled={salesman.trim() === ''}
+              disabled={missingForPin.length > 0}
               onClick={() => void pin()}
             >
               {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
             </Button>
-            {salesman.trim() === '' && (
-              <span className="text-sq-micro text-sq-attention">
-                ShedSafe requires a salesperson name.
+            {missingForPin.length > 0 && (
+              <span className="max-w-[22rem] text-sq-micro text-sq-attention">
+                Before pinning, fill in {missingForPin.join(', ')}.
               </span>
             )}
             {check !== null && (

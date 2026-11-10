@@ -2475,15 +2475,104 @@ Bài học: khi một test đỏ ngay sau khi sửa hạ tầng, **kiểm tiến
 
 ---
 
+## 13.21 Step 1 theo đặc tả desktop — bốn lỗi thật (2026-11-10)
+
+Đọc `docs/smartquote-analysis/2026-11-10-step1-quote-details-sitecheck-workflow.md` (đặc tả trace từ
+source desktop) rồi đối chiếu với v2. Bốn lỗi **đo được**, không phải suy đoán.
+
+### Lỗi 1 — Importance Level 3 và 4 bị **hạ âm thầm về 1**
+
+```
+normaliseShedConfig({ importanceLevel: 3 }).importanceLevel  →  1
+```
+
+Nguyên nhân: `importanceLevel` khai `1 | 2` ở **cả** schema strict và schema tolerant, và schema
+tolerant sửa giá trị sai bằng `.catch(DEFAULT)`. ShedSafe chứng nhận **cả bốn** mức, nên một chứng chỉ
+ghi 3 bị lưu thành 1 — và báo giá in **"Importance level 1"** cạnh chứng chỉ ghi 3.
+
+Đây là loại lỗi tệ hơn "không hỗ trợ": `.catch()` không báo lỗi, không cảnh báo, và con số sai trông
+hoàn toàn hợp lệ. Cùng họ với việc đọc `topographicFactor` thô — một con số trông đã được chứng nhận.
+
+Sửa: `ImportanceLevel = 1 | 2 | 3 | 4`, dùng chung một schema cho cả hai đường.
+
+**Sách giá không có bảng cho 3 và 4** (đo: 1 077 dòng mức 1, 1 675 dòng mức 2, không có dòng nào cao
+hơn). Nên khi chọn 3, `frameSchedule` không tìm thấy dòng → `scheduleMissing = true` → khung rơi về
+**một tiết diện giả định**, và BOM mang `FRAME_SECTION_ASSUMED`. Đó là thất bại **trung thực**: báo giá
+nói nó không định giá được, thay vì định giá một nhà mức 3 như mức 1. Nhóm Design cũng nói điều đó
+ngay cạnh field, vì cảnh báo BOM xuất hiện hai bước sau.
+
+### Lỗi 2 — default Importance Level không nhất quán (1 ở store, 2 ở API và desktop)
+
+`pinRequest` mặc định **2**, panel desktop khởi tạo **2**, `DEFAULT_SHED` để **1**. Nghĩa là cùng một
+báo giá có thể **pin ở mức 2 rồi định giá ở mức 1** — pin ghi một số, bảng khung đọc một số khác.
+Hai trong ba chỗ nói 2; chỗ lệch là chỗ **ghi config được lưu**. Nay là 2.
+
+### Lỗi 3 — rating ShedSafe không biết công trình đã đổi
+
+`calculated` trả lời "ShedSafe đã cấp rating chưa", và nó **đúng mãi mãi** sau khi cấp. Câu hỏi khác
+là "rating đó còn nói về **công trình này** không" — và không gì so sánh hai thứ đó. Một nhà bị nới từ
+12 m lên 15 m sau khi pin vẫn giữ nhãn xanh "Rating imported" bên cạnh một công trình chưa ai rate.
+
+Nay `detail_json.pinnedFor` lưu span/height/length/importanceLevel **lúc pin**, và panel so với công
+trình đang mở. Lệch → `role="alert"` đỏ, liệt kê **cái gì đã đổi** ("span 12 000 → 15 000 mm"), và
+nhãn thành *"Rating is for a different building"*. Check pin trước khi có tính năng này đọc là **chưa
+xác minh**, không phải "khớp" — một tuyên bố dữ liệu không chống đỡ được thì tệ hơn một khoảng trống.
+
+Đây là khác biệt **có chủ ý** so với desktop (desktop cũng mù chỗ này) → `KNOWN-DEVIATIONS.md` dòng 32.
+
+### Lỗi 4 — nút PIN chỉ kiểm 2 field thay vì 5
+
+Đặc tả §4.1: PIN cần **5** field — First, Last, Email, **Customer Address**, **Site Address** — cộng
+`Salesman` mà ShedSafe bắt buộc. v2 chỉ kiểm `salesman` + `site.suburb`.
+
+Desktop còn có lỗi **hai danh sách không khớp**: enable check fallback sang field địa chỉ cũ, còn click
+handler thì không — nên nút có thể *trông* sẵn sàng, bấm vào vẫn bị chặn (§4.3). Ở đây **một** danh
+sách dùng cho **cả** cổng lẫn click, nên "đang bật" và "sẽ chạy" không thể lệch.
+
+Nút tắt **kèm lý do ghi rõ từng field còn thiếu**, vì một nút xám không nói gì trên form cao 6 273 px
+là để người dùng tự đi tìm.
+
+### Ba thứ nhỏ hơn, cùng lượt
+
+| | |
+|---|---|
+| **Đổi Delivery Scope → bỏ tick cam kết** | Desktop làm vậy (`Events.cs:573-582`). Tick là phát biểu về **một bộ điều khoản cụ thể**; giữ nó qua lần đổi scope là ghi nhận một cam kết khách chưa từng thấy. Chỉ reset khi giá trị **thật sự đổi**. |
+| **Average height + Ridge height** | Desktop hiện average trong panel Building Parameters (`UcShowBuildingParameterss.cs:786-841`), v2 không có. Nay có, cạnh Roof Pitch, read-only. `averageHeightMm` chia **4** (gable) / **2** (skillion) — đúng hệ số desktop, vì đây là số dùng cho hồ sơ council và phải khớp số công ty đã nộp bao năm. Ridge thêm vào vì "average 4 729" không cho biết đỉnh là 5 258, mà đỉnh mới là thứ đụng gầm cầu. |
+| **Đơn vị hiện cạnh số đo** | `formatDimension` trả số trần; nay có `mm`/`m` theo công tắc đơn vị. |
+
+### Đo được trong trình duyệt
+
+| | |
+|---|---|
+| Importance level, options | 4 (`1 — normal` … `4 — exceptional`) |
+| Importance level, giá trị mặc định | **2** |
+| Chọn 3 → giá trị lưu | **3** (trước đây: 1) |
+| Cảnh báo sách thiếu bảng | *"This price book has no frame table for level 3…"* |
+| Average height (mặc định) | **4729 mm** |
+| Ridge height (mặc định) | **5258 mm** |
+| Nút PIN trên form trống | `disabled`, kèm *"Before pinning, fill in the customer's first name, …"* |
+| Tick cam kết → đổi scope | tick **bị bỏ** |
+| `pageOverflowX` ở 390 px | **0** |
+
+### Bài học
+
+Đặc tả desktop không chỉ nói "có field gì" — nó nói **khi nào control bật** và **dữ liệu chảy từ đâu
+tới đâu**. Ba trong bốn lỗi trên chỉ hiện ra khi đọc phần *điều kiện* của đặc tả, không phải bảng field.
+
+Và: **một `catch()` trong schema là một quyết định nghiệp vụ, không phải phòng thủ.** Nó biến "không
+biết" thành một con số cụ thể, và con số đó sẽ được in ra giấy.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 988 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight) |
-| `@sq/api` | 279 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
+| `@sq/core` | 1 001 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**) |
+| `@sq/api` | 282 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 19 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 25 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **6 Step 1** — IL 1–4 + round trip, sách thiếu bảng thì nói, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick) — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 
