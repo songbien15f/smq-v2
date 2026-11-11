@@ -565,6 +565,26 @@ export function parseExtraction(parsed: unknown, base: ShedConfig = DEFAULT_SHED
   return out;
 }
 
+/**
+ * A stored bay array if it describes this building, or `undefined`.
+ *
+ * Three facts have to agree — the count, positivity, and the total against the length — because any
+ * one of them can drift: a person lowers the bay count, types a shorter length, or an old revision
+ * carries an array from before a size change. When they disagree the array is not this building's
+ * bays, and deriving equal bays is the honest fallback.
+ */
+function usableBayWidths(
+  widths: readonly number[] | undefined,
+  bays: number,
+  length: number,
+): { bayWidths: number[] } | undefined {
+  if (widths === undefined || widths.length !== bays) return undefined;
+  const rounded = widths.map((width) => Math.round(width));
+  if (rounded.some((width) => !(width > 0))) return undefined;
+  if (rounded.reduce((sum, width) => sum + width, 0) !== length) return undefined;
+  return { bayWidths: rounded };
+}
+
 /** The complete `ShedConfig` schema. */
 export const shedConfigSchema = z.object({
   structureType: structureTypeSchema,
@@ -574,6 +594,12 @@ export const shedConfigSchema = z.object({
   roofPitchDeg: pitchSchema,
   bays: bayCountSchema,
   nomBaySpacing: z.coerce.number().finite(),
+  /*
+   * Optional, because it is derived when absent. Optional **in the strict schema too**, not just the
+   * tolerant one: a quote written before editable bays existed has no array, and refusing it would make
+   * every old revision unreadable.
+   */
+  bayWidths: z.array(positiveDimensionSchema).min(2).max(30).optional(),
   openings: z.array(openingSchema),
   options: z.array(completeOptionSchema),
   charges: z.array(chargeSchema),
@@ -625,6 +651,12 @@ const tolerantShedConfigSchema = z.object({
   roofPitchDeg: pitchSchema.catch(DEFAULT_SHED.roofPitchDeg),
   bays: bayCountSchema.catch(DEFAULT_SHED.bays),
   nomBaySpacing: z.coerce.number().finite().catch(DEFAULT_SHED.nomBaySpacing),
+  /*
+   * A stored array that is unusable is dropped rather than repaired here; `bayWidthsFor` then falls
+   * back to equal division. Repairing it in the schema would mean re-deriving the length from a
+   * half-edited array, which is a decision about a building, not a parse.
+   */
+  bayWidths: z.array(positiveDimensionSchema).min(2).max(30).optional().catch(undefined),
   colors: z
     .object({
       wall: hexColorSchema.catch(DEFAULT_SHED.colors.wall),
@@ -1050,6 +1082,14 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
       Number.isFinite(parsed.nomBaySpacing) && parsed.nomBaySpacing > 0
         ? Math.round(parsed.nomBaySpacing)
         : Math.floor(finalLength / finalBays),
+    /*
+     * Kept only when the array actually describes this building: the right count, positive widths, and
+     * a total equal to the length. An array that fails any of those is dropped, and `bayWidthsFor`
+     * derives equal bays instead — the desktop does the same on every structural change
+     * (`ResetBayUnitsToNomBay`), and a kept-but-wrong array would price a frame from a bay that is not
+     * in the building.
+     */
+    ...(usableBayWidths(parsed.bayWidths, finalBays, finalLength) ?? {}),
     openings,
     options: [],
   };

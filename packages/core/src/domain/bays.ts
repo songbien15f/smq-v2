@@ -8,8 +8,63 @@
  * This mirrors the desktop rule (spec §4.4): the number of internal frame lines
  * is `Bays.Count - 1`.
  *
+ * ## Bays are an array, not a division
+ *
+ * The desktop keeps `BayUnits` — one length per bay — and lets a person edit them
+ * individually (`UcAdjustBaySize`). Equal division is only the **starting point**
+ * (`ResetBayUnitsToNomBay`), not the invariant: after one bay is edited the array
+ * can be 4 000, 4 000, 6 000, and that is a valid building.
+ *
+ * The difference is not cosmetic. The frame table is keyed by the **largest bay**
+ * (`GetMainShedLookupData` passes `sD.BayLargest`), so 4 000/4 000/6 000 selects a
+ * different member size from 4 666/4 666/4 666 even though the length is the same.
+ * Pricing by the average under-sizes the frame on the long bay.
+ *
+ * `bayWidthsFor()` is therefore the single place that answers "what are this
+ * building's bays", and it honours a stored array when the quote has one.
+ *
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
+
+/**
+ * The bay lengths a building is divided into, summing exactly to its length.
+ *
+ * A stored array wins when it is usable — positive whole millimetres, the right
+ * count, summing to the length. Anything else falls back to equal division with the
+ * remainder in the last bay, which is what `ResetBayUnitsToNomBay` does and what a
+ * quote that predates editable bays already means. Falling back rather than
+ * rejecting matters: a stale revision whose bays and length disagree must still
+ * draw and price, and equal division is the shape it was priced in.
+ */
+export function bayWidthsFor(shed: {
+  length: number;
+  bays: number;
+  bayWidths?: readonly number[] | undefined;
+}): number[] {
+  const count = clampBays(shed.bays);
+  const length = Number.isFinite(shed.length) ? Math.max(0, Math.round(shed.length)) : 0;
+  const stored = shed.bayWidths;
+  if (
+    Array.isArray(stored) &&
+    stored.length === count &&
+    stored.every((width) => Number.isFinite(width) && width > 0) &&
+    stored.reduce((sum, width) => sum + Math.round(width), 0) === length
+  ) {
+    return stored.map((width) => Math.round(width));
+  }
+  return computeBayWidths(length, count);
+}
+
+/** Grid-line positions from an explicit list of bay lengths. */
+export function positionsFromWidths(widths: readonly number[]): number[] {
+  const positions = [0];
+  let running = 0;
+  for (const width of widths) {
+    running += Math.round(width);
+    positions.push(running);
+  }
+  return positions;
+}
 
 /** Clamp a requested bay count to an integer in `[2, 30]`. */
 export function clampBays(bays: number): number {

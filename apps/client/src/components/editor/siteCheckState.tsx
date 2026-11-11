@@ -66,6 +66,14 @@ export interface SiteCheck {
     rainfallIntensity100Years: number | null;
     rainfallIntensity20Years: number | null;
     rainfallIntensityTown: string | null;
+    /**
+     * The awnings ShedSafe has on the rated building, in **metres**.
+     *
+     * Zero is a real answer — "no awning on that end" — while `null` means the check predates this
+     * being stored. The editor multiplies by 1 000 to reach millimetres.
+     */
+    leftAwningLength: number | null;
+    rightAwningLength: number | null;
   } | null;
   /**
    * What the building was when ShedSafe was asked to rate it.

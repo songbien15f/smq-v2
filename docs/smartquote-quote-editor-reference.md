@@ -476,6 +476,10 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
 | 5 | Hướng outrigger (left/right) | Chỉ là field hiển thị; `wall` đã bao trùm ngữ nghĩa |
+| 6 | ~~`BayLargest` làm khoá tra kết cấu~~ | **ĐÃ XONG 2026-11-11** — §13.30 |
+| 7 | ~~Adjust Bay Spacing (mảng bay riêng)~~ | **ĐÃ XONG 2026-11-11** — §13.30.3 |
+| 8 | ~~Roof pitch lọc theo span~~ | **ĐÃ XONG 2026-11-11** — §13.31, kèm bug `BayMin/BayMax` của desktop |
+| 9 | ~~Awning width từ ShedSafe~~ | **ĐÃ XONG 2026-11-11** — §13.32 |
 
 > **Năm lần tôi kết luận "bị chặn" và cả năm lần đều sai:** Punchings (§12.4), R12 skylight, R9,
 > R6 (track không có giá trong desktop), và "phiếu DM/DH cần model mới". Mỗi lần nguyên nhân giống
@@ -3251,7 +3255,7 @@ hiện **cả hai**: field là việc của người dùng, tài khoản là vi�
 | Cùng 2 500 mm trên `custom_gable` | không lỗi, giá trị giữ nguyên |
 | Downpipe `PVC` | lưới **1** swatch — White, đang chọn |
 | Downpipe `STEEL` | lưới **29** swatch, không có White |
-| e2e | `stepOne.spec.ts` **18 test**, toàn suite chrome **32 passed** |
+| e2e | `stepOne.spec.ts` **21 test**, toàn suite chrome **34 passed** |
 
 ### Không làm trong lượt này
 
@@ -3263,15 +3267,122 @@ hiện **cả hai**: field là việc của người dùng, tài khoản là vi�
 
 ---
 
+## 13.30 Bay là một MẢNG, và khung thép chọn theo bay LỚN NHẤT (2026-11-11)
+
+### 13.30.1 `BayLargest` — sợi dây thật nối bay tới tiết diện thép
+
+`CheckAndSetBayLargest` (`ServiceStructureData.cs:382-386`) đặt `Output.BayLargest = BayUnits.Max()`,
+và `GetMainShedLookupData` (`ServiceLookupData.cs:33-49`) truyền nó làm **một trong 11 khoá** của bảng
+kết cấu. Nghĩa là 4 000/4 000/6 000 tra dòng **6 000**, không phải 4 667.
+
+v2 trước đây dùng `Math.ceil(length / bays)` — **trung bình làm tròn lên**. Trên nhà chia đều hai đáp án
+trùng nhau, nên lỗi không lộ. Khi bay sửa được thì nó lộ ngay: 14 000/3 bay tính ra 4 667 → dòng 5 000,
+trong khi bay dài nhất là 6 000. **Khung nhỏ hơn nhà.**
+
+Sửa: `maxBay()` ở `optimise.ts`, `purlin.ts`, `bracing.ts`, `bom/options.ts` (carry beam) đều lấy
+`Math.max(...bayWidthsFor(shed))`.
+
+### 13.30.2 `bayWidths` — mảng tuỳ chọn, suy ra khi vắng
+
+`ShedConfig.bayWidths?: number[]` thêm vào, **optional** vì nó suy được: `bayWidthsFor()` chia đều với
+dư dồn bay cuối khi không có mảng (`ResetBayUnitsToNomBay`). `normaliseShedConfig` giữ mảng **chỉ khi**
+nó mô tả đúng nhà: đúng số bay, mọi phần tử > 0, tổng == length. Sai một điều kiện là bỏ, vì một mảng
+giữ lại nhưng sai sẽ định giá khung từ một bay không có trong nhà.
+
+`bayWidthsFor()` là **một chỗ duy nhất** trả lời "các bay của nhà này là gì", và mọi call site
+(`placement.bayAtY`, `nearestBayIndex`, `options.bayInterval`, `plan.buildPlanGeometry`, `Shed3D`) đều
+dùng nó thay cho phép chia.
+
+### 13.30.3 Panel Adjust Bay Spacing
+
+`UcAdjustBaySize` (flyout 300 px) → panel inline trong nhóm Shed. Hai điều đúng theo desktop:
+
+- **Overall length và No. of Bays khoá cứng** (`XPropertyGridAdustBaySize.cs` đặt `Enable = false`):
+  đổi một trong hai là một nhà khác, và làm trong panel từng bay sẽ đánh số lại ô người ta đang nhìn.
+- **Sửa một bay → length = tổng, nominal spacing KHÔNG đổi** (`OnBayUnitsChange`). Nên một nhà có
+  `nomBaySpacing` không khớp bay nào là trạng thái **hợp lệ**.
+
+Mảng bằng đúng phép chia đều thì **không lưu**: đó là bản sao thứ hai của một sự kiện suy ra được, và nó
+làm fingerprint của bản nháp lệch với một nhà y hệt chưa từng mở panel — cùng một nhà sẽ đọc "price out of
+date" ở quote này mà không ở quote kia.
+
+### 13.30.4 Hai luật cũ phải đổi, vì chúng chặn chính nhà hợp lệ
+
+| Luật cũ | Vì sao sai từ hôm nay |
+|---|---|
+| "length phải chia hết cho số bay" | 14 000/3 là nhà hợp lệ; panel tồn tại **để** tạo ra nó |
+| "`nomBaySpacing × bays` phải bằng length" | khi bay khác nhau thì nominal spacing không mô tả bay nào |
+
+Cả hai chỉ chạy khi **không có** mảng. Có mảng nghĩa là bay khác nhau **do chọn**, còn không mảng mà
+không chia hết nghĩa là do phép chia — cái sau vẫn đáng báo.
+
+---
+
+## 13.31 Roof pitch lọc theo span — và bug `BayMin/BayMax` của desktop (2026-11-11)
+
+`GetHintListRoofPitch(configs, span, out default)` (`ShedConfigCombo.cs:66-102`) dựng lại dropdown mỗi
+lần span đổi, giữ các dòng `config_shed` có **dải span** chứa span hiện tại.
+
+**Bug thật:** hàm gán `min = cfg.BayMin; max = cfg.BayMax;` rồi so **span** với chúng — giới hạn bay
+đóng vai giới hạn span, chỉ sửa `min` trong một nhánh. Kết quả là **danh sách gợi ý sai**, không phải
+giá sai, vì dropdown sửa được. v2 so với `span_min`/`span_max` — đúng ý định của code.
+
+Đo trên sách thật: cả 6 dòng `config_shed` đều `span_min 1800 / span_max 15000`, ba dòng bán 7,5/10/15°
+và ba dòng bán 20/25/30°. Nên **hôm nay** danh sách không đổi theo span — nhưng bảng được tổ chức theo
+dải, và một nhà cung cấp có dải khác sẽ nhận danh sách sai nếu hard-code một hằng.
+
+Đã làm: `Catalogue.roofPitchGroups` (dải span + min/max + hints), `domain/roofPitch.ts` với
+`roofPitchHintsForSpan`, `roofPitchBoundsForSpan`, `pitchOutsideBookSpan`. Slider giới hạn theo sách,
+`<datalist>` đánh dấu các góc có bán, và một pitch **nằm giữa hai góc** được **báo** chứ không bị snap —
+desktop cho phép, và cái mái đó có thể đã nằm trên bản vẽ khách đã thấy.
+
+---
+
+## 13.32 Awning width từ ShedSafe (2026-11-11)
+
+Desktop đọc `leftAwninglength` / `rightAwninglength` (`ShedsafeData.cs:117-123`) rồi ghi
+`LeftAwningLength × 1000` vào hai field read-only, `#N/A` khi bằng 0
+(`QuoteDetailsView.Events.cs:2716-2733`).
+
+**Đo trên API thật 2026-11-11:** đọc một building thật trả về đúng bốn khoá `leftAwningSpan`,
+`leftAwninglength`, `rightAwningSpan`, `rightAwninglength` — chú ý chữ **`l` thường** trong `length`.
+JSON key phân biệt hoa thường, nên `leftAwningLength` viết đúng chính tả tiếng Anh sẽ ra `undefined`
+**không một lỗi nào** — đúng kiểu hỏng im lặng. Parser đọc cả hai cách viết.
+
+Đã làm: `SiteCheckValues.leftAwningLength/rightAwningLength` (mét), lưu vào `detail_json` cùng các
+reading địa lý (không cần cột mới), trả ra trong `site`, và hiện hai dòng read-only cạnh sáu giá trị
+chứng chỉ. Zero hiện "None on the certificate", không phải "0 mm" — ShedSafe nói **không có awning**,
+không phải awning rộng 0. Một nút "Add this awning" thêm option đúng width; nếu quote đã có awning khác
+width thì panel nói lệch bao nhiêu, để một quote không lặng lẽ bỏ awning mà chứng chỉ có.
+
+**Không tự thêm awning:** awning là object có giá (depth, pitch, wall) và chứng chỉ chỉ cho **width**.
+Tự thêm là đặt một kết cấu lên bản vẽ mà người dùng không yêu cầu.
+
+---
+
+## 13.33 Rates: màn hình đã có, `equipment`/`demolition` không phải rate (2026-11-11)
+
+Ghi lại để khỏi làm lại — **ghi chú cũ của tôi sai ở cả hai vế.**
+
+- **Màn hình Rates đã tồn tại** từ trước: `SettingsPage.tsx` có panel "Rates" (4 labour + 5 default
+  costs, ghi bằng đô-la, lưu bằng cent) và panel "Freight minimums". Plan đợt 2 nói "chưa có màn hình"
+  là **chưa kiểm**.
+- **`equipment` và `demolition` không phải rate.** Trong desktop chúng là **danh sách có tên**:
+  `XEquipmentHire` (tên, giá, đơn vị giờ/ngày) và `XDemolitionElement` (tên, giá, LeaveOnSite) — một
+  cần cẩu, một bobcat, một giấy phép. v2 đã có "+ Add a line" tự do trong CostPanel, đúng hình dạng đó.
+  Thêm chúng vào bảng rate sẽ là một loại dữ liệu khác.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 1 036 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, `averageHeightMm`/`ridgeHeightMm`, Importance Level 1–4, wind region codes, `suggestedValues` + `outsideBookBounds`, **internal pressure suy từ tường**, **9 cho `downpipePalette`/`reconcileDownpipeColour`**, **`downpipeMaterials` trong catalogue**) |
-| `@sq/api` | 293 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
+| `@sq/core` | 1 057 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, `averageHeightMm`/`ridgeHeightMm`, Importance Level 1–4, wind region codes, `suggestedValues` + `outsideBookBounds`, **internal pressure suy từ tường**, **9 cho `downpipePalette`/`reconcileDownpipeColour`**, `downpipeMaterials` trong catalogue, **`bayWidthsFor`/`positionsFromWidths`**, **`roofPitchHintsForSpan`/`roofPitchBoundsForSpan`/`pitchOutsideBookSpan`**, **`maxBay` = bay lớn nhất**) |
+| `@sq/api` | 294 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 32 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **18 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 34 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

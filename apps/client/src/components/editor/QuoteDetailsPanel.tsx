@@ -31,7 +31,15 @@ import {
 } from '@sq/core/domain';
 import { downpipePalette, reconcileDownpipeColour } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
-import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
+import {
+  bayWidthsFor,
+  computeBayWidths,
+  pitchOutsideBookSpan,
+  reconcileBays,
+  roofPitchBoundsForSpan,
+  roofPitchHintsForSpan,
+  shouldWipeOptions,
+} from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
 import { deliveryForScope, freightScope } from '@sq/core/domain';
 import type { DisplayUnit, ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
@@ -744,6 +752,95 @@ function DesignGroup({
         </div>
 
         {/*
+          The awnings the rated building carries, read-only.
+
+          ## Why they are here rather than in the Shed group
+
+          They belong with the other values **the certificate** states, because that is what they are:
+          `leftAwninglength` / `rightAwninglength` travel with the same ShedSafe response as the wind
+          region (`ShedsafeData.cs:117-123`), and the desktop copies them into read-only fields
+          (`FrontAwningWidthItem`, `RearAwningWidthItem`).
+
+          ## Why zero says "no awning" and not "0 mm"
+
+          The desktop writes `#N/A` for zero, and that is the right reading: ShedSafe returns `0.0`
+          for an end with no awning, which is a fact about the building, not a zero-width awning. A
+          field showing "0 mm" invites somebody to think a dimension is missing.
+
+          ## Why this does not create the awning option by itself
+
+          An awning is a priced object with a depth, a pitch and a wall (`ShedOption`), and the
+          certificate only states its **width in metres**. Adding one silently would put a structure
+          on the drawing the operator never asked for; the button below offers it, which is the same
+          "customer asks for it" rule the suggestions panel follows. When the widths and the options
+          disagree the panel says so, so a quote cannot quietly drop an awning the certificate has.
+        */}
+        <dl className="grid grid-cols-2 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
+          {(
+            [
+              ['left', 'Front awning', check?.site?.leftAwningLength ?? null],
+              ['right', 'Rear awning', check?.site?.rightAwningLength ?? null],
+            ] as const
+          ).map(([end, label, metres]) => {
+            const wall = end === 'left' ? 'front' : 'back';
+            const current = config.options.find(
+              (option): option is Extract<typeof option, { kind: 'awning' }> =>
+                option.kind === 'awning' && option.wall === wall,
+            );
+            const widthMm = metres === null ? null : Math.round(metres * 1000);
+            const missing = widthMm !== null && widthMm > 0 && current === undefined;
+            const differs =
+              widthMm !== null && widthMm > 0 && current !== undefined && current.width !== widthMm;
+            return (
+              <div key={end} className="flex flex-col">
+                <dt className="text-sq-micro text-sq-ink-muted">{label}</dt>
+                <dd
+                  id={`design-awning-${end}`}
+                  className="sq-numeric text-sq-body text-sq-ink"
+                >
+                  {widthMm === null
+                    ? '—'
+                    : widthMm === 0
+                      ? 'None on the certificate'
+                      : `${widthMm.toLocaleString('en-AU')} mm`}
+                </dd>
+                {missing && (
+                  <button
+                    type="button"
+                    /*
+                     * Adds the awning the certificate rates, at the width ShedSafe states. Depth and
+                     * pitch keep the option's own defaults: the certificate does not carry them, and
+                     * inventing a projection would be a design decision, not a reading.
+                     */
+                    onClick={() => {
+                      const base = defaultOptionsFor('awning', config).find(
+                        (option) => option.kind === 'awning',
+                      );
+                      if (base === undefined || base.kind !== 'awning') return;
+                      applyPartial({
+                        options: [
+                          ...config.options,
+                          { ...base, wall, width: widthMm } as typeof base,
+                        ],
+                      });
+                    }}
+                    className="mt-sq-1 min-h-9 cursor-pointer self-start rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+                  >
+                    Add this awning
+                  </button>
+                )}
+                {differs && (
+                  <span className="mt-sq-1 text-sq-micro text-sq-attention">
+                    The quote has {current.width.toLocaleString('en-AU')} mm. The certificate rates{' '}
+                    {widthMm.toLocaleString('en-AU')} mm.
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </dl>
+
+        {/*
           The book's own warning, kept where the level is read: it has no frame table above level 2, so
           the frame falls back to one assumed section. The value itself still comes from the
           certificate — see KNOWN-DEVIATIONS 31.
@@ -932,7 +1029,16 @@ function ShedGroup({
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
 
-  const perBay = config.bays > 0 ? config.length / config.bays : 0;
+  /*
+   * The bays this building actually has, which is an array once somebody edits one.
+   *
+   * `perBay` is shown beside the bay count, and it used to be a division. On an edited building that
+   * number describes no bay in the shed — the panel lists the real ones below.
+   */
+  const bayWidths = bayWidthsFor(config);
+  const perBay = bayWidths.reduce((sum, width) => sum + width, 0) / Math.max(1, bayWidths.length);
+  const unevenBays = new Set(bayWidths).size > 1;
+  const [baysOpen, setBaysOpen] = useState(false);
 
   /*
    * The heights a person has to state on a council application and a delivery quote.
@@ -991,6 +1097,22 @@ function ShedGroup({
     max: catalogue?.dimensions.height.max || 6000,
   };
 
+  /*
+   * The roof pitches the book sells **for this span**.
+   *
+   * The desktop rebuilds this list on every span change (`GetHintListRoofPitch`), and while the
+   * reference book offers the same six angles at every span, the table is organised into span bands —
+   * so the query is about the book's shape rather than about today's numbers.
+   *
+   * The bounds widen the slider, they do not narrow it: a pitch between two listed angles is a roof an
+   * operator may legitimately quote (the desktop's dropdown is editable), so the field says the book
+   * does not list it instead of snapping the roof to something the customer did not agree to.
+   */
+  const pitchGroups = catalogue?.roofPitchGroups ?? [];
+  const pitchHints = roofPitchHintsForSpan(pitchGroups, config.span);
+  const pitchBounds = roofPitchBoundsForSpan(pitchGroups, config.span);
+  const pitchUnlisted = pitchOutsideBookSpan(pitchGroups, config.span, config.roofPitchDeg);
+
   /**
    * Apply a dimension change, asking first when it invalidates placed options.
    *
@@ -1013,10 +1135,52 @@ function ShedGroup({
     applyPartial(wipes ? { ...patch, options: [] } : patch);
   };
 
-  /** Apply a reconciled bay triple, so the three fields can never disagree. */
+  /**
+   * Apply a reconciled bay triple, so the three fields can never disagree.
+   *
+   * Changing any of the three **discards a per-bay array**, which is what the desktop does too: editing
+   * the length or the count resets the array from the new nominal spacing
+   * (`ResetBayUnitsToNomBay`), because an array for a different building is not a set of bays. The
+   * array comes back the moment somebody edits one bay in the panel below.
+   */
   const applyBays = (input: { length: number; bays: number; nomBaySpacing: number }): void => {
     const next = reconcileBays(input);
-    applyDimension({ length: next.length, bays: next.bays, nomBaySpacing: next.nomBaySpacing });
+    applyDimension({
+      length: next.length,
+      bays: next.bays,
+      nomBaySpacing: next.nomBaySpacing,
+      bayWidths: undefined,
+    });
+  };
+
+  /**
+   * One bay, typed.
+   *
+   * ## What this does, in the desktop's order
+   *
+   * Overall length becomes the sum of the bays and **nominal spacing is left alone** — the desktop's
+   * `OnBayUnitsChange` sets `OverallLength = val.Sum()` and does not touch `Bay`. So a building can
+   * legitimately have a nominal spacing that no bay matches; that is the "nominal" in the name.
+   *
+   * The stored colours of the frame are what change here: the frame table is keyed by the **largest**
+   * bay (`BayLargest`), so lengthening one bay can move every column and rafter to the next section.
+   * That is correct — the widest span between columns is the one the member carries — and it is why the
+   * panel says so when the largest bay changes.
+   */
+  const applyBayWidths = (widths: number[]): void => {
+    const rounded = widths.map((width) => Math.round(width));
+    const total = rounded.reduce((sum, width) => sum + width, 0);
+    /*
+     * An array that merely repeats the division is dropped.
+     *
+     * Storing it would be a second copy of a derived fact, and it would make the draft's fingerprint
+     * differ from an identical building that never had the panel opened — so the same shed would read
+     * "price out of date" on one quote and not the other. `bayWidthsFor` derives exactly these numbers
+     * anyway.
+     */
+    const even = computeBayWidths(total, rounded.length);
+    const differs = even.length !== rounded.length || even.some((width, i) => width !== rounded[i]);
+    applyDimension({ bayWidths: differs ? rounded : undefined, length: total });
   };
 
   const wallProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isWall);
@@ -1181,7 +1345,11 @@ function ShedGroup({
             </span>
           ) : (
             <span id="shed-bays-hint" className="sq-numeric text-sq-micro text-sq-ink-muted">
-              {perBay === 0 ? '—' : `${Math.round(perBay)} mm per bay`}
+              {unevenBays
+                ? `${Math.min(...bayWidths).toLocaleString('en-AU')}–${Math.max(...bayWidths).toLocaleString('en-AU')} mm per bay — see Adjust bay spacing`
+                : perBay === 0
+                  ? '—'
+                  : `${Math.round(perBay)} mm per bay`}
             </span>
           )}
         </label>
@@ -1211,6 +1379,92 @@ function ShedGroup({
           </span>
         </span>
       </label>
+
+      {/*
+        Adjust bay spacing — the desktop's `UcAdjustBaySize` flyout, inline.
+
+        ## Why this is not just a nicety
+
+        The frame table is keyed by the **largest** bay (`BayLargest`), so bays of different lengths are
+        a different building from the same length divided evenly: 4 000/4 000/6 000 takes the 6 000 row.
+        Without this panel the only way to describe such a building was to lie about it.
+
+        ## What the desktop locks, and why
+
+        Overall length and bay count are read-only here (`XPropertyGridAdustBaySize.cs` sets both
+        `Enable = false`): changing either is a different building, and doing it inside a per-bay editor
+        would renumber the field a person is looking at. They are edited above, in the Shed group.
+
+        ## Sum is the length, not a check on it
+
+        Each edit sets the length to the sum, which is `OnBayUnitsChange`. The desktop also has a
+        "Total bay length differs from the overall length" message, but on this path it compares the sum
+        with the value it has just written, so it can never fire — noted in the analysis and not
+        reproduced.
+      */}
+      <div className="flex flex-col gap-sq-2 rounded-md border border-sq-line p-sq-2">
+        <div className="flex items-center justify-between gap-sq-2">
+          <div className="flex flex-col">
+            <span className="text-sq-micro font-medium text-sq-ink">Bay spacing</span>
+            <span className="sq-numeric text-sq-micro text-sq-ink-muted">
+              {config.length.toLocaleString('en-AU')} mm overall · {config.bays} bays
+              {unevenBays ? ' · uneven' : ''}
+            </span>
+          </div>
+          <button
+            type="button"
+            aria-expanded={baysOpen}
+            aria-controls="shed-bayWidths"
+            onClick={() => setBaysOpen((open) => !open)}
+            className="min-h-9 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            {baysOpen ? 'Hide bays' : 'Adjust bay spacing'}
+          </button>
+        </div>
+        {baysOpen && (
+          <div id="shed-bayWidths" className="grid grid-cols-2 gap-sq-2">
+            {bayWidths.map((width, index) => (
+              <label key={index} className="flex flex-col gap-sq-1">
+                <span className="text-sq-micro text-sq-ink">
+                  Bay {String(index + 1).padStart(2, '0')} (mm)
+                </span>
+                <input
+                  id={`shed-bayWidth-${index}`}
+                  type="number"
+                  inputMode="numeric"
+                  min={1000}
+                  max={20000}
+                  step={100}
+                  value={width}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    if (!Number.isFinite(next) || next <= 0) return;
+                    const widths = [...bayWidths];
+                    widths[index] = next;
+                    applyBayWidths(widths);
+                  }}
+                  aria-label={`Bay ${index + 1} length in millimetres`}
+                  className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body outline-none"
+                />
+              </label>
+            ))}
+            <p className="col-span-2 text-sq-micro text-sq-ink-muted">
+              Each bay is its own length and the overall length is their sum. The steel frame is sized
+              from the <strong>longest</strong> bay, so lengthening one bay can move every column and
+              rafter to the next section.
+            </p>
+            {unevenBays && (
+              <button
+                type="button"
+                onClick={() => applyBays({ length: config.length, bays: config.bays, nomBaySpacing: 0 })}
+                className="col-span-2 min-h-9 self-start cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+              >
+                Divide equally again
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-sq-2">
         {wallProfiles.length > 0 && (
@@ -1320,9 +1574,15 @@ function ShedGroup({
           <input
             id="shed-roofPitchDeg"
             type="range"
-            min={0}
-            max={45}
+            /*
+             * The book's own range for this span, widened by the caller's 0–45 slider when the book
+             * states none. `pitchBounds` comes from the span band the row covers, so a book whose bands
+             * differ limits the slider to what it can actually price.
+             */
+            min={pitchBounds?.min ?? 0}
+            max={pitchBounds?.max ?? 45}
             step={0.5}
+            list={pitchHints.length > 0 ? 'shed-roofPitchDeg-hints' : undefined}
             value={config.roofPitchDeg}
             aria-describedby="shed-roofPitchDeg-value"
             onChange={(event) =>
@@ -1338,6 +1598,25 @@ function ShedGroup({
             {config.roofPitchDeg.toFixed(1)}°
           </output>
         </span>
+        {pitchHints.length > 0 && (
+          // The angles the book lists for this span, as tick marks on the slider.
+          <datalist id="shed-roofPitchDeg-hints">
+            {pitchHints.map((hint) => (
+              <option key={hint} value={hint} />
+            ))}
+          </datalist>
+        )}
+        {pitchUnlisted ? (
+          <span className="text-sq-micro text-sq-attention">
+            {config.roofPitchDeg}° is between the pitches this book lists for a{' '}
+            {(config.span / 1000).toFixed(1)} m span ({pitchHints.join(', ')}°). It prices as an
+            assumption.
+          </span>
+        ) : pitchHints.length > 0 ? (
+          <span className="text-sq-micro text-sq-ink-muted">
+            The book sells {pitchHints.join(', ')}° at this span.
+          </span>
+        ) : null}
         {errorAt('shed-roofPitchDeg') !== undefined && (
           <span className="text-sq-micro text-sq-danger">{errorAt('shed-roofPitchDeg')}</span>
         )}

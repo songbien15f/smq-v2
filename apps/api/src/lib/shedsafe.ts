@@ -63,6 +63,18 @@ export interface SiteCheckValues {
   rainfallIntensity20Years: number | null;
   /** The town those intensities were read for, so the number can be traced. */
   rainfallIntensityTown: string | null;
+  /**
+   * The awnings ShedSafe has on the building, in metres.
+   *
+   * `leftAwninglength` / `rightAwninglength` — the spelling is ShedSafe's, lowercase `l`, and it is
+   * what the desktop binds to (`ShedsafeData.cs:117-123`). The desktop multiplies by 1 000 and writes
+   * `#N/A` for zero, because zero means **no awning**, not a zero-width one.
+   *
+   * Read here rather than typed because the awning is part of the rated building: a shed quoted with
+   * an awning the certificate does not have is a different structure from the one that was analysed.
+   */
+  leftAwningLength: number | null;
+  rightAwningLength: number | null;
 }
 
 /**
@@ -518,6 +530,9 @@ export function createShedSafeTransport(
         rainfallIntensity100Years: reading(body.rainfallIntensity100Years),
         rainfallIntensity20Years: reading(body.rainfallIntensity20Years),
         rainfallIntensityTown: str(body.rainfallIntensityTown),
+        // ShedSafe spells the `l` in `length` lowercase; JSON keys are case-sensitive here.
+        leftAwningLength: reading(body.leftAwninglength ?? body.leftAwningLength),
+        rightAwningLength: reading(body.rightAwninglength ?? body.rightAwningLength),
       };
 
       /*

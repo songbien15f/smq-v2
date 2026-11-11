@@ -100,4 +100,27 @@ describe('optimise', () => {
     const result = optimise(shed({ length: 24000, bays: 4 }), twoRows);
     expect(result.bayStandard).toBe(6000);
   });
+
+  it('optimises against the LARGEST bay, not the average', () => {
+    /*
+     * The desktop passes `sD.BayLargest` to the frame lookup
+     * (`ServiceStructureData.cs:382-386`), and it is one of the eleven keys that select a section.
+     *
+     * 14 000 mm in three bays as 4 000/4 000/6 000: the average is 4 667, which rounds up to the
+     * 5 000 standard row. The longest bay is 6 000, which is its own row. Those are different frame
+     * tables, and pricing from the average under-sizes the members over the long bay.
+     *
+     * Before editable bays, `maxBay` was `ceil(length / bays)` — the average rounded up — so this
+     * test could not have told the two apart. It exists because the array makes them differ.
+     */
+    const result = optimise(
+      shed({ length: 14000, bays: 3, bayWidths: [4000, 4000, 6000] }),
+      twoRows,
+    );
+    expect(result.bayStandard).toBe(6000);
+
+    // The same building divided evenly really does take the shorter row.
+    const even = optimise(shed({ length: 13800, bays: 3 }), twoRows);
+    expect(even.bayStandard).toBe(5000);
+  });
 });

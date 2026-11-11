@@ -22,6 +22,7 @@
  * a wall member and a purlin is a roof member: different sections, different loads.
  */
 
+import { bayWidthsFor } from '@/domain/bays';
 import type { ShedConfig } from '@/domain/types';
 import { windRegionLetter } from '@/domain/wind';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
@@ -37,9 +38,14 @@ import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
  * corner. They arrive with the building's rule set — see `../rules.ts`.
  */
 
-/** The largest bay, which sets the run grouping. */
+/**
+ * The largest bay, which sets the run grouping.
+ *
+ * The longest run between supports, for the same reason `optimise.ts` keys the frame table by it: a
+ * purlin has to carry its longest span. See the note there.
+ */
 function maxBay(shed: ShedConfig): number {
-  return Math.ceil(shed.length / shed.bays);
+  return Math.max(...bayWidthsFor(shed));
 }
 
 /** The lap fraction for this shed. */

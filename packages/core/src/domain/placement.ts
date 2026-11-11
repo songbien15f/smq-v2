@@ -18,7 +18,7 @@
 import type { Opening, ShedConfig, ShedOption, WallSide } from './types';
 import type { PlanGeometry, PlacedOpening, PlacedOption } from './plan';
 import { normaliseOption } from './options';
-import { computeBayPositions } from './bays';
+import { bayWidthsFor, positionsFromWidths } from './bays';
 
 /** Result of resolving an opening's horizontal position along its wall. */
 export interface Placement {
@@ -475,7 +475,7 @@ export function optionAtPlanPoint(
 
 /** The bay whose interval contains `y`, clamped to the first/last bay. */
 function bayAtY(shed: ShedConfig, y: number): { index: number; start: number; end: number } {
-  const positions = computeBayPositions(shed.length, shed.bays);
+  const positions = positionsFromWidths(bayWidthsFor(shed));
   for (let index = 0; index < positions.length - 1; index++) {
     if (y <= positions[index + 1]) {
       return { index, start: positions[index], end: positions[index + 1] };
@@ -487,7 +487,7 @@ function bayAtY(shed: ShedConfig, y: number): { index: number; start: number; en
 
 /** The bay index whose centre line is nearest to `u` along a wall. */
 function nearestBayIndex(shed: ShedConfig, u: number): number {
-  const positions = computeBayPositions(shed.length, shed.bays);
+  const positions = positionsFromWidths(bayWidthsFor(shed));
   let best = 0;
   let bestDistance = Infinity;
   for (let index = 0; index < positions.length - 1; index++) {

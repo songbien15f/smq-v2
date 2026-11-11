@@ -16,7 +16,7 @@
  */
 
 import type { Opening, OpeningType, OptionKind, ShedConfig, SwingDirection, WallSide } from './types';
-import { computeBayPositions, computeBayWidths } from './bays';
+import { bayWidthsFor, positionsFromWidths } from './bays';
 import { resolveOptions, type ResolvedOption } from './options';
 import { placementToPlanRect, resolveOpeningPlacement } from './placement';
 import { roundUpTo50 } from './units';
@@ -309,8 +309,8 @@ function buildOpeningSymbol(
  */
 export function buildPlanGeometry(shed: ShedConfig): PlanGeometry {
   const { span, length } = shed;
-  const bayPositions = computeBayPositions(length, shed.bays);
-  const bayWidths = computeBayWidths(length, shed.bays);
+  const bayWidths = bayWidthsFor(shed);
+  const bayPositions = positionsFromWidths(bayWidths);
 
   const outline = { x: 0, y: 0, width: span, height: length };
 

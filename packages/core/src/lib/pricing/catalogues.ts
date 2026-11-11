@@ -179,6 +179,33 @@ export interface Catalogue {
    */
   nonStandardStructureCodes: string[];
   /**
+   * Roof pitch groups, each valid over a range of **span**.
+   *
+   * ## Why this exists separately from `dimensions.roofPitch`
+   *
+   * The book states roof pitch per `config_shed` row, and each row covers a span band. Measured on the
+   * reference book, the six rows split into two families: three offer 7.5/10/15° and three offer
+   * 20/25/30°. Its `span_min`/`span_max` are 1 800–15 000 for every row, so **on this book the pitch
+   * list never changes with span** — but the table is structured that way, and the desktop filters on
+   * it (`GetHintListRoofPitch`, `ShedConfigCombo.cs:66-102`), so a supplier whose bands do differ would
+   * get the wrong list from a single global constant.
+   *
+   * ## The desktop's bug, not reproduced
+   *
+   * That function assigns `min = cfg.BayMin; max = cfg.BayMax;` and then compares the **span** against
+   * them — bay limits standing in for span limits. It only corrects `min` in one branch, so whenever the
+   * span list's maximum differs from `BayMax` the comparison uses bay numbers for a span. The result is
+   * a wrong *suggestion* list, not a wrong price: the dropdown is editable. Reproduced here against
+   * `span_min`/`span_max`, which is what the code obviously meant.
+   */
+  roofPitchGroups: {
+    spanMin: number;
+    spanMax: number;
+    pitchMin: number;
+    pitchMax: number;
+    hints: number[];
+  }[];
+  /**
    * The downpipe materials the book stocks, and which colour names each one is sold in.
    *
    * The desktop's **Downpipe Type** dropdown was `SELECT DISTINCT downpipe_kind`
@@ -454,6 +481,43 @@ function codeLabels(db: DatabaseSync, table: string, codeColumn: string): CodeLa
   ).map((row) => ({ code: str(row.code), label: str(row.display_name) }));
 }
 
+/**
+ * Roof pitch rows, each with the span band it applies to.
+ *
+ * `config_shed` carries the band and `shed_hint_roof_pitch` carries the angles, keyed by
+ * `config_shed_id`. A book without either table yields `[]`, and the caller then offers the global
+ * list — an empty answer must not hide the control.
+ */
+function roofPitchGroups(db: DatabaseSync): Catalogue['roofPitchGroups'] {
+  const configs = rows(
+    db,
+    `SELECT id, span_min, span_max, roof_pitch_min, roof_pitch_max
+       FROM config_shed ORDER BY id`,
+  );
+  const groups: Catalogue['roofPitchGroups'] = [];
+  for (const config of configs) {
+    const id = num(config.id);
+    const hints = rows(
+      db,
+      `SELECT hint_value FROM shed_hint_roof_pitch WHERE config_shed_id = ${id} ORDER BY hint_value`,
+    )
+      .map((row) => num(row.hint_value))
+      .filter((value) => value > 0);
+    if (hints.length === 0) continue;
+    const pitchMin = num(config.roof_pitch_min);
+    const pitchMax = num(config.roof_pitch_max);
+    groups.push({
+      spanMin: num(config.span_min),
+      spanMax: num(config.span_max),
+      // A row that states no bounds still has hints; its own hints are the bounds then.
+      pitchMin: pitchMin > 0 ? pitchMin : Math.min(...hints),
+      pitchMax: pitchMax > 0 ? pitchMax : Math.max(...hints),
+      hints: [...new Set(hints)].sort((a, b) => a - b),
+    });
+  }
+  return groups;
+}
+
 /** Build the SQLite-backed catalogue reader. */
 export function createSqliteCatalogueSource(db: DatabaseSync): EditorCatalogueSource {
   return {
@@ -508,6 +572,7 @@ export function createSqliteCatalogueSource(db: DatabaseSync): EditorCatalogueSo
         roofPitchHints: uniqueHints(db, 'shed_hint_roof_pitch'),
         bayHints: uniqueHints(db, 'shed_hint_bay'),
         dimensions: dimensionsFromBook(db),
+        roofPitchGroups: roofPitchGroups(db),
         nonStandardStructureCodes: rows(
           db,
           `SELECT structure_sub_code FROM structure_type

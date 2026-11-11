@@ -287,7 +287,46 @@ describe('read', () => {
       rainfallIntensity100Years: 264,
       rainfallIntensity20Years: 156,
       rainfallIntensityTown: null,
+      // Absent from the payload above, so `null` — "not stated", not "none".
+      leftAwningLength: null,
+      rightAwningLength: null,
     });
+  });
+
+  it('reads the awning lengths, in the spelling ShedSafe actually uses', async () => {
+    /*
+     * The keys are `leftAwninglength` and `rightAwninglength` — lowercase `l` in `length`, verified
+     * against the live API on 2026-11-11 by reading a real building and listing its awning keys. The
+     * desktop's model binds the same spelling (`ShedsafeData.cs:117-123`).
+     *
+     * A property name that is almost right is the classic way to get `undefined` with no error, and the
+     * failure is silent: the awning field shows nothing and nobody learns a certificate has an awning.
+     * The PascalCase variant is accepted too, because a JSON serializer on their side could change and
+     * the cost of accepting both is one `??`.
+     */
+    const { fetch } = fakeFetch({
+      '/authenticate': authOk,
+      '/building/get/': () =>
+        new Response(
+          JSON.stringify({
+            autoCalc: true,
+            importanceLevel: 2,
+            windRegion: 'A5',
+            terrainCategory: 2.5,
+            buildingClass: 'Class 10a',
+            snowLoad: 0,
+            vSite1: 41.5,
+            leftAwninglength: 3.5,
+            rightAwninglength: 0,
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await createShedSafeTransport(config, fetch).read('B-1');
+    expect(result?.values.leftAwningLength).toBe(3.5);
+    // Zero is a fact about the building: ShedSafe says there is no awning on that end.
+    expect(result?.values.rightAwningLength).toBe(0);
   });
 
   it('**reports uncalculated values as uncalculated, even though they are present**', async () => {

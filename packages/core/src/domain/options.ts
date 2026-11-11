@@ -26,7 +26,7 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import { computeBayPositions } from './bays';
+import { bayWidthsFor, positionsFromWidths } from './bays';
 import type {
   AwningOption,
   CantileverOption,
@@ -422,7 +422,7 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
 
 /** The bay interval `[start, end]` that `bay` names, clamped into the shed. */
 function bayInterval(shed: ShedConfig, bay: number): { start: number; end: number } {
-  const positions = computeBayPositions(shed.length, shed.bays);
+  const positions = positionsFromWidths(bayWidthsFor(shed));
   const index = Math.min(Math.max(0, Math.round(bay)), positions.length - 2);
   return { start: positions[index], end: positions[index + 1] };
 }
@@ -491,7 +491,7 @@ export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOpt
       // column sits at the bay's start. `bay` indexes those lines, and the last
       // bay's end line is reachable with `bay === bays`, which is why the line
       // is looked up rather than derived from the bay interval.
-      const positions = computeBayPositions(shed.length, shed.bays);
+      const positions = positionsFromWidths(bayWidthsFor(shed));
       const index = Math.min(Math.max(0, Math.round(normalised.bay)), positions.length - 1);
       const run = wallRun(shed, normalised.wall);
       // Front/back walls run along the span, so their column lines are the bay
@@ -608,7 +608,7 @@ export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOpt
     }
 
     case 'cantilever': {
-      const positions = computeBayPositions(shed.length, shed.bays);
+      const positions = positionsFromWidths(bayWidthsFor(shed));
       const index = Math.min(Math.max(0, Math.round(normalised.bay)), positions.length - 1);
       const run = wallRun(shed, normalised.wall);
       const half = OUTRIGGER_HALF_WIDTH;

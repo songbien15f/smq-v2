@@ -19,6 +19,7 @@
  * has to be able to open — so a wall with one is skipped.
  */
 
+import { bayWidthsFor } from '@/domain/bays';
 import type { Opening, ShedConfig, WallSide } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
@@ -50,7 +51,7 @@ function braceableBays(shed: ShedConfig, wall: WallSide): number {
     (opening: Opening) =>
       opening.wall === wall && (opening.type === 'roller_door' || opening.type === 'sliding_door'),
   );
-  const bayWidthMm = shed.length / shed.bays;
+  const bayWidthMm = Math.max(...bayWidthsFor(shed));
   // Each door blocks at least one bay, and a door wider than a bay blocks the
   // bays it spans.
   const blocked = doors.reduce(
@@ -60,9 +61,12 @@ function braceableBays(shed: ShedConfig, wall: WallSide): number {
   return Math.max(0, shed.bays - blocked);
 }
 
-/** The bay width used for a side-wall diagonal, mm. */
+/**
+ * The bay width used for a side-wall diagonal, mm — the largest, since a diagonal across a short bay
+ * would under-order the brace on a long one.
+ */
 function bayWidth(shed: ShedConfig): number {
-  return shed.length / shed.bays;
+  return Math.max(...bayWidthsFor(shed));
 }
 
 /**

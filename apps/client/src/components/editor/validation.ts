@@ -46,6 +46,13 @@ export interface DraftForValidation {
     roofPitchDeg: number;
     bays: number;
     /**
+     * One length per bay when a person edited them, absent when they are equal.
+     *
+     * Present means the bays legitimately differ, which turns off two rules below — see the note on
+     * the equal-bays check.
+     */
+    bayWidths?: readonly number[];
+    /**
      * The stored nominal bay spacing, which the desktop lets a person type.
      *
      * Read here because the desktop reports a length its bays do not sum to, and that check had been
@@ -215,21 +222,27 @@ export function validateDraft(
   }
 
   /**
-   * The bays must divide the length exactly.
+   * Unequal bays are only a problem when nobody asked for them.
    *
-   * The desktop recomputes the bay count from the length and refuses a length that does not
-   * divide; here the operator may set either, so the check is that the two agree. A remainder
-   * means one bay is a different length from the rest, which changes the purlin run and therefore
-   * the price — it must not be silently rounded.
+   * This rule used to fire whenever the length did not divide evenly by the bay count — correct while
+   * equal division was the only way to describe a building, and **wrong** the moment a person can edit
+   * one bay: 4 000/4 000/6 000 is 14 000 in three baits with no integer average, and the desktop's
+   * `Adjust Bay Spacing` panel exists precisely to produce it.
+   *
+   * So the array decides. With a stored array the length is the sum of the bays by construction
+   * (`applyBayWidths` sets it), and a remainder is not a defect. Without one, an uneven division still
+   * means one bay ended up a different length from the rest by arithmetic rather than by choice, which
+   * moves the purlin run and the frame row — and that is worth saying.
    */
-  if (config.bays > 0) {
+  const hasUnevenBays = Array.isArray(config.bayWidths) && config.bayWidths.length === config.bays;
+  if (!hasUnevenBays && config.bays > 0) {
     const perBay = config.length / config.bays;
     if (!Number.isInteger(perBay)) {
       issues.push({
         path: 'shed-bays',
         message:
           `${config.length} mm does not divide into ${config.bays} equal bays (${perBay.toFixed(1)} mm each). ` +
-          'Adjust the length or the bay count so the bays are equal, or the purlin quantities will be wrong.',
+          'Adjust the length or the bay count so the bays are equal, or edit each bay individually.',
       });
     }
   }
@@ -245,7 +258,12 @@ export function validateDraft(
    * Found unwired — `baySpacingMismatch` had been written and tested in core with **no caller**, so
    * a check the desktop performs was absent here.
    */
-  if (baySpacingMismatch(config)) {
+  /*
+   * Skipped when the bays differ, because then the nominal spacing describes no bay: the desktop
+   * leaves `Bay` untouched when a bay is edited (`OnBayUnitsChange`), so a mismatch is the expected
+   * state rather than a mistake.
+   */
+  if (!hasUnevenBays && baySpacingMismatch(config)) {
     issues.push({
       path: 'shed-nomBaySpacing',
       message:

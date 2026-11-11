@@ -20,6 +20,7 @@
  *     internal purlin may not be spaced closer than an end one.
  */
 
+import { bayWidthsFor } from '@/domain/bays';
 import type { ShedConfig } from '@/domain/types';
 import { windRegionCode } from '@/domain/wind';
 import type { PriceLookup } from '@/lib/pricing/types';
@@ -95,9 +96,24 @@ function roofSpanFor(shed: ShedConfig): number {
   return fallsAlongLength ? slope : slope / 2;
 }
 
-/** The largest bay in the shed, which sets the standard bay the table is chosen by. */
+/**
+ * The **largest** bay in the shed, which is the key the frame table is chosen by.
+ *
+ * ## Why the maximum, and not the average
+ *
+ * The desktop passes `sD.BayLargest` to `GetMainShedLookupData`
+ * (`ServiceStructureData.cs:382-386`, `ServiceLookupData.cs:33-49`), and that is one of the eleven
+ * keys selecting the frame row. On an evenly divided building the average and the maximum agree, so
+ * the two are indistinguishable — until a bay is edited. 4 000/4 000/6 000 takes the 6 000 row,
+ * because the widest span between columns is what the member has to carry.
+ *
+ * This used to be `Math.ceil(length / bays)`, which is the average rounded **up**: for
+ * 4 000/4 000/6 000 that is 4 667, so the frame was chosen for a bay shorter than the longest one in
+ * the building. With editable bays that is an under-sized frame; before them the two answers differed
+ * only by the rounding.
+ */
 function maxBay(shed: ShedConfig): number {
-  return Math.ceil(shed.length / shed.bays);
+  return Math.max(...bayWidthsFor(shed));
 }
 
 /**

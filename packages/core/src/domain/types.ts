@@ -367,6 +367,18 @@ export interface ShedConfig {
    * consistent; `baySpacingMismatch` reports one that is not.
    */
   nomBaySpacing: number;
+  /**
+   * One length per bay, mm, summing exactly to `length`.
+   *
+   * Optional because it is **derived** when absent: equal division with the remainder in the last bay
+   * (`bayWidthsFor`). It becomes present the moment somebody edits a single bay, which is the
+   * desktop's `Adjust Bay Spacing` panel. Storing an array that merely repeats the division would be
+   * a second copy of a fact and a chance for the two to disagree.
+   *
+   * Why it matters beyond the drawing: the frame table is keyed by the **largest** bay, so
+   * 4 000/4 000/6 000 takes a different section from 4 666/4 666/4 666 at the same overall length.
+   */
+  bayWidths?: number[];
   openings: Opening[];
   /** Added objects, in creation order. Empty for a fresh shed. */
   options: ShedOption[];

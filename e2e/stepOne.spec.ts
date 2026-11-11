@@ -239,6 +239,85 @@ test.describe('Step 1 — quote details', () => {
     await expect(grid.getByRole('radio', { name: 'White' })).toHaveCount(0);
   });
 
+  test('the roof pitch field offers the book’s angles for this span, and says when a value is not one', async ({ page }) => {
+    /*
+     * ## The desktop rule, and its bug
+     *
+     * The roof-pitch dropdown is rebuilt on every span change (`GetHintListRoofPitch`,
+     * `ShedConfigCombo.cs:66-102`), keeping the `config_shed` rows whose **span** band contains the
+     * current span. That function assigns `min = cfg.BayMin; max = cfg.BayMax` and then compares the
+     * span against them — bay limits standing in for span limits. The result is a wrong suggestion
+     * list, not a wrong price, because the dropdown is editable.
+     *
+     * Reproduced against the span band, and reported rather than snapped: the slider is limited to the
+     * book's own range for the span, the listed angles are marked, and a pitch between two of them says
+     * so instead of moving the roof the customer already agreed to.
+     */
+    const pitch = page.locator('#shed-roofPitchDeg');
+    await expect(pitch).toBeVisible();
+
+    // The reference book's list at every span it covers.
+    await expect(page.getByText(/The book sells 7\.5, 10, 15, 20, 25, 30° at this span/)).toBeVisible();
+
+    // A value that is not listed, but within range: reported, and left alone.
+    await pitch.fill('12.5');
+    const unlisted = page.getByText(/is between the pitches this book lists/);
+    await expect(unlisted).toBeVisible();
+    await expect(pitch).toHaveValue('12.5');
+
+    // A listed value: no warning.
+    await pitch.fill('15');
+    await expect(page.getByText(/is between the pitches this book lists/)).toHaveCount(0);
+  });
+
+  test('bays can be given different lengths, and the length follows their sum', async ({ page }) => {
+    /*
+     * ## The desktop's `Adjust Bay Spacing` panel
+     *
+     * `UcAdjustBaySize` gives every bay its own length, and `OnBayUnitsChange` then sets
+     * `OverallLength = val.Sum()` while **leaving the nominal spacing alone**. The building it
+     * produces — 4 000/4 000/6 000 — is not describable by any even division, and the frame table is
+     * keyed by the *largest* bay, so it is a genuinely different quote.
+     *
+     * ## Why this also guards a rule
+     *
+     * Before this, `validateDraft` refused any length that did not divide evenly by the bay count. That
+     * rule is right while equal division is the only way to describe a shed, and wrong the moment the
+     * panel exists: it would block the very building the panel creates. The assertion that the field
+     * is not marked invalid is therefore part of the behaviour, not decoration.
+     */
+    const bays = page.locator('#shed-bays');
+    const length = page.locator('#shed-length');
+
+    // A known even building first, so the test does not inherit whatever ran before it.
+    await length.fill('12000');
+    await length.blur();
+    await bays.fill('3');
+    await bays.blur();
+    await expect(length).toHaveValue('12000');
+
+    await page.getByRole('button', { name: /Adjust bay spacing/i }).click();
+    const first = page.locator('#shed-bayWidth-0');
+    await expect(first).toBeVisible();
+    await expect(page.locator('#shed-bayWidth-1')).toBeVisible();
+    await expect(page.locator('#shed-bayWidth-2')).toBeVisible();
+    await expect(page.locator('#shed-bayWidth-3')).toHaveCount(0);
+
+    // 12 000 in three bays is 4 000 each; making the first 6 000 makes the sum 14 000.
+    await expect(first).toHaveValue('4000');
+    await first.fill('6000');
+    await first.blur();
+    await expect(length).toHaveValue('14000');
+
+    // The bay count did not change, and the form does not claim the building is invalid.
+    await expect(bays).toHaveValue('3');
+    await expect(page.locator('#shed-bays-error')).toHaveCount(0);
+    await expect(page.locator('#shed-nomBaySpacing-error')).toHaveCount(0);
+
+    // And the count hint says the bays differ rather than quoting a single average.
+    await expect(page.locator('#shed-bays-hint')).toContainText(/per bay — see Adjust bay spacing/);
+  });
+
   test('a long cantilever is refused on a standard building and allowed on a custom one', async ({ page }) => {
     /*
      * ## The desktop rule

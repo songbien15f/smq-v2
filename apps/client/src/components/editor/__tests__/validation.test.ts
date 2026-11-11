@@ -163,3 +163,38 @@ describe('validateDraft — a cantilever past what the standard series carries',
     expect(issues.some((issue) => issue.path === 'design-cantilever')).toBe(false);
   });
 });
+
+describe('validateDraft — bays that differ on purpose', () => {
+  /*
+   * The desktop's `Adjust Bay Spacing` panel produces bays of different lengths, and the frame table is
+   * keyed by the **largest** one, so unequal bays are a real building — not an arithmetic accident.
+   *
+   * Before this, `validateDraft` refused any length that did not divide evenly by the bay count, and
+   * refused a nominal spacing that no bay matched. Both rules were right while equal division was the
+   * only way to describe a shed. With an array they contradict the panel that creates the array.
+   */
+  const uneven = shed({
+    length: 14000,
+    bays: 3,
+    bayWidths: [4000, 4000, 6000],
+  });
+
+  it('accepts bays that differ when the array says so', () => {
+    const issues = validateDraft({ config: uneven, customer, site });
+    expect(issues.some((issue) => issue.path === 'shed-bays')).toBe(false);
+    expect(issues.some((issue) => issue.path === 'shed-nomBaySpacing')).toBe(false);
+  });
+
+  it('still reports an uneven division nobody asked for', () => {
+    // No array: the remainder came from arithmetic, and one bay really is a different length.
+    const accidental = { ...shed({ length: 14000, bays: 3 }), bayWidths: undefined };
+    const issues = validateDraft({ config: accidental, customer, site });
+    expect(issues.some((issue) => issue.path === 'shed-bays')).toBe(true);
+  });
+
+  it('accepts the same building divided evenly', () => {
+    const even = { ...shed({ length: 14000, bays: 2, bayWidths: [7000, 7000] }) };
+    const issues = validateDraft({ config: even, customer, site });
+    expect(issues.some((issue) => issue.path === 'shed-bays')).toBe(false);
+  });
+});

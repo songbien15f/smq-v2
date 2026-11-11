@@ -129,6 +129,41 @@ describe('createSqliteCatalogueSource', () => {
     ]);
   });
 
+  it('reads roof pitch groups with the span band each one covers', () => {
+    /*
+     * The desktop rebuilds the pitch dropdown on every span change (`GetHintListRoofPitch`), so the
+     * catalogue has to carry the band each hint list applies to — a single global list would be right
+     * only for a book whose bands never differ.
+     */
+    const db = emptyBook();
+    db.exec(`
+      CREATE TABLE config_shed (id INTEGER, span_min REAL, span_max REAL,
+                                 roof_pitch_min REAL, roof_pitch_max REAL);
+      CREATE TABLE shed_hint_roof_pitch (id INTEGER PRIMARY KEY, config_shed_id INTEGER, hint_value REAL);
+      INSERT INTO config_shed VALUES
+        (1, 1800, 9000, 7.5, 15),
+        (2, 9001, 15000, 20, 30),
+        (3, 1800, 15000, 0, 0);
+      INSERT INTO shed_hint_roof_pitch (config_shed_id, hint_value) VALUES
+        (1, 7.5), (1, 10), (1, 15),
+        (2, 20), (2, 25), (2, 30),
+        (3, 5);
+    `);
+    const groups = createSqliteCatalogueSource(db).load().roofPitchGroups;
+    expect(groups).toEqual([
+      { spanMin: 1800, spanMax: 9000, pitchMin: 7.5, pitchMax: 15, hints: [7.5, 10, 15] },
+      { spanMin: 9001, spanMax: 15000, pitchMin: 20, pitchMax: 30, hints: [20, 25, 30] },
+      // A row that states no bounds takes its own hints as the bounds, rather than 0..0.
+      { spanMin: 1800, spanMax: 15000, pitchMin: 5, pitchMax: 5, hints: [5] },
+    ]);
+  });
+
+  it('has no roof pitch groups when the book has neither table', () => {
+    expect(
+      createSqliteCatalogueSource(new DatabaseSync(':memory:')).load().roofPitchGroups,
+    ).toEqual([]);
+  });
+
   it('has no downpipe materials when the book has no downpipe table', () => {
     expect(createSqliteCatalogueSource(new DatabaseSync(':memory:')).load().downpipeMaterials).toEqual(
       [],

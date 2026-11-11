@@ -176,6 +176,16 @@ function toView(row: SiteCheckRow) {
             rainfallIntensity100Years: detail.rainfallIntensity100Years ?? null,
             rainfallIntensity20Years: detail.rainfallIntensity20Years ?? null,
             rainfallIntensityTown: detail.rainfallIntensityTown ?? null,
+            /*
+             * In **metres**, as ShedSafe states them; the caller multiplies by 1 000 to reach the
+             * millimetres the editor uses. Zero is passed through as zero, not as `null`: ShedSafe
+             * says "no awning on that end", which is a fact, while `null` means nobody has run a
+             * site check. The desktop prints `#N/A` for zero, and the screen does the same.
+             */
+            leftAwningLength:
+              typeof detail.leftAwningLength === 'number' ? detail.leftAwningLength : null,
+            rightAwningLength:
+              typeof detail.rightAwningLength === 'number' ? detail.rightAwningLength : null,
           },
     /** Who asked for the check, as recorded at pin time. */
     salesman: typeof detail?.salesman === 'string' ? detail.salesman : null,
@@ -400,6 +410,16 @@ async function importIntoCheck(
         rainfallIntensity100Years: v.rainfallIntensity100Years,
         rainfallIntensity20Years: v.rainfallIntensity20Years,
         rainfallIntensityTown: v.rainfallIntensityTown,
+        /*
+         * The building's awnings, in metres as ShedSafe states them.
+         *
+         * Stored with the site readings rather than as columns: nothing prices from them directly —
+         * they describe the **rated building**, and the awning option in the editor is what carries
+         * width into the BOM. What they answer is "was this shed rated with an awning?", which is the
+         * question when a customer changes their mind after the certificate.
+         */
+        leftAwningLength: v.leftAwningLength,
+        rightAwningLength: v.rightAwningLength,
       }),
       check.id,
     ]);

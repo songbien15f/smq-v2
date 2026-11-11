@@ -23,7 +23,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { ShedConfig, Opening, OpeningType, OptionKind } from '@sq/core/domain';
 import { buildWallGeometries, type WallGeometry, type WallHole } from '@sq/core/domain';
-import { computeBayPositions } from '@sq/core/domain';
+import { bayWidthsFor, positionsFromWidths } from '@sq/core/domain';
 import { doorColour, resolveOptions, type ResolvedOption } from '@sq/core/domain';
 
 /** Wall thickness, mm. */
@@ -392,7 +392,7 @@ export function Shed3D({ config }: { config: ShedConfig }) {
   const roof = useMemo(() => buildRoofGeometry(config), [config]);
   const optionMeshes = useMemo(() => buildOptionMeshes(config), [config]);
   const bayPositions = useMemo(
-    () => computeBayPositions(config.length, config.bays),
+    () => positionsFromWidths(bayWidthsFor(config)),
     [config.length, config.bays],
   );
 

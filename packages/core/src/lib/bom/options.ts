@@ -24,6 +24,7 @@ import type {
   ShedOption,
   StableOption,
 } from '@/domain/types';
+import { bayWidthsFor } from '@/domain/bays';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from './types';
 import type { OptimisedFrame } from './types';
@@ -293,7 +294,9 @@ function carryBeamLines(
   option: Extract<ShedOption, { kind: 'carry_beam' }>,
   lookup: PriceLookup,
 ): BomLine[] {
-  const bayLength = shed.length / shed.bays;
+  // The bay the beam lands in, not the average bay: a carry beam transferred to a short bay has to
+  // span that bay, so its own length is what is ordered. `bayWidthsFor` resolves both cases.
+  const bayLength = Math.max(...bayWidthsFor(shed));
   const beams = shed.span > 7500 ? 2 : 1;
   const beam = safeCall(() => lookup.frame('250 x 250 x 6.0 SHS'));
   return lengthLine(
