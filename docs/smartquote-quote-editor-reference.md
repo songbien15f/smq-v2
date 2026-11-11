@@ -473,9 +473,9 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | 1f | ~~Slice 5: salesman~~ | **ĐÃ XONG (khác spec)** — §19. Không có bảng 72 cột; salesman là chuỗi tự do trên site check |
 | 1g | **Guard `autoCalc` + bảy trường địa lý** | **ĐÃ XONG** — §19 |
 | 2 | ~~R6 nửa còn lại: track bị chiếm~~ | **CỐ Ý KHÔNG PORT** — track không có giá trong desktop (§12.6) |
-| 3 | **Đặt cột infill quanh cửa không cuốn** (PA, cửa sổ) | Desktop chỉ re-space cho cửa cuốn; cửa nhỏ thì cột nằm nguyên. Chưa rõ desktop có ý định khác không |
+| 3 | ~~Đặt cột infill quanh cửa không cuốn~~ | **ĐÃ KIỂM 2026-11-11 — khớp desktop, không phải bug.** §13.35 |
 | 4 | **Nhóm 4** | Rate table xong; ba mục còn lại **không phải việc port** — xem kết luận dưới |
-| 5 | Hướng outrigger (left/right) | Chỉ là field hiển thị; `wall` đã bao trùm ngữ nghĩa |
+| 5 | ~~Hướng outrigger (left/right)~~ | **ĐÃ KIỂM 2026-11-11 — không có field đó trong desktop.** §13.35 |
 | 6 | ~~`BayLargest` làm khoá tra kết cấu~~ | **ĐÃ XONG 2026-11-11** — §13.30 |
 | 7 | ~~Adjust Bay Spacing (mảng bay riêng)~~ | **ĐÃ XONG 2026-11-11** — §13.30.3 |
 | 8 | ~~Roof pitch lọc theo span~~ | **ĐÃ XONG 2026-11-11** — §13.31, kèm bug `BayMin/BayMax` của desktop |
@@ -3466,6 +3466,62 @@ desktop tách nó.
   sửa), 294 API, 57 client
 - **35/35 e2e** trên chrome, gồm một test mới: profile + độ dày, và `Lo-Rib` không bán 0,48
 - Typecheck sạch 12 package
+
+---
+
+## 13.35 Hai mục "còn lại" cuối cùng: cả hai đều khớp desktop (2026-11-11)
+
+Danh sách §12 còn hai mục ghi "chưa rõ". Đã tra source desktop cho cả hai. **Không mục nào là bug**,
+nên không có thay đổi code — chỉ có bằng chứng.
+
+### 13.35.1 Cột infill quanh PA door / cửa sổ
+
+Câu hỏi: cửa cuốn thì cột infill được re-space (R5, đã port). Còn PA door và cửa sổ thì sao?
+
+`computeInfillPosition` (`BOMQuoteUtil.cs:415-470`) chỉ lọc hai loại: `SlidingDoor`/`Track1`/`DoubleTrack`
+ở vòng đầu, và `RDoor` ở các nhánh sau (dòng 572, 686). **`PADoor` và `Window` không được xét.**
+
+Và điều đó **có chủ ý**: `AddPADoorRule.cs:185` và `AddWindowRule.cs:236` gọi
+`Msg2D.GetOverrideInfillError()` khi `IsOverrideColumn` đúng — tức là **từ chối đặt** cửa lên cột, chứ
+không dời cột. `IsOverrideColumn` (`AddingRuleDoor.cs:47-55`) chỉ đúng khi
+`!AllowOverrideInfill` = `Width > 4000`.
+
+Đo trên v2: PA door và window đặt đúng chỗ cột (u = 4050 của nhà 12 000) đều bị
+`infillOverrideRefusal` **chặn**; dưới 4 000 mm thì cho qua. Đó chính xác là hành vi desktop, và
+`respaceAroundDoors` chỉ nhận `roller_door` — cũng đúng.
+
+**Kết luận:** v2 khớp. Không sửa gì.
+
+### 13.35.2 Hướng outrigger left/right
+
+Câu hỏi: có cần thêm field hướng không?
+
+`OutTrigger` (`Items/Elms/OutTrigger.cs`) chỉ có `Width` và `Height` — **không có `IsLeft`, không có
+hướng**. Vị trí được xác định bởi việc nó nằm trong `endwall.ChildOptions` của **tường nào**, tức là
+`wall` trong model v2 đã bao trùm đúng ngữ nghĩa. Không có gì để port.
+
+**Kết luận:** không có gap. Ghi lại để lần sau không ai đi tìm nữa.
+
+### 13.35.3 Nhưng outrigger có một gap thật, khác câu hỏi ban đầu
+
+Khi tra `OutTrigger` trong BOM desktop, nó xuất hiện ở **hai** chỗ có giá:
+
+1. `SLDQuote.computeColumnStrutOutTrigger` (`:76-114`) — **chín** dòng: column strut `C15024` × 2,
+   `GP` bracket × 4, dynabolt × 8, main-structure bolt × 8, column capping (flashing, `Height` dài) × 2,
+   strut support `Z15024` (dài `Height × 2/3 / cos30°`), `GP15` bracket × 2, dynabolt × 2, bolt × 4.
+2. `TopHatQuote.cs:2015` — chỉ dùng outrigger để **bỏ qua** girt phụ, không sinh dòng.
+
+v2 (`options.ts:348-355`) chỉ có **một** dòng: `Outrigger beam`, giá theo purlin, dài `option.length`.
+
+Nhưng đường (1) chỉ chạy từ `computeMaterialTrackEndWall`, mà hàm đó chỉ được gọi từ nhánh xử lý
+**cửa trượt** trên tường đầu hồi (`BOMQuote.cs:614`, trong vòng `foreach (option … if (option is
+SlidingDoor)`). Nghĩa là: một outrigger **đi kèm cửa trượt** được desktop tính thêm 9 dòng thép và
+phụ kiện; một outrigger **đứng một mình** thì không.
+
+v2 không mô hình hoá cặp đó, nên một outrigger cạnh cửa trượt đang thiếu phần kết cấu. Đây là gap
+**thật** và **hẹp**, ghi vào KNOWN-DEVIATIONS thay vì đoán công thức: chín dòng đó đọc `Height`,
+`2/3/cos30°` và các mã `C15024`/`Z15024`/`GP`, mà một trong số đó (`GP` + web depth) là tra theo
+tiết diện — không phải hằng số viết được từ tài liệu.
 
 ---
 
