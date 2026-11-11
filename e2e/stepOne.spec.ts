@@ -88,19 +88,83 @@ test.describe('Step 1 — quote details', () => {
     await expect(page.locator('select#design-terrainCategory')).toHaveCount(0);
   });
 
-  test('State and Internal pressure stay editable, because the certificate does not carry them', async ({ page }) => {
+  test('State stays editable, because the certificate does not carry it', async ({ page }) => {
     /*
      * The counter-test to the one above, and the reason the list is not simply "everything read-only".
      *
      * `stateCode` picks the material price coefficient (`setting_price_coeffcient.state_code`) and the
      * Queensland mezzanine factor. ShedSafe reports wind, not price schedules — so if this were
-     * disabled there would be **no** control over material pricing at all. Internal pressure is a
-     * design choice the certificate does not make either.
+     * disabled there would be **no** control over material pricing at all.
+     *
+     * Internal pressure used to be listed here too, as an editable select. It is not one any more: the
+     * desktop computes it from the four open-wall switches and **disables** the field
+     * (`CalcInternalPressuresValue`, `QuoteDetailsView.cs:2649`), because the value selects which
+     * frame row is read. The test below asserts the derived control instead.
      */
     await expect(page.locator('select#design-stateCode')).toBeVisible();
     await expect(page.locator('select#design-stateCode')).toBeEnabled();
-    await expect(page.locator('select#design-internalPressure')).toBeVisible();
     await expect(page.locator('select#design-structureType')).toBeEnabled();
+  });
+
+  test('internal pressure is worked out from the walls, not typed', async ({ page }) => {
+    /*
+     * ## The defect this replaces
+     *
+     * Internal pressure was a dropdown. It decides the `internal_pressure` value the frame row is read
+     * by — `'+0.7, -0.65'` for an open building, `'+0.2, -0.3'` for a closed one — so a person could
+     * set `open` on a shed with four walls and be quoted a frame designed for a wall that is not
+     * there. The desktop never allowed it: the control is `Enable = false` and recalculated on every
+     * wall switch (`QuoteDetailsView.cs:2649`).
+     *
+     * ## Why this asserts both directions
+     *
+     * A read-only field that always says "closed" would pass a one-sided test. Opening one wall must
+     * move it to the heavier design, and closing it again must move it back.
+     */
+    const value = page.locator('#design-internalPressure');
+    await expect(value).toBeVisible();
+    // No control to type into: it is a `<dd>`, not an `input` or a `select`.
+    await expect(page.locator('select#design-internalPressure')).toHaveCount(0);
+
+    const closed = page.getByRole('checkbox', { name: /End wall, left/i });
+    await expect(closed).not.toBeChecked();
+    await expect(value).toHaveText(/^Closed/);
+
+    await closed.check();
+    await expect(value).toHaveText(/^Open/);
+
+    await closed.uncheck();
+    await expect(value).toHaveText(/^Closed/);
+  });
+
+  test('the structure list offers only structures the app can store', async ({ page }) => {
+    /*
+     * ## The defect, measured 2026-11-11
+     *
+     * The dropdown offered seven structures and four of them — `carports`, `tophot`, `zed`, `hangar` —
+     * were not members of the domain's `StructureType`. Choosing one reached
+     * `structureTypeSchema.catch(DEFAULT_SHED.structureType)` and came back as **`gable`**, so the form
+     * showed one building and the quote held another. Same shape as the importance level that silently
+     * became 1.
+     *
+     * The assertion is on the *effect*, not on the list: pick each option and read back what the
+     * select shows after the store has normalised it. A list that is merely longer than the union would
+     * pass an assertion about its length and still lose the value.
+     */
+    const select = page.locator('select#design-structureType');
+    const options = await select.locator('option').evaluateAll((els) =>
+      els.map((el) => (el as HTMLOptionElement).value),
+    );
+
+    expect(options).toContain('custom_gable');
+    expect(options).toContain('custom_skillion');
+
+    for (const value of options) {
+      await select.selectOption(value);
+      // The select is controlled by the store: if the value had been rejected and replaced, the
+      // control would snap back to whatever the schema substituted.
+      await expect(select).toHaveValue(value);
+    }
   });
 
   test('average height and ridge height are shown, and follow the roof', async ({ page }) => {
@@ -140,6 +204,78 @@ test.describe('Step 1 — quote details', () => {
 
     await pitch.fill('35');
     await expect.poll(parse).toBeGreaterThan(atTwo);
+  });
+
+  test('the downpipe material decides which colours the downpipe can be', async ({ page }) => {
+    /*
+     * ## The rule, from the desktop's event handler
+     *
+     * `OnChangeBasicDownpipeTypeEvent` (`QuoteDetailsView.Events.cs:696`) re-filters the downpipe
+     * colour list on every material change, through `FindDownpipeColors(kind, true)`. On the reference
+     * book that join gives **PVC → White alone** and **STEEL → the other 29 colours**, so a Monument
+     * PVC downpipe is not a thing the factory sells. Before this, downpipe type was free text and the
+     * colour grid offered all 30 colours whatever was typed.
+     *
+     * ## Why it opens the palette instead of reading a value
+     *
+     * The filter is visible only in the swatch grid, so the test has to open it — the summary row
+     * shows one colour either way. Asserting the *count* rather than a specific colour is deliberate:
+     * a book revision that adds a PVC colour should not break the test, while a filter that stops
+     * running makes the count jump from 1 to 30.
+     */
+    const material = page.locator('select#shed-downpipeType');
+    await expect(material).toBeVisible();
+
+    // PVC: one colour, and the auto-pick puts the downpipe on it.
+    await material.selectOption('PVC');
+    await page.getByRole('button', { name: /^Downpipe: .*Change colour$/ }).click();
+    const grid = page.getByRole('radiogroup', { name: 'Downpipe colour' });
+    await expect(grid.getByRole('radio')).toHaveCount(1);
+    await expect(grid.getByRole('radio', { name: 'White' })).toHaveAttribute('aria-checked', 'true');
+
+    // Steel: the full range, and White is not among it.
+    await material.selectOption('STEEL');
+    await expect(grid.getByRole('radio')).toHaveCount(29);
+    await expect(grid.getByRole('radio', { name: 'White' })).toHaveCount(0);
+  });
+
+  test('a long cantilever is refused on a standard building and allowed on a custom one', async ({ page }) => {
+    /*
+     * ## The desktop rule
+     *
+     * `ValidateDesignInfoBlock` (`QuoteDetailsView.Error.cs:315-330`) refuses a cantilever over
+     * 1 400 mm — and skips the check entirely inside `if (!IS_NON_STANDARD_BUILDING)`. A cantilever is
+     * a bracket hanging past the last column; past 1 400 mm it needs a design the standard series does
+     * not carry, which is why the factory sells a custom building.
+     *
+     * ## Why this test goes through the screen twice
+     *
+     * The allowance is the interesting half. A rule that blocked everywhere would pass a test that only
+     * checked the refusal, and would make a custom building impossible to quote — so the same 2 500 mm
+     * is entered again after switching the structure, and must be accepted.
+     *
+     * Before 2026-11-11 this could not pass either way: `custom_gable` was not a member of
+     * `StructureType`, so the dropdown's "custom" option silently became `gable` and the exemption was
+     * unreachable code.
+     */
+    const structure = page.locator('select#design-structureType');
+    const front = page.locator('#design-cantilever-front');
+    await expect(front).toBeVisible();
+
+    await structure.selectOption('gable');
+    await front.fill('2500');
+    await front.blur();
+
+    const refusal = page.locator('#design-cantilever-error');
+    await expect(refusal).toBeVisible();
+    await expect(refusal).toContainText('1400');
+
+    // The same length, on a building the factory designs to order.
+    await structure.selectOption('custom_gable');
+    await expect
+      .poll(async () => page.locator('#design-cantilever-error').count())
+      .toBe(0);
+    await expect(front).toHaveValue('2500');
   });
 
   test('the PIN button names every field it is waiting for', async ({ page }) => {

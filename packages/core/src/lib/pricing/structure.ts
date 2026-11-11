@@ -29,38 +29,14 @@ import type { ShedConfig, StructureType } from '@/domain/types';
 import type { FrameScheduleQuery } from './types';
 
 /**
- * The book's `structure_sub_code` for each structure this build models.
+ * The sub-code map moved to `domain/structureCodes.ts`, and is re-exported here.
  *
- * A structure with no entry has no margin row, and `margin()` returns its own
- * fallback of 1 — the same answer the book gives for an unlisted combination.
+ * It is a vocabulary bridge between this build's shape names and the book's product lines — no
+ * database handle, no file access — but the editor needs it to decide whether a building is
+ * non-standard, and this module's barrel reaches `node:fs`, which a browser component cannot import.
+ * Keeping one implementation and two entry points is the fix; see the note in `structureCodes.ts`.
  */
-const SUB_CODE: Record<StructureType, string> = {
-  // Gable, TH64 frame: `CROSSOVER GABLE - SERIES 4` (structure_id 1, 1.48).
-  gable: 'GB_TH64',
-  // Skillion, TH64 frame: `CROSSOVER SKILLION - SERIES 4` (structure_id 5, 1.48).
-  skillion: 'SB_TH64',
-  // The carport series is priced apart from the shed series, and the **gable**
-  // carport carries the higher multiplier (id 8, 1.69) while the skillion
-  // carport does not (id 9, 1.48). These two are why this module exists.
-  gable_carport: 'GC',
-  skillion_carport: 'SC',
-  // A TopHat frame is named by its thickness: 64 mm is series 4, 96 mm series 5.
-  tophot_64: 'GB_TH64',
-  tophot_96: 'GB_TH96',
-  // A Zed frame is `CROSSOVER GABLE - SERIES 6`, whose sub-code names Z150.
-  zed_shed: 'GB_Z150',
-  aircraft_hangar: 'GB_AH',
-  // A cyclonic building is its own series, framed in Z100 (id 3, 1.48).
-  cyclonic: 'GB_Z100',
-};
-
-/** The book's stable sub-code for a structure type. */
-export function subCodeFor(structure: StructureType): string {
-  return SUB_CODE[structure];
-}
-
-/** Every structure this build can name, for a test to enumerate. */
-export const MAPPED_STRUCTURES = Object.keys(SUB_CODE) as StructureType[];
+export { subCodeFor, MAPPED_STRUCTURES, isNonStandardStructure } from '@/domain/structureCodes';
 
 /** The spans the structure table lists, mm. */
 const SPAN_STEPS = [6000, 7500, 9000, 10_500, 12_000, 13_500, 15_000] as const;

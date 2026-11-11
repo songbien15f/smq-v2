@@ -61,6 +61,7 @@ import { useDraftStore, NEW_DRAFT, STARTING_BUILDING } from '@/store/useDraftSto
 import { customerFromFragment, templateFromFragment } from './fragment';
 import { api, newIdempotencyKey } from '@/lib/sq';
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
+import { useCatalogue } from '@/hooks/useCatalogue';
 import { navFor } from '@/components/ShellFrame';
 import { WorkspaceMenu } from '@/components/WorkspaceMenu';
 import type { DisplayUnit } from '@sq/core/domain';
@@ -212,10 +213,24 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     }
   }, [initial]);
 
+  /*
+   * The book, for the two rules that are about the book rather than the form: the cantilever limit
+   * (a non-standard structure is exempt) and — below — the suggested dimensions. `catalogue` is null
+   * until the fetch lands, which is why every use of it is guarded.
+   */
+  const { catalogue } = useCatalogue();
+
   const issues = useMemo(
-    () => validateDraft({ config, customer, site }),
+    () =>
+      validateDraft(
+        { config, customer, site },
+        // The book's non-standard list decides whether the cantilever limit applies. Passed from here
+        // rather than read inside the validator, which must stay free of the catalogue: it is a pure
+        // function of the draft plus the facts the caller has.
+        catalogue === null ? undefined : { nonStandardStructureCodes: catalogue.nonStandardStructureCodes },
+      ),
     // `config` is replaced wholesale by the store on every change, so identity is the right key.
-    [config, customer, site],
+    [config, customer, site, catalogue],
   );
 
   const issuesByPath = useMemo(() => {

@@ -26,6 +26,7 @@ import { migrateColors } from './colors';
 import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from './defaults';
 import { normaliseCharge } from './charges';
 import { normaliseOption } from './options';
+import { internalPressureFor } from './internalPressure';
 import { nearestTerrainCategory, windRegionLetter } from './wind';
 import type { Charge, Opening, OptionKind, ShedConfig, ShedOption } from './types';
 
@@ -40,6 +41,9 @@ const STRUCTURE_TYPES = [
   'zed_shed',
   'aircraft_hangar',
   'cyclonic',
+  // The book's two `is_nonstandard = 1` families. See `StructureType` in `types.ts`.
+  'custom_gable',
+  'custom_skillion',
 ] as const;
 
 const WALL_SIDES = ['front', 'back', 'left', 'right'] as const;
@@ -1089,10 +1093,21 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
 
   const charges = parseCharges(rawCharges);
 
+  /*
+   * Internal pressure is **derived**, not stored-and-trusted.
+   *
+   * It is recomputed from the four opening switches and the final option list every time a config is
+   * normalised, so a value typed or carried in from a file cannot survive a change to the walls. The
+   * desktop's own field is disabled for the same reason — it selects which frame row is read, and a
+   * frame designed for walls that are not there is a structural claim nobody can support.
+   *
+   * Recomputing here rather than in the form means every path gets it: typing, a template, an imported
+   * `.sqd`, an undo. A rule enforced in one component is a rule the other paths do not have.
+   */
+  const withOptions: ShedConfig = { ...finalShed, options: resolvedOptions, charges };
   return {
-    ...finalShed,
-    options: resolvedOptions,
-    charges,
+    ...withOptions,
+    internalPressure: internalPressureFor(withOptions),
   };
 }
 

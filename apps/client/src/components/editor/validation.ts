@@ -2,7 +2,10 @@
 
 import { COLOUR_ROLES } from '@sq/core/domain';
 import { baySpacingMismatch, optionsThatNoLongerFit } from '@sq/core/domain';
-import type { ShedColors, ShedConfig } from '@sq/core/domain';
+// From `domain`, not `pricing`: the pricing barrel re-exports `publish.ts`, whose `node:fs`
+// import breaks the browser bundle (`Module not found: Can't resolve 'fs'`, measured 2026-11-11).
+import { isNonStandardStructure } from '@sq/core/domain';
+import type { ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
 
 /**
  * Validation for the quote draft.
@@ -88,6 +91,9 @@ export interface DraftForValidation {
 export const REQUIRED_COLOUR_ROLES = COLOUR_ROLES;
 
 /** Limits taken from the desktop's own accepted ranges, so a valid desktop quote stays valid. */
+/** The desktop's own limit for a cantilever on a standard structure (`Error.cs:320`). */
+const CANTILEVER_LIMIT_MM = 1400;
+
 const LIMITS = {
   span: { min: 2000, max: 30000 },
   length: { min: 2000, max: 120000 },
@@ -107,7 +113,17 @@ function looksLikeEmail(email: string): boolean {
  * Ordered rather than a set, because the summary leads with the first problem and a person fixes
  * them top-down.
  */
-export function validateDraft(draft: DraftForValidation): DraftIssue[] {
+export function validateDraft(
+  draft: DraftForValidation,
+  /**
+   * Book facts needed for two rules that are about the **book**, not the form.
+   *
+   * Optional so a caller without a loaded catalogue still validates everything else — but when it is
+   * absent, the cantilever limit cannot be checked, and that rule silently does not run. Passed by the
+   * editor, which always has it.
+   */
+  book?: { nonStandardStructureCodes: readonly string[] },
+): DraftIssue[] {
   const issues: DraftIssue[] = [];
   const { config, customer, site } = draft;
 
@@ -252,6 +268,46 @@ export function validateDraft(draft: DraftForValidation): DraftIssue[] {
    */
   for (const problem of optionsThatNoLongerFit(config as unknown as ShedConfig)) {
     issues.push({ path: `options-${problem.id}`, message: problem.reason });
+  }
+
+  /*
+   * ## Cantilever over 1 400 mm on a standard building
+   *
+   * The desktop refuses this (`ValidateDesignInfoBlock`, `Error.cs:320`) and skips the check when the
+   * structure is non-standard. A cantilever is a bracket hanging past the last column: over 1 400 mm it
+   * needs a design the standard series does not carry, which is why the factory sells one.
+   *
+   * Reproduced as a **blocking** issue rather than the warning this build had, because the desktop
+   * blocks and because the quote is otherwise priced from a frame the book does not describe.
+   *
+   * The non-standard flag comes from the book's `is_nonstandard` column, read through the structure's
+   * sub-code — not from comparing display names, which is how the desktop does it and which breaks the
+   * day somebody renames a row.
+   */
+  if (book !== undefined) {
+    const isNonStandard = isNonStandardStructure(
+      config.structureType as StructureType,
+      book.nonStandardStructureCodes,
+    );
+    const overLimit = config.options.filter(
+      (option): option is { kind: 'cantilever'; wall: 'front' | 'back'; bay: number; length: number } =>
+        typeof option === 'object' &&
+        option !== null &&
+        (option as { kind?: unknown }).kind === 'cantilever' &&
+        typeof (option as { length?: unknown }).length === 'number' &&
+        (option as { length: number }).length > CANTILEVER_LIMIT_MM,
+    );
+    if (!isNonStandard) {
+      for (const cantilever of overLimit) {
+        issues.push({
+          path: 'design-cantilever',
+          message:
+            `The ${cantilever.wall} cantilever is ${cantilever.length} mm; a standard building is limited to ` +
+            `${CANTILEVER_LIMIT_MM} mm. Shorten it, or choose a custom (non-standard) structure — a longer ` +
+            'bracket needs a design the standard series does not carry.',
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------- 5. Site conditions

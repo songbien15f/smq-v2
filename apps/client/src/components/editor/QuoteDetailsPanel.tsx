@@ -24,15 +24,17 @@ import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
 import {
   averageHeightMm,
   formatDimension,
+  internalPressureApproximate,
   outsideBookBounds,
   ridgeHeightMm,
   suggestedValues,
 } from '@sq/core/domain';
+import { downpipePalette, reconcileDownpipeColour } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
 import { deliveryForScope, freightScope } from '@sq/core/domain';
-import type { DisplayUnit, ShedColors, ShedConfig } from '@sq/core/domain';
+import type { DisplayUnit, ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
 import { DimensionField } from './DimensionField';
@@ -521,15 +523,33 @@ export function QuoteDetailsPanel({
 
 /* ------------------------------------------------------------------ Design */
 
-const STRUCTURE_TYPES: { value: string; label: string }[] = [
+/**
+ * The structures the domain models, with the words a customer reads.
+ *
+ * ## Four of these values used to be rejected by the schema
+ *
+ * `carports`, `tophot`, `zed` and `hangar` are not members of `StructureType`, so choosing one went
+ * through `applyPartial`, hit `structureTypeSchema.catch(DEFAULT_SHED.structureType)`, and came back
+ * as **`gable`** — measured 2026-11-11 with a probe. The dropdown offered seven structures and
+ * silently delivered two families, which is the same shape of defect as the importance level that
+ * became 1: a select where the value shown is not the value stored.
+ *
+ * The list is now keyed to the union, with `satisfies` so a member added to `StructureType` without
+ * a label here is a compile error rather than a missing option.
+ */
+const STRUCTURE_TYPES: readonly { value: StructureType; label: string }[] = [
   { value: 'gable', label: 'Gable' },
   { value: 'skillion', label: 'Skillion' },
-  { value: 'carports', label: 'Carport' },
-  { value: 'tophot', label: 'TopHat' },
-  { value: 'zed', label: 'Zed shed' },
-  { value: 'hangar', label: 'Aircraft hangar' },
+  { value: 'gable_carport', label: 'Gable carport' },
+  { value: 'skillion_carport', label: 'Skillion carport' },
+  { value: 'tophot_64', label: 'TopHat (64 mm)' },
+  { value: 'tophot_96', label: 'TopHat (96 mm)' },
+  { value: 'zed_shed', label: 'Zed shed' },
+  { value: 'aircraft_hangar', label: 'Aircraft hangar' },
   { value: 'cyclonic', label: 'Cyclonic' },
-];
+  { value: 'custom_gable', label: 'Custom gable (non-standard)' },
+  { value: 'custom_skillion', label: 'Custom skillion (non-standard)' },
+] as const satisfies readonly { value: StructureType; label: string }[];
 
 const WIND_REGIONS: { value: string; label: string }[] = [
   { value: 'A', label: 'A — northern' },
@@ -661,7 +681,7 @@ function DesignGroup({
       issueCount={
         // Wind region is no longer among these: it is read-only now, so an issue there would be a red
         // mark on a field nobody can fix. See `validation.ts` §5.
-        ['design-stateCode'].filter((path) => issuesByPath.has(path)).length
+        ['design-stateCode', 'design-cantilever'].filter((path) => issuesByPath.has(path)).length
       }
     >
       <SelectField
@@ -677,7 +697,7 @@ function DesignGroup({
            * numbers across a structure change would describe a building that cannot be drawn. The
            * store's normaliser clamps the rest.
            */
-          applyPartial({ structureType: value as never });
+          applyPartial({ structureType: value as StructureType });
         }}
         hint="Changing this resets the building’s geometry and any openings."
       />
@@ -764,17 +784,36 @@ function DesignGroup({
         hint="Selects this state’s material prices. Not part of the site check."
       />
 
-      <SelectField
-        id="design-internalPressure"
-        label="Internal pressure"
-        value={config.internalPressure}
-        options={[
-          { value: 'closed', label: 'Closed — walls on all sides' },
-          { value: 'open', label: 'Open — one side open to the weather' },
-        ]}
-        onChange={(value) => applyPartial({ internalPressure: value as never })}
-        hint="A closed building pushes on the frame from inside as well as outside."
-      />
+      {/*
+        Internal pressure is **read-only**, derived from the four Walls-left-open switches below.
+
+        It was an editable select. That is worse than either extreme: the value picks which frame row
+        the engine reads (`'+0.7, -0.65'` for an open building, `'+0.2, -0.3'` for a closed one — see
+        `lookup.ts`), so a shop-set "closed" on a building with two open walls prices from a frame
+        designed for walls that are not there. The desktop disables this field for the same reason
+        (`CalcInternalPressuresValue` + `CheckAndUnlock`).
+
+        The switches below are the control. Changing one re-derives this within the same
+        `normaliseShedConfig` pass, so the two can never disagree.
+      */}
+      <dl className="flex flex-col gap-sq-1">
+        <dt className="text-sq-micro font-medium text-sq-ink">Internal pressure</dt>
+        <dd
+          id="design-internalPressure"
+          aria-describedby="design-internalPressure-hint"
+          className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+        >
+          {config.internalPressure === 'open'
+            ? 'Open — the frame is designed for pressure from inside'
+            : 'Closed — walls on all sides'}
+        </dd>
+        <dd id="design-internalPressure-hint" className="text-sq-micro text-sq-ink-muted">
+          Worked out from the walls left open below. It selects the frame row, so it is not typed.
+          {internalPressureApproximate(config) !== null && (
+            <span className="mt-sq-1 block text-sq-attention">{internalPressureApproximate(config)}</span>
+          )}
+        </dd>
+      </dl>
 
       <fieldset className="flex flex-col gap-sq-1">
         <legend className="text-sq-micro font-medium text-sq-ink">Walls left open</legend>
@@ -840,11 +879,16 @@ function DesignGroup({
               <label key={wall} className="flex flex-col gap-sq-1">
                 <span className="text-sq-micro capitalize text-sq-ink">{wall}</span>
                 <input
+                  id={`design-cantilever-${wall}`}
                   type="number"
                   inputMode="numeric"
                   min={0}
                   max={3000}
                   step={100}
+                  aria-invalid={errorAt('design-cantilever') !== undefined || undefined}
+                  aria-describedby={
+                    errorAt('design-cantilever') !== undefined ? 'design-cantilever-error' : undefined
+                  }
                   value={length}
                   onChange={(event) => setCantilever(wall, Number(event.target.value))}
                   className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body outline-none"
@@ -854,8 +898,18 @@ function DesignGroup({
           })}
         </div>
         <p className="text-sq-micro text-sq-ink-muted">
-          0 removes the cantilever. Over 1400 mm is flagged on a standard building.
+          0 removes the cantilever. A standard building is limited to 1400 mm; a custom structure can
+          go further.
         </p>
+        {errorAt('design-cantilever') !== undefined && (
+          <p
+            id="design-cantilever-error"
+            role="alert"
+            className="text-sq-micro text-sq-danger"
+          >
+            {errorAt('design-cantilever')}
+          </p>
+        )}
       </fieldset>
     </Group>
   );
@@ -967,6 +1021,7 @@ function ShedGroup({
 
   const wallProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isWall);
   const roofProfiles = (catalogue?.profiles ?? []).filter((profile) => profile.isRoof);
+  const downpipeMaterials = catalogue?.downpipeMaterials ?? [];
 
   return (
     <Group
@@ -1178,12 +1233,53 @@ function ShedGroup({
         )}
       </div>
 
-      <Field
-        id="shed-downpipeType"
-        label="Downpipe type"
-        value={config.downpipeType}
-        onChange={(event) => applyPartial({ downpipeType: event.target.value })}
-      />
+      {/*
+        Downpipe type, from the book rather than typed.
+
+        The desktop's list was `SELECT DISTINCT downpipe_kind` (`RepositoryDownpipe`), so the two
+        materials a shed can be quoted with are whatever the book stocks — `PVC` and `STEEL` on the
+        reference book — and the free-text field here could be told `Copper`, which no row prices.
+
+        Changing it also re-filters the downpipe colour (§5.3 of the desktop analysis): PVC is sold in
+        White alone, steel in every other colour. That is a cross-section rule, sitting in the Shed
+        group but changing a Colours field, and it is the reason this handler does more than one
+        assignment.
+      */}
+      {downpipeMaterials.length > 0 && (
+        <SelectField
+          id="shed-downpipeType"
+          label="Downpipe type"
+          value={config.downpipeType}
+          options={[
+            // An explicit empty choice, because the material decides which colours are legal. A
+            // select that silently starts on PVC would make PVC look like a decision somebody made.
+            { value: '', label: 'Choose a material' },
+            ...downpipeMaterials.map((material) => ({
+              value: material.kind,
+              label: material.kind,
+            })),
+          ]}
+          onChange={(value) =>
+            applyPartial({
+              downpipeType: value,
+              colors: {
+                ...config.colors,
+                // Kept legal on the same edit: a steel Monument downpipe that becomes PVC White is a
+                // colour change the operator sees in the Colours group, not an unpriced BOM.
+                downpipe:
+                  reconcileDownpipeColour(
+                    config.colors.downpipe,
+                    value,
+                    config.colors.wall,
+                    downpipeMaterials,
+                    catalogue?.colours ?? [],
+                  ) ?? config.colors.downpipe,
+              } as never,
+            })
+          }
+          hint="PVC is sold in White only; steel is sold in the full colour range."
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-sq-2">
         {catalogue !== null && catalogue.footingTypes.length > 0 && (
@@ -1302,7 +1398,54 @@ const COLOUR_LABELS: Record<keyof ShedColors, string> = {
 function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }) {
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
-  const entries = Object.entries(COLORBOND) as [string, string][];
+  const { catalogue } = useCatalogue();
+  /*
+   * The swatches, from the **book**, falling back to the built-in Colorbond map.
+   *
+   * ## Why the constant was wrong
+   *
+   * `COLORBOND` in `domain/defaults.ts` is a hand-kept list of 30 standard Colorbond names, and on
+   * 2026-11-11 it disagreed with the book in five names: it lacked `White`, `Colour TBA`,
+   * `Pale Eucalypt` and `Cottage Green`, and carried `Bushland`, `Headland`, `Loft`, `Sandbank` and
+   * `Wilderness`, which the reference book does not stock. Measured consequence: choosing PVC showed
+   * an **empty** swatch grid, because the only PVC colour is White and White was not in the constant.
+   *
+   * The book is the source of truth for what the factory sells (decision D4), so the grid reads
+   * `system_colour` through the catalogue. The constant stays as the fallback for a book that has not
+   * loaded yet, so the grid is never empty while the fetch is in flight.
+   */
+  const entries: [string, string][] =
+    catalogue !== null && catalogue.colours.length > 0
+      ? catalogue.colours.map((colour) => [colour.name, colour.hex])
+      : (Object.entries(COLORBOND) as [string, string][]);
+  /*
+   * The palette a role may be picked from, which for one role is **not** the whole Colorbond range.
+   *
+   * The downpipe is painted in whatever colours its material is stocked in, so with PVC chosen the
+   * only swatch on offer is White. This filter is the whole of the cross-section rule on this side:
+   * the Shed group creates the legality, this grid enforces it. Demo it the other way round and a
+   * quote carries a Monument PVC pipe that no `downpipe` row prices.
+   *
+   * Every other role keeps the whole list: the book sells each of them in every finish.
+   */
+  const downpipeNames =
+    config.downpipeType.trim() === ''
+      ? null
+      : catalogue?.downpipeMaterials.find(
+          (material) => material.kind.toLowerCase() === config.downpipeType.trim().toLowerCase(),
+        )?.colourNames ?? null;
+  /*
+   * Filtered by **name**, because three book colours share the white hex (`White`, `Colour TBA`,
+   * `Not Applicable`). Filtering the swatches by hex showed all three for PVC and marked all three as
+   * the chosen colour — measured 2026-11-11. The book's list is names, so the list is what is applied;
+   * the hex comparison is kept only for "is the stored colour legal", where a hex is all there is.
+   */
+  const downpipeHexes = downpipePalette(catalogue?.colours ?? [], downpipeNames ?? undefined);
+  const entriesFor = (key: keyof ShedColors): [string, string][] => {
+    if (key !== 'downpipe' || downpipeNames === null || downpipeNames.length === 0) return entries;
+    const allowed = new Set(downpipeNames.map((name) => name.trim().toLowerCase()));
+    return entries.filter(([name]) => allowed.has(name.trim().toLowerCase()));
+  };
   /**
    * Which role's palette is open, or `null` for none.
    *
@@ -1347,6 +1490,18 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
           const hex = config.colors[key];
           const name = nameOf(hex);
           const editing = paletteOpen === key;
+          const palette = entriesFor(key);
+          /*
+           * True when the stored colour is not in the palette this role now offers.
+           *
+           * Reachable only by loading a quote made under a different material — the write paths keep
+           * the pair legal — and saying so is better than drawing a swatch that cannot be re-picked.
+           */
+          const offPalette =
+            key === 'downpipe' &&
+            downpipeHexes != null &&
+            downpipeHexes.length > 0 &&
+            !downpipeHexes.some((allowed) => allowed.toLowerCase() === hex.toLowerCase());
           return (
             <fieldset key={key} className="flex flex-col gap-sq-1">
               {/*
@@ -1413,8 +1568,19 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
                   }
                   className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto rounded-md border border-sq-line p-sq-2"
                 >
-                  {entries.map(([colourName, colourHex]) => {
-                    const selected = hex.toLowerCase() === colourHex.toLowerCase();
+                  {palette.map(([colourName, colourHex], index) => {
+                    /*
+                     * One selected swatch, not every swatch that shares the hex.
+                     *
+                     * `Z450 Galv` and `Z600 Galv` are the same grey in the book, so an equality test
+                     * on hex marks both — the screen then claims the downpipe is two colours. The
+                     * stored value cannot say which of them was picked, so the first match is shown as
+                     * chosen and the rest are ordinary options.
+                     */
+                    const selected =
+                      hex.toLowerCase() === colourHex.toLowerCase() &&
+                      palette.findIndex(([, other]) => other.toLowerCase() === hex.toLowerCase()) ===
+                        index;
                     return (
                       <button
                         key={colourName}
@@ -1454,6 +1620,12 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
                     );
                   })}
                 </div>
+              )}
+              {offPalette && (
+                <p className="text-sq-micro text-sq-danger">
+                  {name === '' ? hex : name} is not sold on a {config.downpipeType} downpipe. Pick one
+                  of the colours above.
+                </p>
               )}
               {issuesByPath.has(`colours-${key}`) && (
                 <p id={`colours-${key}-error`} className="text-sq-micro text-sq-danger">
@@ -1579,7 +1751,7 @@ function SelectField({
   id: string;
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options: readonly { value: string; label: string }[];
   onChange: (value: string) => void;
   hint?: string;
   error?: string;

@@ -19,7 +19,7 @@
  */
 
 import { buildPlanGeometry } from '@/domain/plan';
-import type { ShedColors, ShedConfig } from '@/domain/types';
+import type { ShedColors, ShedConfig, StructureType } from '@/domain/types';
 import { COLOUR_ROLES } from '@/domain/colors';
 import { assumptionsFor, type AssumptionNote } from './assumptions';
 import { colourLabel } from './colours';
@@ -171,14 +171,18 @@ function metres(mm: number): string {
 }
 
 /** The structure, in words rather than the internal code. */
-const STRUCTURE_LABEL: Record<string, string> = {
+const STRUCTURE_LABEL: Record<StructureType, string> = {
   gable: 'Gable',
   skillion: 'Skillion',
-  carports: 'Carport',
-  tophot: 'TopHat',
-  zed: 'Zed shed',
-  hangar: 'Aircraft hangar',
+  gable_carport: 'Gable carport',
+  skillion_carport: 'Skillion carport',
+  tophot_64: 'TopHat',
+  tophot_96: 'TopHat',
+  zed_shed: 'Zed shed',
+  aircraft_hangar: 'Aircraft hangar',
   cyclonic: 'Cyclonic',
+  custom_gable: 'Custom gable',
+  custom_skillion: 'Custom skillion',
 };
 
 /** How a door or window is named on the plan. */

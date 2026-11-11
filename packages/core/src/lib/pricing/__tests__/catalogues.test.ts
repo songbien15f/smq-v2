@@ -92,6 +92,49 @@ describe('createSqliteCatalogueSource', () => {
     expect(loRib?.isRoof).toBe(false);
   });
 
+
+  it('reads the downpipe materials and the colours each one is stocked in', () => {
+    /*
+     * The desktop's Downpipe Type was `SELECT DISTINCT downpipe_kind`, and choosing one re-filtered
+     * the downpipe colour list through a join to `system_colour`. Both facts are one table, so they
+     * are read as one list — a materials list and a colour list from two queries could disagree.
+     *
+     * Three things the query must get right, each measured on the reference book:
+     * - an **inactive** colour is dropped (five steel colours exist in `downpipe` but are inactive);
+     * - a part row does not add a colour — PVC's adaptor names `90mm OD to 100x50`, and listing a
+     *   colour because an elbow of it exists is a palette entry with no pipe behind it;
+     * - the same colour appears once per material, not once per state.
+     */
+    const db = emptyBook();
+    db.exec(`
+      CREATE TABLE downpipe (downpipe_kind TEXT, downpipe_size TEXT, downpipe_color TEXT,
+                             downpipe_type TEXT, downpipe_price REAL, state TEXT);
+      INSERT INTO downpipe VALUES
+        ('PVC','90mm RND','White','DOWNPIPE',10.9,'NSW'),
+        ('PVC','90mm RND','Shale Grey','DOWNPIPE',10.9,'NSW'),
+        ('PVC','90mm OD to 100x50','White','DOWNPIPE_ADAPTOR',4.0,'NSW'),
+        ('STEEL','100x75','Monument','DOWNPIPE',8.4,'NSW'),
+        ('STEEL','100x75','Monument','DOWNPIPE',8.4,'VIC'),
+        ('STEEL','100x75','Monument','DOWNPIPE_ELBOW',1.2,'NSW'),
+        ('STEEL','100x75','Loft','DOWNPIPE',8.4,'NSW');
+      INSERT INTO system_colour VALUES
+        ('White','#ffffff',1,10,'DOWNPIPE_PVC'),
+        ('Shale Grey','#bdbfba',1,11,'DOWNPIPE_STEEL'),
+        ('Monument','#323232',1,12,'DOWNPIPE_STEEL'),
+        ('Loft','#5a5a5a',0,13,'DOWNPIPE_STEEL');
+    `);
+    expect(createSqliteCatalogueSource(db).load().downpipeMaterials).toEqual([
+      { kind: 'PVC', colourNames: ['Shale Grey', 'White'] },
+      { kind: 'STEEL', colourNames: ['Monument'] },
+    ]);
+  });
+
+  it('has no downpipe materials when the book has no downpipe table', () => {
+    expect(createSqliteCatalogueSource(new DatabaseSync(':memory:')).load().downpipeMaterials).toEqual(
+      [],
+    );
+  });
+
   it('leaves the cover null when the book has no cover row for a profile', () => {
     const db = emptyBook();
     db.exec(`

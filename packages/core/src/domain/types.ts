@@ -55,7 +55,25 @@ export type StructureType =
   | 'tophot_96'
   | 'zed_shed'
   | 'aircraft_hangar'
-  | 'cyclonic';
+  | 'cyclonic'
+  /*
+   * The two **custom** (non-standard) families the book sells.
+   *
+   * They are structures, not a flag: `CUSTOM CROSSOVER GABLE BUILDING` and `CUSTOM CROSSOVER
+   * SKILLION BUILDING` are rows 10 and 11 of `structure_type` with `is_nonstandard = 1`, and the
+   * desktop's `IS_NON_STANDARD_BUILDING` flag is set from exactly that column
+   * (`QuoteDetailsView.EventsStructureData.cs:32`). Without members here the exemption that flag
+   * buys — the cantilever limit, and the wider dimension ranges — could never be reached, so the
+   * branch was dead code.
+   *
+   * They carry `structure_lookup_code = 0` in the reference book, which means the book states **no
+   * frame schedule** for them: the desktop designs those buildings by hand and the sections come
+   * from an engineer, not from a table. So a quote on one of these prices its frame as an assumption
+   * rather than as a looked-up row — which is the honest answer, and what `optimise.ts` already does
+   * for any structure with no row.
+   */
+  | 'custom_gable'
+  | 'custom_skillion';
 
 /**
  * True for the structures whose roof falls to both long walls.
@@ -72,7 +90,11 @@ export type StructureType =
  * instead of testing `structure === 'gable'` is what stops a skillion ordering half a rafter.
  */
 export function fallsToBothSides(structure: StructureType): boolean {
-  return structure !== 'skillion' && structure !== 'skillion_carport';
+  return (
+    structure !== 'skillion' &&
+    structure !== 'skillion_carport' &&
+    structure !== 'custom_skillion'
+  );
 }
 
 /** A door or window cut into one wall. */

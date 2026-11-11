@@ -392,9 +392,43 @@ describe('internal pressure and charges', () => {
       .toBe('closed');
   });
 
-  it('keeps an open pressure', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, internalPressure: 'open' }).internalPressure)
-      .toBe('open');
+  /*
+   * Internal pressure is **derived from the walls**, not carried.
+   *
+   * The test that stood here asserted the opposite — that an `open` value survives normalisation. It
+   * was right about the old behaviour and wrong about the intended one: the desktop's field is
+   * disabled and computed (`CalcInternalPressuresValue`), because the value selects which frame row is
+   * read. A stored `open` on a building with no open walls prices from a frame designed for walls that
+   * are not there.
+   */
+  it('ignores a stored pressure and derives it from the walls', () => {
+    // No wall open → closed, whatever the input says.
+    expect(normaliseShedConfig({ ...DEFAULT_SHED, internalPressure: 'open' }).internalPressure).toBe(
+      'closed',
+    );
+    // One wall open → open, even if the input said closed.
+    expect(
+      normaliseShedConfig({
+        ...DEFAULT_SHED,
+        internalPressure: 'closed',
+        endOpening: { left: true, right: false },
+      }).internalPressure,
+    ).toBe('open');
+  });
+
+  it('treats all four walls open as closed, as the desktop does', () => {
+    /*
+     * `IsOpenDesignCheckAll` returns `false` when `IsAllMainShedOpen` is true
+     * (`OpeningCombo.CheckFuture.cs:24-32`). A portal with nothing on any side is not a building
+     * enclosing anything, so there is no internal to pressurise. It reads backwards and it is the
+     * behaviour the company has been quoting under, so it is reproduced rather than corrected.
+     */
+    const allOpen = normaliseShedConfig({
+      ...DEFAULT_SHED,
+      endOpening: { left: true, right: true },
+      sideOpening: { front: true, back: true },
+    });
+    expect(allOpen.internalPressure).toBe('closed');
   });
 
   it('keeps good charges when one entry is malformed', () => {

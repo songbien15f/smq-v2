@@ -112,3 +112,54 @@ describe('validateDraft — a length the bays do not sum to', () => {
     expect(messages(config).some((m) => /Change the spacing or the bay count/i.test(m))).toBe(false);
   });
 });
+
+describe('validateDraft — a cantilever past what the standard series carries', () => {
+  /*
+   * The desktop refuses a cantilever over 1 400 mm on a standard structure
+   * (`ValidateDesignInfoBlock`, `Error.cs:320`) and skips the check for a non-standard one, which
+   * is a building the factory designs to order.
+   *
+   * The limit lives here rather than in the option's own clamp because it is a **design** rule, not
+   * a geometric one: `normaliseOption` still allows 3 000 mm, which is what a custom structure can
+   * use. Blocking at the option level would make the non-standard case impossible to express.
+   */
+  const cantilever = (length: number) =>
+    shed({
+      options: [
+        { id: 'c1', kind: 'cantilever', wall: 'front', bay: 0, length },
+      ],
+    });
+
+  const standard = { nonStandardStructureCodes: ['CGB', 'CSB'] };
+
+  it('blocks a 1 500 mm cantilever on a standard structure, and says the limit', () => {
+    const issues = validateDraft({ config: cantilever(1500), customer, site }, standard);
+    const reported = issues.find((issue) => issue.path === 'design-cantilever');
+    expect(reported).toBeDefined();
+    expect(reported?.message).toContain('1500');
+    expect(reported?.message).toContain('1400');
+  });
+
+  it('allows 1 400 mm exactly — the desktop’s limit is inclusive', () => {
+    const issues = validateDraft({ config: cantilever(1400), customer, site }, standard);
+    expect(issues.some((issue) => issue.path === 'design-cantilever')).toBe(false);
+  });
+
+  it('allows a long cantilever on a non-standard building', () => {
+    /*
+     * `custom_gable` maps to the book's `CGB` sub-code, which is flagged `is_nonstandard = 1`. The
+     * point of reading the flag from the book rather than comparing display names — as the desktop
+     * does — is that renaming a row cannot switch the rule back on.
+     */
+    const config = { ...cantilever(2500), structureType: 'custom_gable' as never };
+    const issues = validateDraft({ config, customer, site }, standard);
+    expect(issues.some((issue) => issue.path === 'design-cantilever')).toBe(false);
+  });
+
+  it('does not run when no book is passed, because the flag is the book’s', () => {
+    // Documented rather than accidental: without the catalogue the editor cannot know which
+    // structures are non-standard, and guessing "standard" would block a custom building.
+    const issues = validateDraft({ config: cantilever(2500), customer, site });
+    expect(issues.some((issue) => issue.path === 'design-cantilever')).toBe(false);
+  });
+});

@@ -454,7 +454,7 @@ là việc riêng. Ba file trong `smq-package-smartquote/data` là định dạn
 | D9 | `track` không phải OptionKind riêng | Cửa trượt đã sở hữu track |
 | D10 | `extra_charge` / `engineering_charge` không phải OptionKind | Đã có `extraCents` / `engineeringCents`, thêm sẽ double-count |
 | D11 | Additions dùng `additionsCents` | Đúng công thức desktop |
-| D12 | Downpipe type tạm free-text | Bảng `downpipe` trong book là bộ phận (PVC/STEEL), không phải danh mục kiểu |
+| D12 | ~~Downpipe type tạm free-text~~ → **select từ sách + lọc lại màu** | Bảng `downpipe` **đúng là** danh mục: `SELECT DISTINCT downpipe_kind` là `FindDownpipeMaterials` của desktop. Xem §13.29.3 |
 | D13 | Fax đã thêm | Lưu trong `customer_json`, không cần cột DB |
 
 ---
@@ -3142,15 +3142,136 @@ Nên đây là chỗ v2 hơn, không phải thiếu.
 
 ---
 
+## 13.29 Ba luật nghiệp vụ từng không chạy được, và hai lỗi chúng lôi ra (2026-11-11)
+
+Yêu cầu: *"liệt kê các task/bug chưa làm, cần triển khai"* → duyệt đợt 1: **Internal Pressures tự
+tính**, **cantilever 1 400 mm**, **downpipe đổi → lọc lại màu**. Cả ba đều là "chặn một giá trị vô
+lý", không cần màn hình mới.
+
+### 13.29.1 Internal pressure tự tính, và **không** sửa được
+
+Desktop: `DesignInternalPressuresItem` là control **bị disable**, `CalcInternalPressuresValue()` đọc
+bốn switch tường mở rồi đặt `Open`/`Close` (`QuoteDetailsView.cs:2649-2700`). v2 trước đây cho chọn
+trong dropdown — tệ hơn cả hai: giá trị này **chọn dòng khung được đọc**
+(`internal_pressure = '+0.7, -0.65'` cho nhà mở, `'+0.2, -0.3'` cho nhà kín), nên gõ tay nghĩa là báo
+giá một khung thiết kế cho bức tường không tồn tại.
+
+Luật (`domain/internalPressure.ts`, mới), port từ `OpeningCombo.CheckFuture.cs:24-32`:
+
+```
+không awning:
+  cả bốn tường mở  → CLOSED     ← đọc ngược, nhưng đúng
+  một số mở        → OPEN
+  không mở         → CLOSED
+có awning          → OPEN (thận trọng) + nói rõ là xấp xỉ
+```
+
+Cả bốn mở ra **closed** là hành vi thật của desktop (`IsAllMainShedOpen` true và
+`IsOpenDesignCheckAll` false), không phải lỗi chép: một portal không có tường nào không bao gì cả nên
+không có "bên trong" để chịu áp.
+
+Test cũ `'keeps an open pressure'` khẳng định điều **ngược lại**. Nó đúng với hành vi cũ và sai với
+hành vi mong muốn, nên bị thay bằng hai test suy ra từ tường.
+
+### 13.29.2 Cantilever 1 400 mm — và một nhánh **code chết**
+
+`ValidateDesignInfoBlock` (`QuoteDetailsView.Error.cs:315-330`) từ chối cantilever > 1 400 mm, và bỏ
+qua toàn bộ kiểm tra khi `!IS_NON_STANDARD_BUILDING`. Cờ đó lấy từ `structure_type.is_nonstandard`
+(`QuoteDetailsView.EventsStructureData.cs:32`).
+
+**Nhưng v2 không có kiểu công trình non-standard nào.** Union `StructureType` có 9 thành viên, không
+thành viên nào là `CGB`/`CSB` — hai dòng **duy nhất** có `is_nonstandard = 1` trong sách thật. Nên
+nhánh miễn trừ không thể chạm tới, và một câu khách hàng mua nhà custom sẽ bị chặn ở 1 400 mm.
+
+Điều tra thêm: `structure_lookup_code` của `CGB`/`CSB` là **0**, và `view_system_lookup_data` chỉ có
+rows cho `structure_code = 1`. Nghĩa là sách **không có** frame schedule cho hai dòng custom — desktop
+thiết kế tay. Vậy nhà custom **có** margin (1.48, cùng bảng) nhưng **không** có dòng khung, và đường
+`optimise.ts` đã xử lý "không có dòng" bằng giả định. Đó là câu trả lời trung thực.
+
+Sửa:
+- `StructureType` thêm `custom_gable` | `custom_skillion`; `SUB_CODE` thêm `CGB`/`CSB`.
+- `Catalogue.nonStandardStructureCodes` đọc `WHERE is_nonstandard = 1 AND is_active = 1` → `['CGB','CSB']`.
+- `domain/structureCodes.ts` (mới) giữ ánh xạ sub-code + `isNonStandardStructure()`; `lib/pricing/structure.ts` re-export.
+- `validation.ts` chặn `design-cantilever` > 1 400 mm **chỉ khi** sách nói cấu trúc là standard.
+- UI: ô nhập có `id`, lỗi hiện ngay dưới, `aria-invalid` + `aria-describedby`.
+
+### 13.29.3 Downpipe đổi → lọc lại màu
+
+`OnChangeBasicDownpipeTypeEvent` (`QuoteDetailsView.Events.cs:696`) gọi
+`FindDownpipeColors(kind, true)` — join `downpipe` với `system_colour`, giữ `colour_status = 1`. Đo
+trên sách thật:
+
+| kind | màu bán được |
+|---|---|
+| `PVC` | **White** — một dòng |
+| `STEEL` | 29 màu; `Bushland`, `Headland`, `Loft`, `Sandbank`, `Wilderness` có trong `downpipe` nhưng **inactive** trong `system_colour`, nên join loại |
+
+**Bẫy đã kiểm:** `system_colour.option_spec_array` có `DOWNPIPE_PVC`/`DOWNPIPE_STEEL` trông như câu
+trả lời, nhưng **sai** cho PVC — role đó liệt kê đủ 30 màu trong khi bảng `downpipe` chỉ bán White.
+Tin nó sẽ cho chọn 29 loại ống nhà máy không bán. Vì vậy `Catalogue.downpipeMaterials` đọc **chính
+bảng `downpipe`** join `system_colour`, không đọc role.
+
+Sửa: `domain/downpipe.ts` (mới) — `downpipePalette`, `reconcileDownpipeColour` (ba nhánh của desktop:
+giữ màu nếu còn bán · một màu thì lấy · nhiều màu thì lấy màu tường nếu có). `shed-downpipeType` thành
+select từ sách, đổi là reconcile màu. `ColourGroup` lọc lưới swatch của downpipe.
+
+### 13.29.4 Hai lỗi chỉ lộ ra khi bấm thử
+
+**(a) `@sq/core/pricing` kéo `node:fs` vào bundle trình duyệt.** `validation.ts` import `subCodeFor`
+từ barrel pricing, barrel đó export `publish.ts` (`node:fs`). Kết quả: **mọi** test Step 1 đỏ với
+overlay `Module not found: Can't resolve 'fs'`, và `QuoteEditor` không render. Sửa: chuyển ánh xạ sang
+`domain/structureCodes.ts`; client import từ `@sq/core/domain`.
+
+**(b) Dropdown Structure Type có 4/7 giá trị bị schema nuốt.** `carports`, `tophot`, `zed`, `hangar`
+không phải thành viên union, nên `structureTypeSchema.catch(...)` trả về **`gable`** — đo bằng probe
+2026-11-11. Cùng họ với Importance Level 3/4 → 1: một select hiện một giá trị, lưu một giá trị khác.
+Nay danh sách khoá vào union (`satisfies readonly { value: StructureType; … }[]`), thêm 11 thành viên
+kèm hai dòng custom, và test e2e chọn **từng** option rồi đọc lại giá trị.
+
+**(c) Lưới màu thiếu White.** `COLORBOND` (hằng viết cứng 30 tên) thiếu `White`, `Colour TBA`,
+`Pale Eucalypt`, `Cottage Green`, lại có 5 màu sách không bán. Đo được: chọn PVC → lưới **rỗng**, vì
+màu PVC duy nhất là White và White không có trong hằng. Nay lưới đọc `catalogue.colours` (sách), hằng
+chỉ là fallback khi chưa tải xong.
+
+**(d) Ba màu chia sẻ hex trắng.** `White`, `Colour TBA`, `Not Applicable` cùng `#ffffff`. Lọc swatch
+theo **hex** hiện cả ba và đánh dấu **cả ba** là đang chọn. Sửa: lọc theo **tên**, và chỉ swatch khớp
+hex **đầu tiên** được đánh dấu chọn.
+
+**(e) Panel ShedSafe giấu danh sách field thiếu khi tài khoản không phải salesman.** Hai lý do là
+`if/else if`, nên khi cờ salesman bật thì câu "fill in the customer's first name, …" biến mất. Nay
+hiện **cả hai**: field là việc của người dùng, tài khoản là việc của admin.
+
+### Đo được trong trình duyệt (2026-11-11)
+
+| | |
+|---|---|
+| Bật "End wall, left" | `#design-internalPressure` **Closed → Open**, không có `select` |
+| Chọn `custom_gable` | 11 option, mỗi option giữ đúng giá trị sau khi chọn |
+| Cantilever 2 500 mm trên `gable` | *"…a standard building is limited to 1400 mm…"* |
+| Cùng 2 500 mm trên `custom_gable` | không lỗi, giá trị giữ nguyên |
+| Downpipe `PVC` | lưới **1** swatch — White, đang chọn |
+| Downpipe `STEEL` | lưới **29** swatch, không có White |
+| e2e | `stepOne.spec.ts` **18 test**, toàn suite chrome **32 passed** |
+
+### Không làm trong lượt này
+
+- Downpipe **số lượng** theo kind: desktop dùng `UnitLength` cho steel và mét cho PVC, làm số ống khác
+  nhau (`GableCarportQuote.cs:375`). BOM v2 vẫn tính mét cho cả hai.
+- `CUSTOM CROSSOVER SKILLION` chưa được thử trong trình duyệt (chỉ `custom_gable`), dù cùng đường.
+- Hai dòng custom **không có** frame schedule trong sách — BOM báo giả định, đó là kết quả đúng chứ
+  không phải thiếu.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 1 024 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**, **8 cho `suggestedValues` + `outsideBookBounds`**) |
+| `@sq/core` | 1 036 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, `averageHeightMm`/`ridgeHeightMm`, Importance Level 1–4, wind region codes, `suggestedValues` + `outsideBookBounds`, **internal pressure suy từ tường**, **9 cho `downpipePalette`/`reconcileDownpipeColour`**, **`downpipeMaterials` trong catalogue**) |
 | `@sq/api` | 293 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 31 (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import — reads, reports, opens, edits all three steps, saves and reopens; **3 vendor dashboard** — wrong password refused, sign in + read + sign out, docs page; **11 Step 1** — vị trí ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State/Internal pressure vẫn sửa được, avg/ridge height, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, **2 salesman gate** — trạng thái luôn được nói, login không phải salesman thì chặn kèm lý do; **3 Save từ mọi step** — có mặt cả 3 step đúng 1 nút + vẫn thấy khi cuộn, lý do trong trang, lưu từ step 1 ở lại step 1) — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 32 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **18 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

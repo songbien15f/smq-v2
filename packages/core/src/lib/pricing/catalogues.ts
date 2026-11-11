@@ -169,6 +169,28 @@ export interface Catalogue {
    */
   dimensions: ShedDimensions;
   /**
+   * The `structure_sub_code`s the book flags `is_nonstandard = 1`.
+   *
+   * A non-standard building is not a defect — it is one the factory builds to order, and the desktop
+   * relaxes exactly one rule for it: the cantilever limit (`ValidateDesignInfoBlock` skips the
+   * 1 400 mm check when `IS_NON_STANDARD_BUILDING`). Read from the book so the flag follows the
+   * structure the operator actually chose, rather than a hard-coded name — the desktop compares
+   * `display_name` strings, which breaks the day somebody renames a row.
+   */
+  nonStandardStructureCodes: string[];
+  /**
+   * The downpipe materials the book stocks, and which colour names each one is sold in.
+   *
+   * The desktop's **Downpipe Type** dropdown was `SELECT DISTINCT downpipe_kind`
+   * (`RepositoryDownpipe.FindDownpipeMaterials`) — `PVC` and `STEEL` — and that choice re-filters
+   * the downpipe colour list (`FindDownpipeColors`). Both facts live in one table, so they are read
+   * as one list here rather than as a materials list plus a colour list that could disagree.
+   *
+   * `colourNames` keeps the book's spelling: the rule in `domain/downpipe.ts` resolves names to
+   * hexes against `colours`, the same way the desktop's join did.
+   */
+  downpipeMaterials: { kind: string; colourNames: string[] }[];
+  /**
    * The catalogue sizes per opening type.
    *
    * The desktop's Size/Type dropdown was this table: an operator picked a size the factory sells
@@ -486,6 +508,35 @@ export function createSqliteCatalogueSource(db: DatabaseSync): EditorCatalogueSo
         roofPitchHints: uniqueHints(db, 'shed_hint_roof_pitch'),
         bayHints: uniqueHints(db, 'shed_hint_bay'),
         dimensions: dimensionsFromBook(db),
+        nonStandardStructureCodes: rows(
+          db,
+          `SELECT structure_sub_code FROM structure_type
+            WHERE is_nonstandard = 1 AND CAST(is_active AS REAL) = 1`,
+        )
+          .map((row) => str(row.structure_sub_code).trim())
+          .filter((code) => code !== ''),
+        downpipeMaterials: rows(
+          db,
+          // The same join the desktop used, and the same two filters: the colour must be active in
+          // `system_colour`, and only whole pipe rows count — a material's adaptor or elbow names a
+          // colour too, and listing a colour because an elbow of it is stocked would be a palette
+          // entry with no pipe behind it.
+          `SELECT DISTINCT dp.downpipe_kind AS kind, dp.downpipe_color AS colour
+             FROM downpipe dp
+             JOIN system_colour sc ON sc.colour_name = dp.downpipe_color AND sc.colour_status = 1
+            WHERE dp.downpipe_type = 'DOWNPIPE'
+            ORDER BY dp.downpipe_kind, dp.downpipe_color`,
+        ).reduce<{ kind: string; colourNames: string[] }[]>((materials, row) => {
+          const kind = str(row.kind).trim();
+          if (kind === '') return materials;
+          const existing = materials.find((material) => material.kind === kind);
+          if (existing === undefined) {
+            materials.push({ kind, colourNames: [str(row.colour)] });
+          } else {
+            existing.colourNames.push(str(row.colour));
+          }
+          return materials;
+        }, []),
         doorSizes: {
           window: rows(
             db,

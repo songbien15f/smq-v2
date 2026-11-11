@@ -819,12 +819,21 @@ export function SiteCheckPanel({
             >
               {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
             </Button>
-            {blockedBy === 'fields' && (
+            {/*
+              Both reasons, not just the one that blocks hardest.
+
+              These were exclusive, so a login that is not a registered salesman was told only about
+              the account — and the five empty fields it also had to fill were invisible. An operator
+              fixes what the screen names; when the account is the blocker it is an administrator's
+              job, and the fields are still this person's. Measured 2026-11-11: with the salesman list
+              resolved, this panel stopped naming any missing field at all.
+            */}
+            {missingForPin.length > 0 && (
               <span className="max-w-[22rem] text-sq-micro text-sq-attention">
                 Before pinning, fill in {missingForPin.join(', ')}.
               </span>
             )}
-            {blockedBy === 'salesman' && (
+            {notASalesman && (
               <span className="max-w-[22rem] text-sq-micro text-sq-danger">
                 ShedSafe will refuse this login — see the reason beside the salesperson above.
               </span>
