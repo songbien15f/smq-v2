@@ -579,91 +579,94 @@ test.describe('Step 1 — quote details', () => {
     await expect(front).toHaveValue('2500');
   });
 
-  test('the PIN button names every field it is waiting for', async ({ page }) => {
+  test('the PIN button opens the building panel, and names what it is waiting for', async ({ page }) => {
     /*
-     * ## The desktop rule, and the bug it avoids
+     * ## The change this test protects
      *
-     * PIN needs five fields — first name, last name, email, customer address, site address — plus the
-     * salesperson ShedSafe insists on. The desktop had **two disagreeing lists**: the button's enable
-     * check fell back to a legacy address field, while the click handler did not, so a button could
-     * look ready, be pressed, and be refused.
+     * The button beside the site address used to **pin** straight away, sending the quote's own
+     * `span`/`height`/`length`/`importanceLevel`. Those come from `DEFAULT_SHED` — 12 000 × 24 000 ×
+     * 4 200 — so a building nobody described was certified by ShedSafe and every number in the quote
+     * was priced against that rating.
      *
-     * Here there is one list. This asserts the visible consequence: on an empty quote the button is
-     * disabled **and the screen says what is missing**, rather than a grey control with no reason on a
-     * form 6 273 px tall.
+     * The desktop never worked that way: PIN opens the **Building Parameters** flyout, whose fields
+     * start empty, and its `GO TO SITECHECK` stays disabled until they are entered (trace §5.2-5.3).
+     *
+     * So this asserts three things in order: the button opens a panel, the panel's fields are **empty**
+     * rather than pre-filled from the quote, and the panel's own submit is disabled with the missing
+     * fields named.
      */
-    const pin = page.getByRole('button', { name: /Go to ShedSafe|Pin again/ });
-    await expect(pin).toBeDisabled();
+    const opener = page.getByRole('button', { name: /Set the building to rate|Review the rated building|Building parameters are open/ });
+    await expect(opener).toBeVisible();
+    await expect(page.locator('#sitecheck-params-title')).toHaveCount(0);
 
-    const reason = page.getByText(/Before pinning, fill in/i);
-    await expect(reason).toBeVisible();
+    await opener.click();
+    await expect(page.getByRole('heading', { name: 'Building parameters' })).toBeVisible();
 
-    for (const field of ['first name', 'last name', 'email', 'site address']) {
-      await expect(reason).toContainText(new RegExp(field, 'i'));
+    /*
+     * Empty, not seeded. The quote has a span of its own — 12 000 from the defaults — and copying it
+     * here without a keystroke is exactly the defect.
+     */
+    for (const id of ['#sitecheck-params-spanMm', '#sitecheck-params-heightMm', '#sitecheck-params-lengthMm']) {
+      await expect(page.locator(id), `${id} must start empty`).toHaveValue('');
     }
+    await expect(page.locator('#sitecheck-params-importanceLevel')).toHaveValue('');
+    await expect(page.locator('#sitecheck-params-roofPitchDeg')).toHaveValue('');
+
+    // The panel's average height is read-only and says so while it cannot be computed.
+    await expect(page.locator('#sitecheck-params-averageHeight')).toHaveText('—');
+    await expect(page.locator('input#sitecheck-params-averageHeight')).toHaveCount(0);
+
+    // Its submit is disabled, and the missing fields are written beside it.
+    const go = page.getByRole('button', { name: /^Go to ShedSafe$/ });
+    await expect(go).toBeDisabled();
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Span \/ Width/);
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Height/);
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Overall Length/);
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Roof Pitch/);
   });
 
-  test('the PIN button enables once its fields are filled', async ({ page }) => {
+  test('the building panel refuses a number below the floor the desktop enforces', async ({ page }) => {
     /*
-     * The other half: a gate that never opens is worse than no gate. Nothing here calls ShedSafe — the
-     * button becoming enabled is the whole assertion, and pressing it is deliberately not done.
-     *
-     * The site **suburb** is filled as well as its address, and that is not incidental: ShedSafe
-     * refuses an empty `SuburbName` with *"The SuburbName field is required"*, measured against the
-     * live API on 2026-11-06. A test that filled only the street line would assert a gate that opens
-     * onto a call ShedSafe rejects.
-     *
-     * ## Two gates now, and the second is about the account
-     *
-     * Since 2026-11-10 the button also requires that the signed-in email is a registered ShedSafe
-     * salesman — a fact about the account, not the form, and one the suite's own tenant does not
-     * satisfy. So this asserts the two independently: the field gate clears when the fields are
-     * filled, and the button's final state is exactly "no fields missing **and** the account is
-     * allowed".
+     * `ValidateBuildingParametersForButton` requires each dimension to be at least 100 mm and the pitch
+     * to be above zero. The desktop implemented the floor as `MinValue = 100` on the control plus a
+     * `Text == "0"` hack, which the trace marks **not to be ported**; here the floor is a check on the
+     * number, and the message is beside the field.
      */
-    await page.locator('#customer-firstName').fill('Dana');
-    await page.locator('#customer-lastName').fill('Nguyen');
-    await page.locator('#customer-email').fill('dana@example.com');
-    await page.locator('#customer-address').fill('1 Test Road');
-    await page.locator('#site-address').fill('1 Test Road');
-    await page.locator('#site-suburb').fill('Brisbane');
-    await page.locator('#site-state').fill('QLD');
-    await page.locator('#site-postcode').fill('4000');
+    await page.getByRole('button', { name: /Set the building to rate|Review the rated building|Building parameters are open/ }).click();
+    await page.locator('#sitecheck-params-spanMm').fill('50');
 
-    // The field gate has cleared: no "fill in …" sentence remains.
-    await expect(page.getByText(/Before pinning, fill in/i)).toHaveCount(0, { timeout: 10_000 });
+    const error = page.locator('#sitecheck-params-spanMm-error');
+    await expect(error).toBeVisible();
+    await expect(error).toContainText('at least 100');
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Out of range|Span/);
+    await expect(page.getByRole('button', { name: /^Go to ShedSafe$/ })).toBeDisabled();
+  });
+
+  test('“Copy from the quote” fills the panel, and the average height follows', async ({ page }) => {
+    /*
+     * The one thing the desktop does not have, and the reason it is a **button**: the four numbers
+     * usually are the quote's, so typing them again is friction. What must not happen is them being
+     * filled without somebody deciding — which is what the previous version did automatically.
+     */
+    await page.getByRole('button', { name: /Set the building to rate|Review the rated building|Building parameters are open/ }).click();
+
+    // Empty before the press.
+    await expect(page.locator('#sitecheck-params-spanMm')).toHaveValue('');
+
+    await page.getByRole('button', { name: /Copy from the quote/i }).click();
+
+    // Filled from the quote — its span/height/length and a pitch.
+    await expect(page.locator('#sitecheck-params-spanMm')).not.toHaveValue('');
+    await expect(page.locator('#sitecheck-params-heightMm')).not.toHaveValue('');
+    await expect(page.locator('#sitecheck-params-lengthMm')).not.toHaveValue('');
 
     /*
-     * The three states, matched so that they cannot be confused with each other.
-     *
-     * `/Registered ShedSafe salesman/i` alone was **wrong**: it is a substring of *"This login is not a
-     * registered ShedSafe salesman"*, so the "is blocked" branch was read as "is allowed" and the test
-     * asserted an enabled button on the page that deliberately disables it. Anchoring the positive
-     * case to the start of the sentence is what separates them.
+     * The average height appears once span, height and pitch are all present, and it is the figure a
+     * council application asks for — computed by the same `averageHeightMm` the Shed group uses.
      */
-    const state = ((await page.locator('#sitecheck-salesman-state').textContent()) ?? '').trim();
-    const isSalesman = /^Registered ShedSafe salesman/i.test(state);
-    const explicitNo = /^This login is not a registered ShedSafe salesman/i.test(state);
-    const unknown = /^Could not confirm this login/i.test(state);
-
-    expect(
-      isSalesman || explicitNo || unknown,
-      `the panel must state the login's ShedSafe status; it said: "${state}"`,
-    ).toBe(true);
-
-    const pin = page.getByRole('button', { name: /Go to ShedSafe|Pin again/ });
-
-    if (isSalesman) {
-      // Fields + account: the button opens.
-      await expect(pin).toBeEnabled();
-    } else {
-      /*
-       * Not a salesman, or the list could not be read. The button is disabled **on purpose** and the
-       * reason is on screen — which is the behaviour these tests exist to protect. Asserting
-       * "enabled" here would assert that a pin ShedSafe refuses looks ready.
-       */
-      await expect(pin).toBeDisabled();
-    }
+    const pitch = page.locator('#sitecheck-params-roofPitchDeg');
+    if ((await pitch.inputValue()) === '') await pitch.selectOption({ index: 1 });
+    await expect(page.locator('#sitecheck-params-averageHeight')).not.toHaveText('—');
   });
 
   test('changing the delivery scope un-ticks the acknowledgement', async ({ page }) => {
@@ -762,7 +765,16 @@ test.describe('Step 1 — the ShedSafe salesman gate', () => {
     expect(text).toMatch(/@/);
     expect(text).toMatch(/administrator/i);
 
-    // And the button is genuinely disabled rather than merely explaining.
+    /*
+     * And the button is genuinely disabled rather than merely explaining.
+     *
+     * The panel has to be open first: the submit lives inside it now, so on a closed panel there is no
+     * button to be disabled. That is the desktop's own arrangement — `GO TO SITECHECK` is built into
+     * `UcShowBuildingParameterss`, not into the grid.
+     */
+    await page
+      .getByRole('button', { name: /Set the building to rate|Review the rated building|Building parameters are open/ })
+      .click();
     await expect(page.getByRole('button', { name: /Go to ShedSafe|Pin again/ })).toBeDisabled();
   });
 });

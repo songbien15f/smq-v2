@@ -3592,6 +3592,70 @@ switch cladding), typecheck sạch 12 package.
 
 ---
 
+## 13.37 PIN mở panel Building Parameters, và bốn con số là của khách (2026-11-11)
+
+Yêu cầu: *"ở desktop, sau khi có info site address, thì button PIN sẽ active > click thì nó ra 1 panel
+(chứa các info cơ bản để tạo 1 building trên sitecheck, và các input này sẽ default null và require >
+input đầy đủ thì button Go to sitecheck mới active > lúc này mới call sitecheck tạo building … như hiện
+tại version 2 này thì section sitecheck bên trên có giá trị default rồi cho Go to shedsafe (thì nó đi
+ngược lại mong muốn của client là các info đó phải được client nhập vào)"*.
+
+### 13.37.1 Lỗi thật: bốn con số của quote được gửi thẳng sang ShedSafe
+
+`SiteCheckPanel` nhận `heightMm`, `spanMm`, `lengthMm`, `importanceLevel` từ `config` — tức là từ
+`DEFAULT_SHED`: **12 000 × 24 000 × 4 200, importance 1**. Nút "Go to ShedSafe" gửi đúng bốn số đó, nên
+một nhà **không ai mô tả** đã được ShedSafe chứng nhận, và mọi con số trong quote được định giá theo
+chứng chỉ đó.
+
+Trong desktop thì ngược lại (`trace §5.2-5.3`): PIN mở `ShowBuildingParameters`, sáu dòng
+(Importance level · Span · Height · Overall Length · Roof Pitch · **Avg. Height read-only**), các ô
+**trống**, và `GO TO SITECHECK` **disabled** cho tới khi đủ
+(`ValidateBuildingParametersForButton`: span/height/length ≥ 100, pitch > 0).
+
+### 13.37.2 Đã làm
+
+**Panel `Building parameters`, mở bằng nút PIN** — inline chứ không floating, vì một flyout nổi trên
+form 6 000 px là thứ người dùng mất dấu.
+
+| Dòng | Kiểu | Mặc định |
+|---|---|---|
+| Importance level | select 1–4 | **trống** |
+| Roof pitch | select từ `roofPitchHints` (sách, lọc theo span) | **trống** |
+| Span / Width | số | **trống** |
+| Height | số | **trống** |
+| Overall Length | số | **trống** |
+| Avg. height | **read-only**, `averageHeightMm()` | tính từ 3 số trên |
+
+`null` là trạng thái thật, khác `0`: một ô trống nghĩa là "chưa nhập", nên mọi kiểm tra là `=== null`
+chứ không phải falsy. Ô nào nhập dưới 100 thì có lỗi riêng ngay dưới, `aria-invalid` + `aria-describedby`.
+
+**Ba cổng, theo thứ tự người dùng sửa được:** liên hệ/địa chỉ của quote → panel này → tài khoản
+salesman (cái duy nhất màn hình không sửa được).
+
+**"Copy from the quote" là một nút, không phải default.** Bốn con số thường đúng là của quote, nên gõ
+lại là phiền; nhưng điền mà không ai quyết định chính là lỗi cũ.
+
+**Panel nói khi hai bên lệch:** *"The quote is span 12 000 → 10 000 mm. ShedSafe will rate the numbers
+above, so the price will still come from the quote."* Không tự ghi đè — ghi đè là đổi giá báo giá mà
+người dùng không để ý.
+
+**PIN → Go to ShedSafe, hai bước.** Nút cạnh địa chỉ giờ chỉ **mở panel** (`aria-expanded`), nhãn đổi
+thành "Set the building to rate"; việc tạo building là nút trong panel.
+
+### 13.37.3 Hack `Text == "0"` của desktop không port
+
+Desktop ép `MinValue = 100` trên control rồi thêm `if (Value == 100 && Text == "0")` để phân biệt số 0
+thật với giá trị bị control che. Trace đã ghi **đừng port**. Ở đây ô trống là `null`, và sàn 100 là một
+phép so trên số — không có mâu thuẫn giữa "giá trị" và "chữ đang hiển thị".
+
+### Kiểm chứng
+
+3 e2e mới: panel mở và các ô **trống** (không lấy từ quote), số dưới 100 bị từ chối kèm lý do,
+"Copy from the quote" điền và Avg. height xuất hiện. **39/39 e2e**, 1 072 core, 57 client, typecheck
+sạch 12 package.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -3600,7 +3664,7 @@ switch cladding), typecheck sạch 12 package.
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 38 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 39 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

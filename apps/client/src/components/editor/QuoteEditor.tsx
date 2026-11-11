@@ -62,6 +62,7 @@ import { customerFromFragment, templateFromFragment } from './fragment';
 import { api, newIdempotencyKey } from '@/lib/sq';
 import { useUnsavedChangesWarning } from '@/hooks/useUnsavedChangesWarning';
 import { useCatalogue } from '@/hooks/useCatalogue';
+import { roofPitchHintsForSpan } from '@sq/core/domain';
 import { navFor } from '@/components/ShellFrame';
 import { WorkspaceMenu } from '@/components/WorkspaceMenu';
 import type { DisplayUnit } from '@sq/core/domain';
@@ -783,10 +784,23 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                         postcode: site.postcode,
                       }}
                       client={{ firstName: customer.firstName, lastName: customer.lastName, email: customer.email }}
-                      heightMm={config.height}
-                      spanMm={config.span}
-                      lengthMm={config.length}
-                      importanceLevel={config.importanceLevel}
+                      /*
+                       * The quote as it stands — an **offer** for "Copy from the quote", and the
+                       * reference the panel compares against. It does not seed the panel: the four
+                       * numbers ShedSafe rates are typed by a person (see `SiteCheckPanel`).
+                       */
+                      shed={{
+                        spanMm: config.span,
+                        heightMm: config.height,
+                        lengthMm: config.length,
+                        importanceLevel: config.importanceLevel,
+                        roofPitchDeg: config.roofPitchDeg,
+                        structureType: config.structureType,
+                      }}
+                      roofPitchHints={roofPitchHintsForSpan(
+                        catalogue?.roofPitchGroups ?? [],
+                        config.span,
+                      )}
                       /*
                        * The **email**, because that is the ShedSafe salesman key.
                        *

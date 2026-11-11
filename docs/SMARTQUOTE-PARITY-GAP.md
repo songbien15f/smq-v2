@@ -84,7 +84,7 @@ Tham chiếu v2: `apps/client/src/components/editor/QuoteDetailsPanel.tsx`.
 
 | # | Desktop | v2 | Kết luận |
 |---|---|---|---|
-| 24 | GET SITECHECK REPORT (button) | panel ShedSafe riêng | khác vị trí, chức năng có |
+| 24 | GET SITECHECK REPORT / **PIN → panel Building Parameters** | **đã sửa 2026-11-11**: PIN mở panel 6 dòng trống, `Go to ShedSafe` gate trên đó (§13.37) | khớp |
 | 25 | Structure Type (dropdown) | `design-structureType` | khớp — **11 lựa chọn**, gồm 2 dòng custom |
 | 26–31 | 6 giá trị chứng chỉ, disabled | 6 read-only, 3 trạng thái | khớp (v2 hơn: nói rõ nguồn) |
 | 32 | Show More Parameters (7 field địa lý) | n/d | **THIẾU** — v2 chỉ hiện 6 |
@@ -185,6 +185,8 @@ Xác nhận cần làm: mở menu đó trong trình duyệt và đếm 12 dòng.
 ## 5. Những gì **chưa** kiểm
 
 - **Step 3 (Cost)** toàn bộ: chưa so trong đợt này.
+- **Panel Building Parameters**: hành vi đã sửa 2026-11-11 (mở trống + gate), nhưng **chưa kiểm** một
+  lần pin thật với tài khoản salesman để xác nhận ShedSafe nhận đúng bốn số của panel.
 - **Nhóm 2/3 desktop** ở các field Hidden (`SuburbName`/`State`/`Postcode`) — v2 để cả ba sửa được;
   nếu desktop ẩn chúng vì Places điền vào, việc mở ba ô tự do có thể tạo địa chỉ không nhất quán.
   **Chưa kiểm.**

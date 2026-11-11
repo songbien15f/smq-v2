@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Button, StatusPill } from '@sq/ui';
+import { averageHeightMm } from '@sq/core/domain';
 import { Group } from './QuoteDetailsPanel';
 import { api } from '@/lib/sq';
 import { useDraftStore } from '@/store/useDraftStore';
@@ -39,10 +40,27 @@ export interface SiteCheckPanelProps {
   /** What to pin. Absent when the quote has not been saved — a check belongs to a quote. */
   site: { address: string; suburb: string; state: string; postcode: string };
   client: { firstName: string; lastName: string; email: string };
-  heightMm: number;
-  spanMm: number;
-  lengthMm: number;
-  importanceLevel: number;
+  /**
+   * The building as the quote currently stands, used **only** for two things:
+   *
+   * 1. the "Copy from Shed" offer, which a person presses, and
+   * 2. telling the operator when the panel and the quote disagree.
+   *
+   * It never seeds the panel. The desktop's Building Parameters panel opens with its fields empty and
+   * the customer types the dimensions the factory will rate; seeding them from the quote made the one
+   * input the certificate depends on a value nobody chose (`SiteCheckPanel` sent `spanMm` etc. straight
+   * through, so a default 12 000 × 24 000 × 4 200 building was pinned without a keystroke).
+   */
+  shed: {
+    spanMm: number;
+    heightMm: number;
+    lengthMm: number;
+    importanceLevel: number;
+    roofPitchDeg: number;
+    structureType: string;
+  };
+  /** The roof pitches the book sells for a span, for the pitch select. */
+  roofPitchHints: number[];
   /**
    * Who is signed in, as the default salesperson.
    *
@@ -71,10 +89,8 @@ export function SiteCheckPanel({
   quoteId,
   site,
   client,
-  heightMm,
-  spanMm,
-  lengthMm,
-  importanceLevel,
+  shed,
+  roofPitchHints,
   defaultSalesman,
   canWrite,
   onImported,
@@ -90,6 +106,42 @@ export function SiteCheckPanel({
   const { check, configured, replace, watching, stopWatching, waitingError } = useSiteCheck();
   const identity = useShedSafeIdentity();
   const [busy, setBusy] = useState<'pinning' | 'importing' | null>(null);
+  /**
+   * The Building Parameters the pin will send — **null until the customer types them**.
+   *
+   * ## Why this is not seeded from the quote
+   *
+   * The desktop opens this panel empty and requires it (`ValidateBuildingParametersForButton`,
+   * trace §5.3). That is not a UI preference: the four numbers decide what ShedSafe rates, and the
+   * rating is the certificate the whole quote is priced against. Seeding them from the Shed group made
+   * a value nobody chose into a certified one — the customer's brief is that these inputs are theirs
+   * to enter.
+   *
+   * `null` is a real state here, distinct from `0`: an empty field means "not entered yet", which is
+   * why every check below is `=== null` rather than a falsiness test.
+   */
+  const [params, setParams] = useState<{
+    importanceLevel: number | null;
+    spanMm: number | null;
+    heightMm: number | null;
+    lengthMm: number | null;
+    roofPitchDeg: number | null;
+  }>({
+    importanceLevel: null,
+    spanMm: null,
+    heightMm: null,
+    lengthMm: null,
+    roofPitchDeg: null,
+  });
+  /** The panel is opened by PIN, as the desktop's flyout is — not always expanded. */
+  const [paramsOpen, setParamsOpen] = useState(false);
+  /**
+   * True once a pin has been made from this panel, so re-opening it shows what was sent.
+   *
+   * Kept separate from `params` so "the field is empty because nobody typed" and "the field is empty
+   * because a previous pin used it and the quote changed" cannot be confused.
+   */
+  const [pinnedParams, setPinnedParams] = useState<typeof params | null>(null);
   /**
    * The salesman is the **signed-in person's email**, and it is not editable.
    *
@@ -158,6 +210,63 @@ export function SiteCheckPanel({
   })();
 
   /**
+   * The Building Parameters ShedSafe will be asked to rate — the desktop's own four gates.
+   *
+   * `ValidateBuildingParametersForButton` (`UcShowBuildingParameterss.cs:1757-1843`) requires each of
+   * span, height and length to be at least 100 and the pitch to be greater than zero. The desktop
+   * implemented the 100 floor with `MinValue = 100` plus a `Text == "0"` hack, which the trace marks
+   * as **not to be ported** — here the field is simply empty (`null`) until somebody types, and the
+   * floor is checked as a number.
+   */
+  const missingParams = ((): string[] => {
+    const missing: string[] = [];
+    if (params.spanMm === null) missing.push('Span / Width');
+    if (params.heightMm === null) missing.push('Height');
+    if (params.lengthMm === null) missing.push('Overall Length');
+    if (params.roofPitchDeg === null) missing.push('Roof Pitch');
+    return missing;
+  })();
+
+  /** True when a number is present but below the floor the desktop enforces. */
+  const paramsBelowFloor = ((): string[] => {
+    const below: string[] = [];
+    if (params.spanMm !== null && params.spanMm < 100) below.push('Span / Width');
+    if (params.heightMm !== null && params.heightMm < 100) below.push('Height');
+    if (params.lengthMm !== null && params.lengthMm < 100) below.push('Overall Length');
+    if (params.roofPitchDeg !== null && params.roofPitchDeg <= 0) below.push('Roof Pitch');
+    return below;
+  })();
+
+  /**
+   * The average height the desktop shows read-only, from the panel's own numbers.
+   *
+   * Computed by the same `averageHeightMm` the Shed group uses, so the two cannot disagree about what
+   * an average height is. `null` while the inputs are incomplete — a number computed from two of three
+   * inputs is worse than no number.
+   */
+  const averageHeight =
+    params.spanMm === null || params.heightMm === null || params.roofPitchDeg === null
+      ? null
+      : averageHeightMm({
+          structureType: shed.structureType as never,
+          span: params.spanMm,
+          height: params.heightMm,
+          roofPitchDeg: params.roofPitchDeg,
+        });
+
+  /** What the panel and the quote disagree about, in words. Empty when they agree. */
+  const drifts: string[] = [];
+  if (params.spanMm !== null && params.spanMm !== shed.spanMm) {
+    drifts.push(`span ${shed.spanMm.toLocaleString('en-AU')} → ${params.spanMm.toLocaleString('en-AU')} mm`);
+  }
+  if (params.heightMm !== null && params.heightMm !== shed.heightMm) {
+    drifts.push(`height ${shed.heightMm.toLocaleString('en-AU')} → ${params.heightMm.toLocaleString('en-AU')} mm`);
+  }
+  if (params.lengthMm !== null && params.lengthMm !== shed.lengthMm) {
+    drifts.push(`length ${shed.lengthMm.toLocaleString('en-AU')} → ${params.lengthMm.toLocaleString('en-AU')} mm`);
+  }
+
+  /**
    * Whether this login may pin at all, asked **before** the button is pressed.
    *
    * `identity.you === null` means the answer is unknown — ShedSafe unconfigured, unreachable, or
@@ -169,7 +278,21 @@ export function SiteCheckPanel({
    * a field nobody on this screen can see.
    */
   const notASalesman = identity.you !== null && !identity.you.isSalesman;
-  const blockedBy = notASalesman ? ('salesman' as const) : missingForPin.length > 0 ? ('fields' as const) : null;
+  /**
+   * Three gates now, in the order a person can act on them.
+   *
+   * `fields` is the quote's own contact/address data, `params` is the Building Parameters panel, and
+   * `salesman` is the account — the only one this screen cannot fix. Each is reported separately so
+   * the operator is never told to fix something that is not theirs to fix, and never left with a grey
+   * button that explains nothing.
+   */
+  const blockedBy = notASalesman
+    ? ('salesman' as const)
+    : missingForPin.length > 0
+      ? ('fields' as const)
+      : missingParams.length > 0 || paramsBelowFloor.length > 0
+        ? ('params' as const)
+        : null;
 
   const pin = async (): Promise<void> => {
     /*
@@ -206,6 +329,25 @@ export function SiteCheckPanel({
       return;
     }
 
+    /*
+     * The Building Parameters, checked here as well as in the button's gate.
+     *
+     * The desktop validates three times before it opens the browser (trace §5.4) because the button's
+     * state can be stale: a value cleared between render and click leaves an enabled button. Doing the
+     * same check in the handler is what makes "enabled" and "works" the same fact rather than two.
+     */
+    if (missingParams.length > 0 || paramsBelowFloor.length > 0 || params.spanMm === null || params.heightMm === null || params.lengthMm === null || params.roofPitchDeg === null) {
+      setParamsOpen(true);
+      setMessage({
+        tone: 'danger',
+        text:
+          paramsBelowFloor.length > 0
+            ? `ShedSafe needs each dimension to be at least 100 mm, and a roof pitch above zero. Check ${paramsBelowFloor.join(', ')} in Building parameters.`
+            : `Fill in Building parameters first: ${missingParams.join(', ')}. ShedSafe rates the building those numbers describe.`,
+      });
+      return;
+    }
+
     setBusy('pinning');
     setMessage(null);
 
@@ -225,10 +367,17 @@ export function SiteCheckPanel({
           postcode: site.postcode,
         },
         client,
-        heightMm,
-        spanMm,
-        lengthMm,
-        importanceLevel,
+        /*
+         * The numbers from **this panel**, never the quote's.
+         *
+         * This is the whole point of the change: ShedSafe rates what the customer entered here, and
+         * the quote is then priced against that rating. Sending the Shed group's values meant a
+         * default building was certified without anybody choosing its dimensions.
+         */
+        heightMm: params.heightMm,
+        spanMm: params.spanMm,
+        lengthMm: params.lengthMm,
+        importanceLevel: params.importanceLevel ?? shed.importanceLevel,
         // Who is doing the check. Empty is what the desktop sent; a name is what ShedSafe shows.
         salesman,
       },
@@ -236,6 +385,9 @@ export function SiteCheckPanel({
 
     setBusy(null);
     if (result.ok) {
+      // Remember what this pin sent, so re-opening the panel shows the rated building rather than
+      // five empty boxes that look like the pin never happened.
+      setPinnedParams({ ...params });
       replace(result.data.check);
       if (quoteId === null && result.data.check !== null) {
         setSiteCheckId(result.data.check.id);
@@ -327,17 +479,17 @@ export function SiteCheckPanel({
   const drift =
     check !== null && check.calculated && pinned !== null
       ? [
-          pinned.spanMm !== null && pinned.spanMm !== spanMm
-            ? `span ${pinned.spanMm} → ${spanMm} mm`
+          pinned.spanMm !== null && pinned.spanMm !== shed.spanMm
+            ? `span ${pinned.spanMm} → ${shed.spanMm} mm`
             : null,
-          pinned.heightMm !== null && pinned.heightMm !== heightMm
-            ? `wall height ${pinned.heightMm} → ${heightMm} mm`
+          pinned.heightMm !== null && pinned.heightMm !== shed.heightMm
+            ? `wall height ${pinned.heightMm} → ${shed.heightMm} mm`
             : null,
-          pinned.lengthMm !== null && pinned.lengthMm !== lengthMm
-            ? `length ${pinned.lengthMm} → ${lengthMm} mm`
+          pinned.lengthMm !== null && pinned.lengthMm !== shed.lengthMm
+            ? `length ${pinned.lengthMm} → ${shed.lengthMm} mm`
             : null,
-          pinned.importanceLevel !== null && pinned.importanceLevel !== importanceLevel
-            ? `importance level ${pinned.importanceLevel} → ${importanceLevel}`
+          pinned.importanceLevel !== null && pinned.importanceLevel !== shed.importanceLevel
+            ? `importance level ${pinned.importanceLevel} → ${shed.importanceLevel}`
             : null,
         ].filter((entry): entry is string => entry !== null)
       : [];
@@ -752,6 +904,240 @@ export function SiteCheckPanel({
               Rendered as text rather than a disabled input: a disabled field looks like something
               that could be enabled, and this one cannot. The sentence beneath says why.
             */}
+            {/*
+              ------------------------------------------------ Building parameters
+
+              The desktop's `ShowBuildingParameters` flyout (trace §5), inline rather than floating.
+
+              ## Why it opens empty, and why the pin cannot happen without it
+
+              These four numbers are what ShedSafe rates, and the rating is the certificate the quote is
+              priced against. Filling them from the quote made the certificate describe a building nobody
+              entered — the reported defect. So each field starts `null`, the pin button is gated on them,
+              and "Copy from the quote" is an offer a person presses rather than a default.
+
+              ## Why the average height is here and read-only
+
+              `Avg. Height` is the one row the desktop disables (`Enable = false`): it follows from span,
+              height and pitch, and it is the figure a council application asks for. Typing over it would
+              print a number the drawing does not show.
+            */}
+            {paramsOpen && (
+              <section
+                aria-labelledby="sitecheck-params-title"
+                className="flex flex-col gap-sq-2 rounded-md border border-sq-brand/30 bg-sq-brand/[0.03] p-sq-2"
+              >
+                <div className="flex items-start justify-between gap-sq-2">
+                  <div className="flex flex-col">
+                    <h4 id="sitecheck-params-title" className="text-sq-body font-medium text-sq-ink">
+                      Building parameters
+                    </h4>
+                    <p className="text-sq-micro text-sq-ink-muted">
+                      {missingParams.length === 0 && paramsBelowFloor.length === 0
+                        ? 'Complete. ShedSafe will rate the building these numbers describe.'
+                        : `${missingParams.length + paramsBelowFloor.length} to fill in. ShedSafe rates the building these numbers describe, so they are entered here rather than taken from the quote.`}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-sq-1">
+                    {/*
+                      The offer the desktop does not have, and the reason it is a button: the four
+                      numbers usually *are* the quote's, and typing them again is friction. What must
+                      not happen is them being filled without anybody deciding.
+                    */}
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setParams({
+                          importanceLevel: shed.importanceLevel,
+                          spanMm: shed.spanMm,
+                          heightMm: shed.heightMm,
+                          lengthMm: shed.lengthMm,
+                          roofPitchDeg: shed.roofPitchDeg > 0 ? shed.roofPitchDeg : null,
+                        })
+                      }
+                    >
+                      Copy from the quote
+                    </Button>
+                    <Button variant="ghost" onClick={() => setParamsOpen(false)}>
+                      Close
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-sq-2">
+                  <label className="flex flex-col gap-sq-1">
+                    <span className="text-sq-micro font-medium text-sq-ink">Importance level</span>
+                    <select
+                      id="sitecheck-params-importanceLevel"
+                      value={params.importanceLevel === null ? '' : String(params.importanceLevel)}
+                      onChange={(event) =>
+                        setParams({
+                          ...params,
+                          importanceLevel: event.target.value === '' ? null : Number(event.target.value),
+                        })
+                      }
+                      className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+                    >
+                      <option value="">Choose a level</option>
+                      <option value="1">1 — normal</option>
+                      <option value="2">2 — high consequence</option>
+                      <option value="3">3 — substantial</option>
+                      <option value="4">4 — exceptional</option>
+                    </select>
+                  </label>
+
+                  <label className="flex flex-col gap-sq-1">
+                    <span className="text-sq-micro font-medium text-sq-ink">Roof pitch (deg)</span>
+                    <select
+                      id="sitecheck-params-roofPitchDeg"
+                      value={params.roofPitchDeg === null ? '' : String(params.roofPitchDeg)}
+                      onChange={(event) =>
+                        setParams({
+                          ...params,
+                          roofPitchDeg: event.target.value === '' ? null : Number(event.target.value),
+                        })
+                      }
+                      aria-invalid={
+                        params.roofPitchDeg !== null && params.roofPitchDeg <= 0 ? true : undefined
+                      }
+                      className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+                    >
+                      <option value="">Choose a pitch</option>
+                      {roofPitchHints.map((pitch) => (
+                        <option key={pitch} value={pitch}>
+                          {pitch}°
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-sq-micro text-sq-ink-muted">
+                      {roofPitchHints.length === 0
+                        ? 'The price book lists no pitches yet.'
+                        : `The book sells ${roofPitchHints.join(', ')}°.`}
+                    </span>
+                  </label>
+
+                  {(
+                    [
+                      ['spanMm', 'Span / Width (mm)'],
+                      ['heightMm', 'Height (mm)'],
+                      ['lengthMm', 'Overall Length (mm)'],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const shown = params[key];
+                    const below = shown !== null && shown < 100;
+                    return (
+                      <label key={key} className="flex flex-col gap-sq-1">
+                        <span className="text-sq-micro font-medium text-sq-ink">{label}</span>
+                        <input
+                          id={`sitecheck-params-${key}`}
+                          type="number"
+                          inputMode="numeric"
+                          min={100}
+                          step={50}
+                          /*
+                           * Empty, not zero: a `0` in this box would be a dimension somebody entered,
+                           * and the panel could not tell it from "not filled in yet".
+                           */
+                          value={shown === null ? '' : shown}
+                          onChange={(event) =>
+                            setParams({
+                              ...params,
+                              [key]:
+                                event.target.value === ''
+                                  ? null
+                                  : Math.round(Number(event.target.value)),
+                            })
+                          }
+                          aria-invalid={below || undefined}
+                          aria-describedby={below ? `sitecheck-params-${key}-error` : undefined}
+                          className={[
+                            'min-h-[38px] rounded-md border bg-sq-surface px-sq-2 text-sq-body outline-none',
+                            below ? 'border-sq-danger' : 'border-sq-line',
+                          ].join(' ')}
+                        />
+                        {below && (
+                          <span
+                            id={`sitecheck-params-${key}-error`}
+                            role="alert"
+                            className="text-sq-micro text-sq-danger"
+                          >
+                            Must be at least 100 mm.
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+
+                  <div className="flex flex-col gap-sq-1">
+                    <span className="text-sq-micro font-medium text-sq-ink">Avg. height</span>
+                    <output
+                      id="sitecheck-params-averageHeight"
+                      className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+                    >
+                      {averageHeight === null ? '—' : `${averageHeight.toLocaleString('en-AU')} mm`}
+                    </output>
+                    <span className="text-sq-micro text-sq-ink-muted">
+                      Worked out from span, wall height and pitch. It is not typed.
+                    </span>
+                  </div>
+                </div>
+
+                {drifts.length > 0 && (
+                  <p role="status" className="text-sq-micro text-sq-attention">
+                    The quote is {drifts.join('; ')}. ShedSafe will rate the numbers above, so the price
+                    will still come from the quote — change one of the two, or expect a rating for a
+                    different building.
+                  </p>
+                )}
+
+                {(missingParams.length > 0 || paramsBelowFloor.length > 0) && (
+                  <p id="sitecheck-params-missing" className="text-sq-micro text-sq-attention">
+                    Fill in{' '}
+                    {[...missingParams, ...paramsBelowFloor.filter((f) => !missingParams.includes(f))].join(
+                      ', ',
+                    )}{' '}
+                    before ShedSafe can rate this building.
+                  </p>
+                )}
+
+                {/*
+                  The desktop's `GO TO SITECHECK`, inside the panel because that is where it lives
+                  (`UcShowBuildingParameterss`): the button is the panel's submit, not a second action
+                  beside the site address.
+
+                  Gated on the panel's own completeness **and** the account, so "enabled" and "will
+                  work" stay one fact. The reason is written beside it either way.
+                */}
+                <div className="flex flex-wrap items-center gap-sq-2">
+                  <Button
+                    variant="primary"
+                    loading={busy === 'pinning'}
+                    disabled={blockedBy !== null}
+                    onClick={() => void pin()}
+                  >
+                    {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
+                  </Button>
+                  {blockedBy === 'params' && (
+                    <span className="text-sq-micro text-sq-attention">
+                      {missingParams.length > 0
+                        ? `Still needed: ${missingParams.join(', ')}.`
+                        : `Out of range: ${paramsBelowFloor.join(', ')} — each must be at least 100 mm, and the pitch above zero.`}
+                    </span>
+                  )}
+                  {blockedBy === 'salesman' && (
+                    <span className="text-sq-micro text-sq-danger">
+                      ShedSafe will refuse this login — see the reason beside the salesperson below.
+                    </span>
+                  )}
+                  {blockedBy === null && (
+                    <span className="text-sq-micro text-sq-ink-muted">
+                      Creates the building on ShedSafe with the numbers above, then opens it.
+                    </span>
+                  )}
+                </div>
+              </section>
+            )}
+
             <div className="flex flex-col gap-sq-1">
               <span className="text-sq-micro font-medium text-sq-ink">Salesperson</span>
               <output
@@ -812,13 +1198,42 @@ export function SiteCheckPanel({
               is written beside it, naming every missing field, because a grey button that does not
               say why sends the operator hunting through a form that is 5 800 px tall.
             */}
+            {/*
+              PIN **opens the panel**; it does not pin.
+
+              That is the desktop's order and the customer's requirement: the button beside the site
+              address is the way in, and the numbers ShedSafe rates are entered by a person in the panel
+              that follows. The previous behaviour sent the quote's defaults straight to ShedSafe, so a
+              building nobody described was certified.
+            */}
             <Button
-              loading={busy === 'pinning'}
-              disabled={blockedBy !== null}
-              onClick={() => void pin()}
+              aria-expanded={paramsOpen}
+              aria-controls="sitecheck-params-title"
+              onClick={() => {
+                /*
+                 * Opening shows what the last pin sent, when there was one — otherwise the five empty
+                 * fields would read as a bug rather than as "this is yours to fill in".
+                 */
+                if (pinnedParams !== null && missingParams.length > 0) setParams(pinnedParams);
+                setParamsOpen(true);
+              }}
             >
-              {check === null ? 'Go to ShedSafe' : 'Pin again and open ShedSafe'}
+              {paramsOpen
+                ? 'Building parameters are open'
+                : check === null
+                  ? 'Set the building to rate'
+                  : 'Review the rated building'}
             </Button>
+            {/*
+              The button is a **way in**, not the action. Saying what is behind it stops the label
+              reading as "this will pin", which was true in the previous version and is not any more.
+            */}
+            {!paramsOpen && (
+              <span className="max-w-[22rem] text-sq-micro text-sq-ink-muted">
+                Opens the dimensions ShedSafe has to rate. They are yours to enter — nothing is taken
+                from the quote unless you press “Copy from the quote”.
+              </span>
+            )}
             {/*
               Both reasons, not just the one that blocks hardest.
 
