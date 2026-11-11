@@ -145,6 +145,13 @@ export interface QuoteDetailsPanelProps {
    * scroll with nothing else in between.
    */
   siteCheck?: React.ReactNode;
+  /**
+   * The knee brace the frame design names, from the evaluated cut list.
+   *
+   * `null` for "not known": no evaluation yet, or a book without a section table. The desktop's field
+   * is read-only and cannot be anything else — the new line is `.catch(() => '—')` on purpose.
+   */
+  kneeBrace?: string | null;
 }
 
 export function QuoteDetailsPanel({
@@ -152,8 +159,10 @@ export function QuoteDetailsPanel({
   unit,
   onUnitChange,
   siteCheck,
+  kneeBrace = null,
 }: QuoteDetailsPanelProps) {
   const customer = useDraftStore((state) => state.customer);
+  const quoteNumber = useDraftStore((state) => state.quoteNumber);
   const site = useDraftStore((state) => state.site);
   const setCustomer = useDraftStore((state) => state.setCustomer);
   const setSite = useDraftStore((state) => state.setSite);
@@ -214,6 +223,29 @@ export function QuoteDetailsPanel({
         title="Quote & client"
         issueCount={countIn(['customer-firstName', 'customer-lastName', 'customer-email'])}
       >
+        {/*
+          Quote No. — the desktop's first field (#1), read-only.
+
+          It is generated when the quote is first saved, so a new quote has none yet; that is the
+          `—` case and the hint says so. Showing it here rather than only in the header matters when
+          a customer quotes the number back on the phone: the operator is on this screen, and the
+          number belongs with the quote's own details.
+        */}
+        <div className="flex flex-col gap-sq-1">
+          <span className="text-sq-micro font-medium text-sq-ink">Quote no.</span>
+          <span
+            id="customer-quoteNumber"
+            className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+          >
+            {quoteNumber ?? '—'}
+          </span>
+          <span className="text-sq-micro text-sq-ink-muted">
+            {quoteNumber === null
+              ? 'Assigned when the quote is first saved.'
+              : 'Assigned by the system. It is not typed.'}
+          </span>
+        </div>
+
         {/*
           Quote rate sits in this group because the desktop puts it here: it is a
           property of the sale, agreed with the customer, not a figure discovered at
@@ -523,6 +555,7 @@ export function QuoteDetailsPanel({
         unit={unit}
         onUnitChange={onUnitChange}
         catalogue={catalogue}
+        kneeBrace={kneeBrace}
       />
       <ColourGroup issuesByPath={issuesByPath} />
     </div>
@@ -751,94 +784,6 @@ function DesignGroup({
           <DesignValue id="design-windSpeed" label="Design wind speed" entry={siteValue('designWindSpeed')} />
         </div>
 
-        {/*
-          The awnings the rated building carries, read-only.
-
-          ## Why they are here rather than in the Shed group
-
-          They belong with the other values **the certificate** states, because that is what they are:
-          `leftAwninglength` / `rightAwninglength` travel with the same ShedSafe response as the wind
-          region (`ShedsafeData.cs:117-123`), and the desktop copies them into read-only fields
-          (`FrontAwningWidthItem`, `RearAwningWidthItem`).
-
-          ## Why zero says "no awning" and not "0 mm"
-
-          The desktop writes `#N/A` for zero, and that is the right reading: ShedSafe returns `0.0`
-          for an end with no awning, which is a fact about the building, not a zero-width awning. A
-          field showing "0 mm" invites somebody to think a dimension is missing.
-
-          ## Why this does not create the awning option by itself
-
-          An awning is a priced object with a depth, a pitch and a wall (`ShedOption`), and the
-          certificate only states its **width in metres**. Adding one silently would put a structure
-          on the drawing the operator never asked for; the button below offers it, which is the same
-          "customer asks for it" rule the suggestions panel follows. When the widths and the options
-          disagree the panel says so, so a quote cannot quietly drop an awning the certificate has.
-        */}
-        <dl className="grid grid-cols-2 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
-          {(
-            [
-              ['left', 'Front awning', check?.site?.leftAwningLength ?? null],
-              ['right', 'Rear awning', check?.site?.rightAwningLength ?? null],
-            ] as const
-          ).map(([end, label, metres]) => {
-            const wall = end === 'left' ? 'front' : 'back';
-            const current = config.options.find(
-              (option): option is Extract<typeof option, { kind: 'awning' }> =>
-                option.kind === 'awning' && option.wall === wall,
-            );
-            const widthMm = metres === null ? null : Math.round(metres * 1000);
-            const missing = widthMm !== null && widthMm > 0 && current === undefined;
-            const differs =
-              widthMm !== null && widthMm > 0 && current !== undefined && current.width !== widthMm;
-            return (
-              <div key={end} className="flex flex-col">
-                <dt className="text-sq-micro text-sq-ink-muted">{label}</dt>
-                <dd
-                  id={`design-awning-${end}`}
-                  className="sq-numeric text-sq-body text-sq-ink"
-                >
-                  {widthMm === null
-                    ? '—'
-                    : widthMm === 0
-                      ? 'None on the certificate'
-                      : `${widthMm.toLocaleString('en-AU')} mm`}
-                </dd>
-                {missing && (
-                  <button
-                    type="button"
-                    /*
-                     * Adds the awning the certificate rates, at the width ShedSafe states. Depth and
-                     * pitch keep the option's own defaults: the certificate does not carry them, and
-                     * inventing a projection would be a design decision, not a reading.
-                     */
-                    onClick={() => {
-                      const base = defaultOptionsFor('awning', config).find(
-                        (option) => option.kind === 'awning',
-                      );
-                      if (base === undefined || base.kind !== 'awning') return;
-                      applyPartial({
-                        options: [
-                          ...config.options,
-                          { ...base, wall, width: widthMm } as typeof base,
-                        ],
-                      });
-                    }}
-                    className="mt-sq-1 min-h-9 cursor-pointer self-start rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
-                  >
-                    Add this awning
-                  </button>
-                )}
-                {differs && (
-                  <span className="mt-sq-1 text-sq-micro text-sq-attention">
-                    The quote has {current.width.toLocaleString('en-AU')} mm. The certificate rates{' '}
-                    {widthMm.toLocaleString('en-AU')} mm.
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </dl>
 
         {/*
           The book's own warning, kept where the level is read: it has no frame table above level 2, so
@@ -1019,15 +964,24 @@ function ShedGroup({
   unit,
   onUnitChange,
   catalogue,
+  kneeBrace,
 }: {
   issuesByPath: Map<string, DraftIssue>;
   unit: DisplayUnit;
   onUnitChange: (unit: DisplayUnit) => void;
   catalogue: Catalogue | null;
+  kneeBrace: string | null;
 }) {
   const config = useShedStoreConfig();
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
+  /*
+   * The same check the Design group reads, from the same provider.
+   *
+   * The awnings live here now (the desktop's own position), and they are certified values: reading
+   * them from a second fetch would let this group show a width the Design group does not.
+   */
+  const { check } = useSiteCheck();
 
   /*
    * The bays this building actually has, which is an array once somebody edits one.
@@ -1297,6 +1251,129 @@ function ShedGroup({
           error={errorAt('shed-height')}
           onCommit={(mm) => applyDimension({ height: mm })}
         />
+      </div>
+
+        {/*
+          The awnings the rated building carries, read-only — in the **Shed** group, at the desktop's
+          own position (#43-44, immediately after Span).
+
+          This block first lived in Design, next to the six certified values, on the reasoning that it
+          comes from the same ShedSafe response. That was wrong about the desktop: `FrontAwningWidthItem`
+          and `RearAwningWidthItem` are Shed Parameters, and a person looking for the awning width looks
+          where the width is. The values still arrive with the certificate; where they are shown is a
+          separate question from where they come from.
+          (`FrontAwningWidthItem`, `RearAwningWidthItem`).
+
+          ## Why zero says "no awning" and not "0 mm"
+
+          The desktop writes `#N/A` for zero, and that is the right reading: ShedSafe returns `0.0`
+          for an end with no awning, which is a fact about the building, not a zero-width awning. A
+          field showing "0 mm" invites somebody to think a dimension is missing.
+
+          ## Why this does not create the awning option by itself
+
+          An awning is a priced object with a depth, a pitch and a wall (`ShedOption`), and the
+          certificate only states its **width in metres**. Adding one silently would put a structure
+          on the drawing the operator never asked for; the button below offers it, which is the same
+          "customer asks for it" rule the suggestions panel follows. When the widths and the options
+          disagree the panel says so, so a quote cannot quietly drop an awning the certificate has.
+        */}
+        <dl className="grid grid-cols-2 gap-sq-2 rounded-md border border-sq-line bg-sq-ground/40 p-sq-2">
+          {(
+            [
+              ['left', 'Front awning', check?.site?.leftAwningLength ?? null],
+              ['right', 'Rear awning', check?.site?.rightAwningLength ?? null],
+            ] as const
+          ).map(([end, label, metres]) => {
+            const wall = end === 'left' ? 'front' : 'back';
+            const current = config.options.find(
+              (option): option is Extract<typeof option, { kind: 'awning' }> =>
+                option.kind === 'awning' && option.wall === wall,
+            );
+            const widthMm = metres === null ? null : Math.round(metres * 1000);
+            const missing = widthMm !== null && widthMm > 0 && current === undefined;
+            const differs =
+              widthMm !== null && widthMm > 0 && current !== undefined && current.width !== widthMm;
+            return (
+              <div key={end} className="flex flex-col">
+                <dt className="text-sq-micro text-sq-ink-muted">{label}</dt>
+                <dd
+                  id={`design-awning-${end}`}
+                  className="sq-numeric text-sq-body text-sq-ink"
+                >
+                  {widthMm === null
+                    ? '—'
+                    : widthMm === 0
+                      ? 'None on the certificate'
+                      : `${widthMm.toLocaleString('en-AU')} mm`}
+                </dd>
+                {missing && (
+                  <button
+                    type="button"
+                    /*
+                     * Adds the awning the certificate rates, at the width ShedSafe states. Depth and
+                     * pitch keep the option's own defaults: the certificate does not carry them, and
+                     * inventing a projection would be a design decision, not a reading.
+                     */
+                    onClick={() => {
+                      const base = defaultOptionsFor('awning', config).find(
+                        (option) => option.kind === 'awning',
+                      );
+                      if (base === undefined || base.kind !== 'awning') return;
+                      applyPartial({
+                        options: [
+                          ...config.options,
+                          { ...base, wall, width: widthMm } as typeof base,
+                        ],
+                      });
+                    }}
+                    className="mt-sq-1 min-h-9 cursor-pointer self-start rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+                  >
+                    Add this awning
+                  </button>
+                )}
+                {differs && (
+                  <span className="mt-sq-1 text-sq-micro text-sq-attention">
+                    The quote has {current.width.toLocaleString('en-AU')} mm. The certificate rates{' '}
+                    {widthMm.toLocaleString('en-AU')} mm.
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </dl>
+
+      {/*
+        Typical Design — the knee brace the frame design names, read-only.
+
+        ## Why it belongs here, and why it is not a control
+
+        The desktop puts it in the Shed group at #47, directly after Height, and makes it read-only.
+        That is right for two reasons: the brace is chosen by the structure table for **this** span,
+        bay and height (`view_system_lookup_data.KB`), so there is nothing for a person to decide; and
+        a brace somebody typed would not be the one the design was calculated with.
+
+        ## Where the value comes from
+
+        The evaluated cut list (`members`), which reads the same `scheduleFor` the priced frame lines
+        use — so the section shown is the section ordered. `null` means "not known yet": no
+        evaluation has finished, or the book states no section table for this combination. Saying
+        "—" is the honest answer there; showing the fallback section would be presenting an
+        assumption as the design.
+      */}
+      <div className="flex flex-col gap-sq-1">
+        <span className="text-sq-micro font-medium text-sq-ink">Typical design (knee brace)</span>
+        <span
+          id="shed-kneeBrace"
+          className="sq-numeric min-h-[38px] rounded-md border border-sq-line bg-sq-ground/40 px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+        >
+          {kneeBrace === null || kneeBrace === '' ? '—' : kneeBrace}
+        </span>
+        <span className="text-sq-micro text-sq-ink-muted">
+          {kneeBrace === null || kneeBrace === ''
+            ? 'Not known yet — the price book names a brace per span, bay and height, and none has been read for this building.'
+            : 'Chosen by the price book for this span, bay and height. It is not typed.'}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-sq-2">
@@ -1774,6 +1851,8 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
    * and reopening it starts from the summary rows again.
    */
   const [paletteOpen, setPaletteOpen] = useState<keyof ShedColors | null>(null);
+  /** True when the building carries any horizontal-cladding band. */
+  const claddingOn = config.options.some((option) => option.kind === 'horizontal_cladding');
 
   /** The Colorbond name for a hex, so the field can show the name rather than the code. */
   const nameOf = (hex: string): string =>
@@ -1955,6 +2034,55 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
             </fieldset>
           );
         })}
+
+        {/*
+          Horizontal cladding — the desktop's one **child control inside Colours** (`#61`, a boolean
+          directly under Wall, not a category in the Options dock).
+
+          ## Why it is a switch here rather than a dock entry
+
+          It is a property of the wall's finish: `HorizontalCladdingItem` sits under `ColorWallItem` in
+          the desktop's property grid, and the BOM charges a batten row behind each band
+          (`claddingLines`). The dock has no such category either — this build's `CATEGORY_DOCK` is the
+          book's 21 categories minus this one, because the book places it here.
+
+          ## What it creates, and why a default band
+
+          On, it creates one `horizontal_cladding` option spanning the full wall height — the sensible
+          first band, which the operator then narrows on the plan. Off, every cladding option is
+          removed: a quote whose colour block says "no cladding" while a priced option exists is two
+          answers to one question.
+
+          The band's `from`/`to` and wall are editable in the object editor like any other option, so
+          this switch decides **whether**, and the plan decides **where**.
+        */}
+        <label className="flex items-start justify-between gap-sq-2 pt-sq-1">
+          <span className="flex flex-col">
+            <span className="text-sq-micro font-medium text-sq-ink">Horizontal cladding</span>
+            <span className="text-sq-micro text-sq-ink-muted">
+              A band of wall cladding with its own batten row. The band is set on the plan.
+            </span>
+          </span>
+          <input
+            id="colours-horizontalCladding"
+            type="checkbox"
+            checked={claddingOn}
+            onChange={(event) => {
+              if (event.target.checked) {
+                const base = defaultOptionsFor('horizontal_cladding', config).find(
+                  (option) => option.kind === 'horizontal_cladding',
+                );
+                if (base === undefined) return;
+                applyPartial({ options: [...config.options, base] });
+                return;
+              }
+              applyPartial({
+                options: config.options.filter((option) => option.kind !== 'horizontal_cladding'),
+              });
+            }}
+            className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[var(--color-sq-brand)]"
+          />
+        </label>
       </div>
     </Group>
   );

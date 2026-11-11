@@ -765,6 +765,14 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                   issuesByPath={issuesByPath}
                   unit={unit}
                   onUnitChange={setUnit}
+                  /*
+                   * The brace from the **evaluated cut list**, not a second lookup: the cut list is
+                   * what the workshop builds from, and a separate query could name a different section
+                   * for the same building.
+                   */
+                  kneeBrace={
+                    evaluation?.members.find((member) => member.item === 'knee_brace')?.section ?? null
+                  }
                   siteCheck={
                     <SiteCheckPanel
                       quoteId={quoteId}

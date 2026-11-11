@@ -206,6 +206,169 @@ test.describe('Step 1 — quote details', () => {
     await expect.poll(parse).toBeGreaterThan(atTwo);
   });
 
+  test('Quote no., Typical design and the awning widths sit where the desktop puts them', async ({ page }) => {
+    /*
+     * Three fields the parity audit found missing or in the wrong group. Each is asserted in the group
+     * it belongs to, not merely somewhere on the page — "the value exists" and "the value is where a
+     * person looks for it" are different claims, and the second is the one the desktop encodes.
+     *
+     *  - **Quote no.** is the desktop's `#1`, the first field of Quote & client.
+     *  - **Typical design** (knee brace) is `#47`, in Shed, directly after Height. Read-only because the
+     *    structure table picks it.
+     *  - **Front / Rear awning** are `#43-44`, in Shed, right after Span — not in Design next to the
+     *    certified values, which is where this build first put them.
+     */
+    /*
+     * Open every group first. A `<Group>` renders its children **only while expanded**, so measuring
+     * `#shed-kneeBrace` on a collapsed group finds nothing and reads `null` — a fact this suite has
+     * been caught by before ("control inside a closed accordion is not in the DOM").
+     */
+    for (const title of [/^Quote & client/, /^Shed(?!Safe)/, /^Design/, /^Colours/]) {
+      const button = page.locator('h3 > button').filter({ hasText: title }).first();
+      if ((await button.getAttribute('aria-expanded')) === 'false') await button.click();
+    }
+
+    const groupOrder = await page.evaluate(() => {
+      const top = (pattern: RegExp): number | null => {
+        const button = [...document.querySelectorAll('h3 > button')].find((b) =>
+          pattern.test(b.textContent ?? ''),
+        );
+        return button === undefined ? null : Math.round(button.getBoundingClientRect().top + window.scrollY);
+      };
+      const fieldTop = (id: string): number | null => {
+        const el = document.getElementById(id);
+        return el === null ? null : Math.round(el.getBoundingClientRect().top + window.scrollY);
+      };
+      return {
+        clientGroup: top(/^Quote & client/),
+        // `/^Shed/` also matches "ShedSafe site check", which sits between Delivery and Design — it
+        // measured 1329 and made the comparison read as though Shed stood above Design.
+        shedGroup: top(/^Shed(?!Safe)/),
+        designGroup: top(/^Design/),
+        quoteNumber: fieldTop('customer-quoteNumber'),
+        kneeBrace: fieldTop('shed-kneeBrace'),
+        frontAwning: fieldTop('design-awning-left'),
+        rearAwning: fieldTop('design-awning-right'),
+        span: fieldTop('shed-span'),
+        height: fieldTop('shed-height'),
+      };
+    });
+
+    for (const [name, value] of Object.entries(groupOrder)) {
+      expect(value, `${name} must be on the page`).not.toBeNull();
+    }
+
+    // Quote no. is inside Quote & client — above where Shed starts.
+    expect(groupOrder.quoteNumber as number).toBeLessThan(groupOrder.shedGroup as number);
+
+    /*
+     * Design renders **above** Shed in this build (`<DesignGroup/>` precedes `<ShedGroup/>` in
+     * `QuoteDetailsPanel`), which the desktop's own group order also does — Quote & client · Site ·
+     * Delivery · **Design** · **Shed** · Colours. So a Shed field's offset is greater than the Design
+     * header's, not less. A first version asserted the opposite and failed on correct code.
+     */
+    expect(groupOrder.shedGroup as number).toBeGreaterThan(groupOrder.designGroup as number);
+
+    // Typical design is in Shed, after Height and before the group ends.
+    expect(groupOrder.kneeBrace as number).toBeGreaterThan(groupOrder.height as number);
+    expect(groupOrder.kneeBrace as number).toBeGreaterThan(groupOrder.shedGroup as number);
+
+    // Both awning widths are in Shed now — after Span, inside the Shed group.
+    for (const id of ['frontAwning', 'rearAwning'] as const) {
+      expect(groupOrder[id] as number, id).toBeGreaterThan(groupOrder.span as number);
+      expect(groupOrder[id] as number, id).toBeGreaterThan(groupOrder.shedGroup as number);
+    }
+
+    // And the two controls are not editable where they must not be.
+    await expect(page.locator('#shed-kneeBrace')).toBeVisible();
+    await expect(page.locator('input#shed-kneeBrace')).toHaveCount(0);
+  });
+
+  test('horizontal cladding is a switch in Colours, and it creates one priced option', async ({ page }) => {
+    /*
+     * The desktop's only **child control inside Colours**: `HorizontalCladdingItem` sits under Wall
+     * (`#61`), not in the Options dock. This build had the option kind, the BOM line and the drawing,
+     * and no switch anywhere — so the only way to get one was the plan's context menu, which is not
+     * where the desktop puts it and not where a person looks for a wall finish.
+     */
+    const toggle = page.locator('#colours-horizontalCladding');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+
+    // Off again removes it: a colour block saying "no cladding" with a priced option behind it is two
+    // answers to one question.
+    await toggle.uncheck();
+    await expect(toggle).not.toBeChecked();
+  });
+
+  test('the plan’s Add-option menu offers every option kind the domain has', async ({ page }) => {
+    /*
+     * ## Why this test exists
+     *
+     * A parity audit first recorded `stable`, `overhang` and `horizontal_cladding` as having **no**
+     * way to be created. That was wrong, and wrong for a specific reason worth a test: the dock lists
+     * fifteen categories, so a search for "where can I add this" stopped at the dock. The actual path
+     * is the plan's context menu, which is built from `OPTION_KIND_OPTIONS` — the twelve-kind list in
+     * `domain/selection.ts`.
+     *
+     * The risk this guards is drift in the other direction: the menu is derived from the domain, so a
+     * new `OptionKind` appears there automatically, but a kind the domain gains without a
+     * `defaultOptionsFor` branch would still be uncreatable. Asserting the count against the domain's
+     * own list catches both.
+     */
+    const step = page.locator('ol button').filter({ hasText: /Options on the plan/ }).first();
+    await step.click();
+    await expect(page.getByRole('heading', { name: 'Options on the plan', level: 1 })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    /*
+     * The plan is an `<img>` — a rendered SVG/image, not a canvas — which is why this looks for the
+     * image by its accessible name rather than for a `canvas` element. A first version waited 60 s
+     * on a locator that could never resolve.
+     */
+    const plan = page.getByRole('img', { name: /^Plan of a .* millimetre shed/ });
+    await expect(plan).toBeVisible();
+    await plan.click({ button: 'right', position: { x: 300, y: 260 } });
+
+    /*
+     * A submenu opens on **click**, not hover: `ContextMenu` swaps the visible rows for the submenu
+     * (with a "Back" row) rather than rendering a flyout beside them. `hover()` left the parent list
+     * on screen and the assertion below waited on rows that were never going to appear.
+     */
+    const addOption = page.getByRole('menuitem', { name: /^Add option$/i });
+    await expect(addOption).toBeVisible({ timeout: 10_000 });
+    await addOption.click();
+
+    /*
+     * Every kind the domain lists. Written out rather than imported so the assertion is about what a
+     * person sees, and so adding a kind to the domain without deciding it should be offered is a
+     * deliberate edit here too.
+     */
+    for (const label of [
+      'Skylight',
+      'Overhang',
+      'Cantilever',
+      'Awning',
+      'Outrigger',
+      'Cladding',
+      'Stable',
+      'Dividing wall',
+      'Mezzanine',
+      'Carry beam',
+      'Gable infill',
+      'Miscellaneous option',
+    ]) {
+      await expect(
+        page.getByRole('menuitem', { name: new RegExp(`^${label}$`) }),
+        `the Add-option menu must offer “${label}”`,
+      ).toBeVisible();
+    }
+  });
+
   test('the sheeting profile and thickness are both chosen, and both reach the price', async ({ page }) => {
     /*
      * ## The defect

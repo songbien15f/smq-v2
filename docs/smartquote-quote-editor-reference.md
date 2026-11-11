@@ -3525,6 +3525,73 @@ tiết diện — không phải hằng số viết được từ tài liệu.
 
 ---
 
+## 13.36 Rà paridade Step 1 + Step 2 — và một lỗi claim của chính tôi (2026-11-11)
+
+Câu hỏi: *"bạn đã convert đúng và đủ từ desktop qua v2 rồi đúng không? cả về thứ tự các input?"*
+
+Trả lời đầu tiên là **không**, và bảng gap đầy đủ nằm ở [`SMARTQUOTE-PARITY-GAP.md`](SMARTQUOTE-PARITY-GAP.md).
+Mục này ghi những gì đã sửa, và **một claim sai tôi viết ra rồi phải tự sửa**.
+
+### 13.36.1 Claim sai: "ba loại option không có đường tạo"
+
+Bản đầu của bảng gap ghi `stable`, `overhang`, `horizontal_cladding` là **"KHÔNG CÓ"** đường tạo.
+Sai. Tôi chỉ grep `defaultOptionsFor` và đọc `CATEGORY_DOCK`; không kiểm context menu của plan.
+
+`Render2D.tsx:836-846` dựng menu "Add option" từ **`OPTION_KIND_OPTIONS`** — danh sách 12 loại trong
+`domain/selection.ts` — và `:953-959` gọi `addOption(kind)`. `defaultOptionsFor` có nhánh cho từng loại.
+
+Xác nhận bằng e2e mới: click phải plan → "Add option" → **12 dòng** (Skylight, Overhang, Cantilever,
+Awning, Outrigger, Cladding, Stable, Dividing wall, Mezzanine, Carry beam, Gable infill, Miscellaneous).
+
+Lỗi thật còn lại nhẹ hơn nhiều: **dock** không liệt kê 5 loại đó, nên chỉ tạo được qua menu chuột phải
+— một người dùng bàn phím hay màn hình cảm ứng không mở được menu đó sẽ không tìm ra.
+
+### 13.36.2 Bốn thứ đã sửa
+
+| # | Trước | Sau |
+|---|---|---|
+| 1 | **Quote No.** không có trong panel | `customer-quoteNumber`, read-only, đầu nhóm Quote & client (desktop #1) |
+| 2 | **Typical Design** (knee brace) không hiện | `shed-kneeBrace`, read-only, ngay sau Wall height (desktop #47), đọc từ `evaluation.members` |
+| 3 | **Awning width** nằm trong Design | chuyển về **Shed**, ngay sau Span (desktop #43-44) |
+| 4 | **Horizontal Cladding** không có control | switch trong **Colours**, tạo/xoá option `horizontal_cladding` (desktop #61) |
+
+Về Typical Design: sách thật **có** dữ liệu `KB` — `Z15019` 1 316 dòng, `C15024`… chính xác là
+`Z15019` 1 316, `C15019` 31, `Z15024` 139, `NULL` 1 266. Nó được dùng để tính giá từ trước nhưng chưa
+bao giờ hiện. Giờ hiện, và **không sửa được**: `view_system_lookup_data.KB` chọn theo span/bay/height,
+nên gõ tay sẽ là một thanh giằng khác với thanh thiết kế đã tính.
+
+Về Horizontal Cladding: desktop đặt `HorizontalCladdingItem` là **con của `ColorWallItem`** — control
+duy nhất nằm *bên trong* nhóm Colours, không phải category ở dock. Switch ở đây bật thì tạo một option
+band phủ hết chiều cao tường (người dùng thu hẹp trên plan), tắt thì xoá **mọi** option cladding — một
+quote mà khối màu nói "không có cladding" trong khi có option đã tính giá là hai câu trả lời cho một
+câu hỏi.
+
+### 13.36.3 Thứ tự nhóm — desktop cũng Design trước Shed
+
+Một test e2e đầu tiên của tôi khẳng định field Shed nằm **trước** Design. Sai: thứ tự desktop là
+Quote & client · Site · Delivery · **Design** · **Shed** · Colours, và v2 render đúng thứ tự đó. Test
+đã sửa để so đúng chiều.
+
+Cùng test đó còn hai bẫy nữa, cả hai đã ghi trong memory của dự án: một `<Group>` chỉ render con khi
+**mở**, nên field trong accordion đóng **không có trong DOM**; và `/^Shed/` khớp cả
+**"ShedSafe site check"** (đo được 1329 thay vì vị trí nhóm Shed) — phải dùng `/^Shed(?!Safe)/`.
+
+### 13.36.4 Còn lại, chưa kiểm
+
+- **Step 3 (Cost)** — chưa so.
+- **Show More Parameters** (7 field địa lý): desktop có flyout, v2 đọc và lưu nhưng không hiện.
+- **Min bays**: desktop cho 1, v2 đòi 2 — quyết định, không phải lỗi.
+- **Quote Rate**: desktop là danh sách `XCustomerRate`; v2 là số 0–100. Chưa kiểm có mất dữ liệu không.
+- **`State, Postcode` của địa chỉ**: desktop disabled và ghép sẵn; v2 để 3 ô sửa được. Chưa kiểm
+  desktop ẩn chúng vì lý do gì.
+
+### Kiểm chứng
+
+1 072 test core, 57 client, **38/38 e2e** trên chrome (3 test mới: menu 12 loại, vị trí 3 field,
+switch cladding), typecheck sạch 12 package.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -3533,7 +3600,7 @@ tiết diện — không phải hằng số viết được từ tài liệu.
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 35 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 38 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 
