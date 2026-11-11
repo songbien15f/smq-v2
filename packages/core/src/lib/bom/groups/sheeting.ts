@@ -27,6 +27,7 @@ import type { PriceLookup, SheetingRow } from '@/lib/pricing/types';
 import type { MaterialUnitContract } from '@/lib/pricing/catalogueManifest';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
+import { parseSheeting } from '@/domain/sheeting';
 import { extendMaterial } from '../materialUnits';
 import type { EstimateIssue, MaterialEvidence } from '@/lib/estimating/types';
 import { safeCall } from '../safe';
@@ -37,9 +38,28 @@ import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
  * past the eave, the ridge, and the top and bottom of a wall. They arrive with the
  * building's rule set.
  */
-/** The profile and thickness a shed is quoted in when the config does not say. */
+/**
+ * The profile and thickness a shed is quoted in when the config does not say.
+ *
+ * Kept as the last resort — a config that predates `wallBmt` or an empty profile string — but no
+ * longer the value used for every shed. The operator chooses the profile and the book prices the
+ * thickness; hard-coding `Corro` at `0.42` here meant the choice never reached a price, and a
+ * `Lo-Rib` shed was quoted at Corro's 762 mm cover instead of 817 (measured 2026-11-11).
+ */
 export const FALLBACK_PROFILE = 'Corro';
 export const FALLBACK_BMT = 0.42;
+
+/** The roof sheet this shed is clad in, profile and thickness. */
+export function roofSheetingOf(shed: ShedConfig): { profile: string; bmtMm: number } {
+  const parsed = parseSheeting(shed.roofProfile ?? '', shed.roofBmt);
+  return { profile: parsed.profile === '' ? FALLBACK_PROFILE : parsed.profile, bmtMm: parsed.bmtMm };
+}
+
+/** The wall sheet this shed is clad in, profile and thickness. */
+export function wallSheetingOf(shed: ShedConfig): { profile: string; bmtMm: number } {
+  const parsed = parseSheeting(shed.wallProfile ?? '', shed.wallBmt);
+  return { profile: parsed.profile === '' ? FALLBACK_PROFILE : parsed.profile, bmtMm: parsed.bmtMm };
+}
 
 /** The issue and evidence a group returns alongside its lines. */
 export interface GroupResult {
@@ -112,8 +132,22 @@ function skylightCount(shed: ShedConfig): number {
 export function sheetCounts(
   shed: ShedConfig,
   lookup: PriceLookup,
-): { roof: number; side: number; end: number; coverMm: number } {
-  const cover = safeCall(() => lookup.sheeting(FALLBACK_PROFILE, FALLBACK_BMT))?.coverageMm ?? 0;
+): { roof: number; side: number; end: number; coverMm: number; wallCoverMm: number } {
+  /*
+   * Two covers, because a shed is clad in two profiles.
+   *
+   * The cover is the sheet's own width, and the book disagrees between profiles: `Corro` covers
+   * 762 mm and `Lo-Rib` 817 mm, so a `Lo-Rib` roof needs 7% fewer sheets across the same run. One
+   * cover used for roof and wall alike was the hard-coded default's second consequence.
+   *
+   * `coverMm` (the roof's) is what the skylight snap and the screw count read — a skylight replaces
+   * one **roof** sheet — so the roof value keeps that name rather than growing a third.
+   */
+  const roofSheet = roofSheetingOf(shed);
+  const wallSheet = wallSheetingOf(shed);
+  const cover = safeCall(() => lookup.sheeting(roofSheet.profile, roofSheet.bmtMm))?.coverageMm ?? 0;
+  const wallCover =
+    safeCall(() => lookup.sheeting(wallSheet.profile, wallSheet.bmtMm))?.coverageMm ?? cover;
 
   // Sheets are counted across the run, not along it. A gable's sheets span from
   // eave to ridge and are counted along the length; a skillion's sheets run the
@@ -126,10 +160,11 @@ export function sheetCounts(
     // Roof: one run of sheets per slope, less one sheet per skylight.
     roof: Math.max(0, sheetCount(acrossRun, cover) * roofRuns - skylightCount(shed)),
     // Side walls: two long runs of the wall sheet length.
-    side: sheetCount(shed.length, cover) * 2 * walls,
+    side: sheetCount(shed.length, wallCover) * 2 * walls,
     // End walls: two runs across the span.
-    end: sheetCount(shed.span, cover) * 2 * walls,
+    end: sheetCount(shed.span, wallCover) * 2 * walls,
     coverMm: cover,
+    wallCoverMm: wallCover,
   };
 }
 
@@ -145,15 +180,20 @@ function sheetLine(
   count: number,
   lengthMm: number,
   coverMm: number,
+  sheet: { profile: string; bmtMm: number },
   contract: MaterialUnitContract,
   lookup: PriceLookup,
 ): { lines: BomLine[]; issues: EstimateIssue[]; materials: MaterialEvidence[] } {
   if (count <= 0) return { lines: [], issues: [], materials: [] };
 
-  const row: SheetingRow | undefined = safeCall(() =>
-    lookup.sheeting(FALLBACK_PROFILE, FALLBACK_BMT),
-  );
-  const label = `${description} — ${row?.description ?? FALLBACK_PROFILE}, ${lengthMm} mm`;
+  /*
+   * The **shed's** sheet, not a default.
+   *
+   * A line label reading "0.42 Corro" on a Lo-Rib shed is worse than a wrong number: it is a
+   * document the customer keeps, and an order placed from it buys the wrong coil.
+   */
+  const row: SheetingRow | undefined = safeCall(() => lookup.sheeting(sheet.profile, sheet.bmtMm));
+  const label = `${description} — ${row?.description ?? `${sheet.bmtMm} ${sheet.profile}`}, ${lengthMm} mm`;
 
   if (row === undefined) {
     return {
@@ -162,7 +202,7 @@ function sheetLine(
         {
           code: 'SHEETING_PRICE_MISSING',
           severity: 'blocker',
-          message: `No price for ${FALLBACK_PROFILE} ${FALLBACK_BMT} sheeting, so ${description.toLowerCase()} cannot be priced.`,
+          message: `No price for ${sheet.bmtMm} ${sheet.profile} sheeting, so ${description.toLowerCase()} cannot be priced.`,
         },
       ],
       materials: [],
@@ -242,12 +282,15 @@ export function sheetingGroup(
     };
   }
 
+  const roofSheet = roofSheetingOf(shed);
+  const wallSheet = wallSheetingOf(shed);
   const parts = [
     sheetLine(
       'Roof sheeting',
       counts.roof,
       roofSheetLength(shed, rules),
       counts.coverMm,
+      roofSheet,
       contract,
       lookup,
     ),
@@ -255,7 +298,8 @@ export function sheetingGroup(
       'Side wall sheeting',
       counts.side,
       wallSheetLength(shed, rules),
-      counts.coverMm,
+      counts.wallCoverMm,
+      wallSheet,
       contract,
       lookup,
     ),
@@ -263,7 +307,8 @@ export function sheetingGroup(
       'End wall sheeting',
       counts.end,
       wallSheetLength(shed, rules),
-      counts.coverMm,
+      counts.wallCoverMm,
+      wallSheet,
       contract,
       lookup,
     ),

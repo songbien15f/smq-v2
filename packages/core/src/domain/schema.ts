@@ -625,6 +625,12 @@ export const shedConfigSchema = z.object({
   stateCode: stateCodeSchema,
   wallProfile: z.string(),
   roofProfile: z.string(),
+  /*
+   * Optional: a revision written before the thickness was recorded has none, and the BOM has always
+   * priced 0.42. Requiring it would make every old revision unreadable.
+   */
+  wallBmt: z.number().min(0.2).max(1.2).optional(),
+  roofBmt: z.number().min(0.2).max(1.2).optional(),
   downpipeType: z.string(),
   footingType: z.string(),
   footingSubType: z.string(),
@@ -690,6 +696,8 @@ const tolerantShedConfigSchema = z.object({
   stateCode: stateCodeSchema.catch(DEFAULT_SHED.stateCode),
   wallProfile: z.string().catch(DEFAULT_SHED.wallProfile),
   roofProfile: z.string().catch(DEFAULT_SHED.roofProfile),
+  wallBmt: z.number().min(0.2).max(1.2).optional().catch(undefined),
+  roofBmt: z.number().min(0.2).max(1.2).optional().catch(undefined),
   downpipeType: z.string().catch(DEFAULT_SHED.downpipeType),
   footingType: z.string().catch(DEFAULT_SHED.footingType),
   footingSubType: z.string().catch(DEFAULT_SHED.footingSubType),

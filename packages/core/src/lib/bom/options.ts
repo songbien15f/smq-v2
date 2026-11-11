@@ -25,6 +25,7 @@ import type {
   StableOption,
 } from '@/domain/types';
 import { bayWidthsFor } from '@/domain/bays';
+import { roofSheetingOf, wallSheetingOf } from './groups/sheeting';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from './types';
 import type { OptimisedFrame } from './types';
@@ -32,8 +33,23 @@ import { safeCall } from './safe';
 import type { BomRules } from './rules';
 
 /** The sheeting profile the option branches assume, matching the sheeting group. */
-const PROFILE = 'Corro';
-const BMT = 0.42;
+/*
+ * The sheet an **option** is clad in is the shed's own, not a default.
+ *
+ * An awning, a dividing wall, a stable, an overhang: each is clad in whatever the building is clad
+ * in, and a shed quoted in Lo-Rib with a Corro awning is a document that buys the wrong coil. The
+ * two `optionSheeting` calls resolve the choice once here rather than at every call site.
+ */
+
+/** The wall sheet this shed is clad in — every option's walls use it. */
+function wallSheetOf(shed: ShedConfig) {
+  return wallSheetingOf(shed);
+}
+
+/** The roof sheet this shed is clad in — an awning and an overhang use it. */
+function roofSheetOf(shed: ShedConfig) {
+  return roofSheetingOf(shed);
+}
 
 /**
  * Mezzanine rates, cents per square metre, by floor-load class.
@@ -183,7 +199,7 @@ export function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] 
 
   const lines: BomLine[] = [];
   for (const [type, count] of byType) {
-    const row = safeCall(() => lookup.sheeting(type, BMT));
+    const row = safeCall(() => lookup.sheeting(type, roofSheetOf(shed).bmtMm));
     lines.push(...eachLine('option', `Skylight sheet (${type}), ${roofSheetLength(shed)} mm`, count, row));
   }
   return lines;
@@ -209,8 +225,9 @@ function mezzanineLines(shed: ShedConfig, option: MezzanineOption): BomLine[] {
 }
 
 /** An awning's roof and wall sheets. */
-function awningLines(option: AwningOption, lookup: PriceLookup): BomLine[] {
-  const row = safeCall(() => lookup.sheeting(PROFILE, BMT));
+function awningLines(shed: ShedConfig, option: AwningOption, lookup: PriceLookup): BomLine[] {
+  const roofSheet = roofSheetOf(shed);
+  const row = safeCall(() => lookup.sheeting(roofSheet.profile, roofSheet.bmtMm));
   const area = (option.width / 1000) * (option.depth / 1000);
   // A sheet covers `coverage × depth` of awning, so the count is the area over
   // that — a per-sheet price must not meet an area.
@@ -231,7 +248,8 @@ function dividingWallLines(
   lookup: PriceLookup,
 ): BomLine[] {
   const run = option.axis === 'x' ? shed.span : shed.length;
-  const sheet = safeCall(() => lookup.sheeting(PROFILE, BMT));
+  const wallSheet = wallSheetOf(shed);
+  const sheet = safeCall(() => lookup.sheeting(wallSheet.profile, wallSheet.bmtMm));
   const rows = Math.max(1, Math.ceil(option.height / DIVIDING_GIRT_SPACING));
   const girtRow = safeCall(() => lookup.purlin(frame.girtMaterial));
   return [
@@ -264,11 +282,12 @@ function claddingLines(
 }
 
 /** A stable's wall panels, by the sides the option keeps. */
-function stableLines(option: StableOption, lookup: PriceLookup): BomLine[] {
+function stableLines(shed: ShedConfig, option: StableOption, lookup: PriceLookup): BomLine[] {
   const sides = [option.panels.left, option.panels.right, option.panels.front, option.panels.back]
     .filter(Boolean).length;
   if (sides === 0) return [];
-  const sheet = safeCall(() => lookup.sheeting(PROFILE, BMT));
+  const wallSheet = wallSheetOf(shed);
+  const sheet = safeCall(() => lookup.sheeting(wallSheet.profile, wallSheet.bmtMm));
   const height = Math.max(STABLE_MIN_HEIGHT, option.height);
   // Each kept panel is one side; the front and back run `depth`, not `width`, so
   // the two pairs are counted separately rather than four times one dimension.
@@ -314,7 +333,8 @@ function overhangLines(
   lookup: PriceLookup,
 ): BomLine[] {
   const run = option.wall === 'front' || option.wall === 'back' ? shed.span : shed.length;
-  const sheet = safeCall(() => lookup.sheeting(PROFILE, BMT));
+  const roofSheet = roofSheetOf(shed);
+  const sheet = safeCall(() => lookup.sheeting(roofSheet.profile, roofSheet.bmtMm));
   return sheetAreaLine(
     'Overhang sheet',
     (run / 1000) * (option.depth / 1000),
@@ -371,7 +391,7 @@ export function optionLines(
         lines.push(...mezzanineLines(shed, option));
         break;
       case 'awning':
-        lines.push(...awningLines(option, lookup));
+        lines.push(...awningLines(shed, option, lookup));
         break;
       case 'outrigger':
         lines.push(...outriggerLines(frame, option, lookup));
@@ -384,7 +404,7 @@ export function optionLines(
         // no material; an open one is simply the absence of that sheet.
         break;
       case 'stable':
-        lines.push(...stableLines(option, lookup));
+        lines.push(...stableLines(shed, option, lookup));
         break;
       case 'carry_beam':
         lines.push(...carryBeamLines(shed, option, lookup));

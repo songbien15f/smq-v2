@@ -155,7 +155,15 @@ describe('readLegacyPlan — the shell', () => {
     expect(plan?.config.length).toBe(15000);
   });
 
-  it('reports non-uniform bays instead of quoting them as uniform', () => {
+  it('carries non-uniform bays over instead of collapsing them', () => {
+    /*
+     * This test used to assert the collapse: 3 750 / 3 750 / 3 000 became three 3 500 mm bays, with an
+     * assumption note saying the build could not represent the difference.
+     *
+     * That was correct while equal division was the only way to describe a shed. It is not any more —
+     * `bayWidths` carries the array — and the collapse was not cosmetic: the frame table is keyed by the
+     * **largest** bay, so 3 500 × 3 takes a different row from 3 750 / 3 750 / 3 000.
+     */
     const plan = readLegacyPlan(
       revision(
         samplePlan({
@@ -165,8 +173,26 @@ describe('readLegacyPlan — the shell', () => {
       ),
     );
     expect(plan?.config.length).toBe(10500);
-    expect(plan?.config.nomBaySpacing).toBe(3500);
-    expect(plan?.assumed.some((note) => note.what === 'Bay spacing')).toBe(true);
+    expect(plan?.config.bayWidths).toEqual([3750, 3750, 3000]);
+    // The typed spacing is kept as the nominal figure, which is what the desktop leaves alone.
+    expect(plan?.config.nomBaySpacing).toBe(3750);
+    // The note still appears, now saying the bays were carried over rather than that they were lost.
+    const note = plan?.assumed.find((entry) => entry.what === 'Bay spacing');
+    expect(note?.detail).toContain('carried over');
+    expect(note?.detail).toContain('3750 / 3750 / 3000');
+  });
+
+  it('splits the .sqd’s joined profile and thickness', () => {
+    /*
+     * The file writes `'0.35 TL-5'` — thickness first. Read as a profile it matches no `material_sheeting`
+     * row, so every imported shed priced its sheeting as a mocked line (measured 2026-11-11: `'0.35 TL-5'`
+     * returns `NO ROW`; `{ profile: 'TL-5', bmt: 0.35 }` returns TL35 at $9.06).
+     */
+    const plan = readLegacyPlan(revision(samplePlan()));
+    expect(plan?.config.roofProfile).toBe('TL-5');
+    expect(plan?.config.roofBmt).toBe(0.42);
+    expect(plan?.config.wallProfile).toBe('TL-5');
+    expect(plan?.config.wallBmt).toBe(0.35);
   });
 
   it('never carries the file price into the config', () => {

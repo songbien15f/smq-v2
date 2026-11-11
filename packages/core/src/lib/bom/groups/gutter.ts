@@ -26,10 +26,10 @@ import { buildingSlidingDoors, headFlashingType } from '../slidingDoors';
 const CORNERS = 4;
 /** A downpipe drops from the gutter to the ground, so it is the wall height long. */
 const DOWNPIPE_LENGTH_MM = (height: number) => height;
-/** The gutter profile and downpipe size a shed uses by default. */
+/** The gutter profile a shed uses by default. */
 const DEFAULT_GUTTER_SIZE = '115 Quad';
+/** The material used when the shed has not been given one. */
 const DEFAULT_DOWNPIPE_KIND = 'PVC';
-const DEFAULT_DOWNPIPE_SIZE = '90mm';
 
 /** How many brackets hold the gutter up, which the fixing group also needs. */
 export function gutterBracketCount(shed: ShedConfig, rules: BomRules = DEFAULT_BOM_RULES): number {
@@ -116,6 +116,30 @@ export function gutterLines(
   // an unpainted gutter on a Colorbond shed is a callback — so the name is
   // resolved once here.
   const colour = safeCall(() => lookup.colourName(shed.colors.gutter));
+  /*
+   * The pipe is the **chosen material in the chosen colour**, not a default.
+   *
+   * The desktop looks it up with all three parts of the key — colour, kind and state
+   * (`BOMFactory.cs:118`), and it is the same fact the Colours block lets a person pick. Reading
+   * `PVC 90mm` for every shed meant a steel-pipe quote was priced from the PVC row and the document
+   * said nothing about the difference.
+   */
+  const downpipeKind = shed.downpipeType.trim() === '' ? DEFAULT_DOWNPIPE_KIND : shed.downpipeType.trim();
+  const downpipeColour = safeCall(() => lookup.colourName(shed.colors.downpipe));
+  /*
+   * The book stocks a downpipe in **two states only**: NSW and SA.
+   *
+   * The desktop maps every other state onto NSW and keeps SA as itself
+   * (`BOMFactory.cs:114-115`: `state = PVC ? "NSW" : (StateCode == "SA" ? "SA" : "NSW")`). Asking for
+   * the quote's own state finds no row in QLD, VIC, WA … and falls through to "cheapest anywhere",
+   * which on this book is SA's 100×50 at $8.02 instead of the 100×75 the factory actually ships.
+   */
+  const downpipeState =
+    downpipeKind.toUpperCase() === 'PVC'
+      ? 'NSW'
+      : shed.stateCode.trim().toUpperCase() === 'SA'
+        ? 'SA'
+        : 'NSW';
 
   return [
     ...lengthLine('gutter', 'Gutter', gutterMetres, safeCall(() => lookup.gutter(DEFAULT_GUTTER_SIZE, colour))),
@@ -127,7 +151,7 @@ export function gutterLines(
       'gutter',
       `Downpipe, ${shed.height} mm drop`,
       (DOWNPIPE_LENGTH_MM(shed.height) / 1000) * CORNERS,
-      safeCall(() => lookup.downpipe(DEFAULT_DOWNPIPE_KIND, DEFAULT_DOWNPIPE_SIZE)),
+      safeCall(() => lookup.downpipe(downpipeKind, downpipeColour, downpipeState)),
     ),
   ];
 }

@@ -15,6 +15,7 @@
  * Pure TypeScript: the route does the file encoding.
  */
 
+import { sheetingSpec } from './sheeting';
 import type { ShedConfig, ShedColors } from './types';
 
 /** Everything the file states. */
@@ -94,8 +95,10 @@ export function buildVqu(input: VquInput): string {
   lines.push(`BaySize=${config.nomBaySpacing}`);
   lines.push(`NumofBays=${config.bays}`);
   lines.push(`Footings=${footingLabel(config.footingType)}`);
-  lines.push(`WallSheet=${config.wallProfile}`);
-  lines.push(`RoofSheet=${config.roofProfile}`);
+  // The desktop's own joined form (`'0.42 TL-5'`), which is what its reader splits back apart.
+  // Writing a bare profile would lose the thickness the quote was priced at.
+  lines.push(`WallSheet=${sheetingSpec(config.wallProfile, config.wallBmt ?? 0.42)}`);
+  lines.push(`RoofSheet=${sheetingSpec(config.roofProfile, config.roofBmt ?? 0.42)}`);
   lines.push(`DownpipeStyle=${downpipeStyle(config.downpipeType)}`);
   lines.push(`WidthSpan=${config.span}`);
   lines.push(`Height=${config.height}`);

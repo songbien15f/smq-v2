@@ -21,6 +21,7 @@
  */
 
 import { bayWidthsFor } from '@/domain/bays';
+import { roofSheetingOf, wallSheetingOf } from './groups/sheeting';
 import type { ShedConfig } from '@/domain/types';
 import { windRegionCode } from '@/domain/wind';
 import type { PriceLookup } from '@/lib/pricing/types';
@@ -199,12 +200,26 @@ export function optimise(
   // spans 900 mm cannot be supported at 1490 mm. The desktop does the same
   // (`Math.Min(dlookup.PurlinSpan, roof.InternalSpan)`), and the lookup has been
   // carrying these spans unused.
-  const roofRow = safeCall(() => lookup.sheeting('Corro', 0.42));
+  /*
+   * The cap comes from the sheet **this shed is clad in**, not from a default.
+   *
+   * The desktop does the same (`Math.Min(dlookup.PurlinSpan, roof.InternalSpan)`, where `roof` is the
+   * chosen roof sheet). Reading `Corro` at 0.42 for every building meant a thicker or wider-profile
+   * sheet's own structural span never limited the rows — so a roof that cannot span the chosen
+   * spacing was priced as though it could.
+   *
+   * A roof and a wall sheet are separately chosen, and their spans differ, which is why there are
+   * two rows rather than one.
+   */
+  const roofSheet = roofSheetingOf(shed);
+  const wallSheet = wallSheetingOf(shed);
+  const roofRow = safeCall(() => lookup.sheeting(roofSheet.profile, roofSheet.bmtMm));
+  const wallRow = safeCall(() => lookup.sheeting(wallSheet.profile, wallSheet.bmtMm));
   const roofCap = roofRow !== undefined && roofRow.roofInternalSpanMm > 0
     ? roofRow.roofInternalSpanMm
     : Number.POSITIVE_INFINITY;
-  const wallCap = roofRow !== undefined && roofRow.wallInternalSpanMm > 0
-    ? roofRow.wallInternalSpanMm
+  const wallCap = wallRow !== undefined && wallRow.wallInternalSpanMm > 0
+    ? wallRow.wallInternalSpanMm
     : Number.POSITIVE_INFINITY;
 
   for (const row of rows) {

@@ -111,6 +111,10 @@ export const DEFAULT_SHED: ShedConfig = {
   stateCode: 'QLD',
   wallProfile: 'Corro',
   roofProfile: 'Corro',
+  // The thickness the BOM has always priced. Stated here so a new quote records what it was
+  // priced from, rather than leaving the reader to infer the default.
+  wallBmt: 0.42,
+  roofBmt: 0.42,
   downpipeType: '',
   footingType: '',
   footingSubType: '',

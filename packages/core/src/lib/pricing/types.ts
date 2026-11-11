@@ -331,8 +331,22 @@ export interface PriceLookup {
    * absorb out of its own margin.
    */
   miscOption(name: string): PriceRow | undefined;
-  /** A downpipe by kind ('PVC' | 'STEEL') and size. */
-  downpipe(kind: string, size: string): PriceRow | undefined;
+  /**
+   * A downpipe by kind (`'PVC'` | `'STEEL'`), the **colour name** and the state.
+   *
+   * All three are the desktop's own key (`FindDownpipeBySpecs(colour, DOWNPIPE, kind, state)`,
+   * `BOMFactory.cs:118`), and each one moves the price:
+   *
+   * - **colour**: Z450 Galv is $8.86/m where Basalt is $8.44, so a lookup that ignores it quotes
+   *   whichever finish sorts first;
+   * - **state**: the book prices a steel pipe in NSW (`100x75`) and in SA (`100x50`), at $8.44 and
+   *   $8.02 — 5% apart;
+   * - **kind**: PVC is stocked in White alone, which is why its colour cannot be chosen.
+   *
+   * Omitting the colour gives the first active colour the book lists for that kind and state, and
+   * the line is then an assumption the caller can say so about.
+   */
+  downpipe(kind: string, colour?: string, state?: string): PriceRow | undefined;
   /**
    * A flashing profile by its type name ('GABLE_BARGE', 'CORNER_FLASHING', …).
    *
@@ -341,6 +355,25 @@ export interface PriceLookup {
    * Omitting it gives the painted price.
    */
   flashing(type: string, colour?: string): PriceRow | undefined;
+  /**
+   * How far below the floor a column goes for this footing, mm.
+   *
+   * The desktop asks the book for the pair (`CFootingConfig.GetFootingConfig(footingType,
+   * footingSubType)`) and adds `footing_parameters` to the wall height — but only for a post in the
+   * ground (`BOMQuoteFactory` passes the value into the roller-door frame calls; the shed's own
+   * columns use the frame design's embedment). On the reference book:
+   *
+   * | footing | sub-type | parameters |
+   * |---|---|---|
+   * | In Slab | Cast-in Strap | 0 |
+   * | In Slab | HD Bolts | −12 (stops at the slab) |
+   * | In Slab | Post in Ground | **500** |
+   * | On Slab | Chemset / Rigid Bracket | −12 |
+   *
+   * `null` means the book has no row for the pair, which is different from zero: zero is a footing
+   * that adds nothing, `null` is a pair the book cannot price.
+   */
+  footingParameters(footingCode: string, subTypeCode: string): number | null;
   /** The web depth of a purlin or girt material, mm; `0` when the book has no row. */
   purlinDepth(code: string): number;
   /** A plate bracket by its exact book name (`'KBC20-7.5L'`). */

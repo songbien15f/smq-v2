@@ -39,6 +39,7 @@
  */
 
 import { COLORBOND } from '@/domain/defaults';
+import { parseSheeting } from '@/domain/sheeting';
 import type { Opening, ShedColors, WallSide } from '@/domain/types';
 import type { RawRevision } from './sqd';
 
@@ -486,20 +487,31 @@ export function readLegacyPlan(revision: RawRevision): LegacyPlan | null {
   }
 
   /*
-   * The nominal bay spacing.
+   * The bays, kept **as the file states them**.
    *
-   * The file's `NormalBaySize` is the spacing the operator typed; the bays are the result. When they
-   * do not multiply out to the length, the bays are not uniform — which this build cannot represent,
-   * and which changes the purlin run — so the spacing is derived from the length instead and the
-   * mismatch is reported.
+   * This used to collapse them: 4 000 / 4 000 / 6 000 became three equal bays and the mismatch was
+   * reported as an assumption. That was right while the editor could only describe equal bays, and it
+   * is wrong now that `bayWidths` exists — the cascade matters, because the frame table is keyed by the
+   * **largest** bay, so a collapsed building takes a different row from the one the desktop quoted.
+   *
+   * `NormalBaySize` is still read for the nominal spacing, which is the spacing the operator typed and
+   * which the desktop leaves alone once a bay is edited.
    */
   const typedSpacing = Math.round(num(plan.NormalBaySize) ?? 0);
-  const uniform = typedSpacing > 0 && typedSpacing * bays.count === bays.length;
-  const nomBaySpacing = uniform ? typedSpacing : Math.floor(bays.length / bays.count);
-  if (bays.uneven || !uniform) {
+  const nomBaySpacing = typedSpacing > 0 ? typedSpacing : Math.floor(bays.length / bays.count);
+  if (bays.uneven) {
+    /*
+     * Still reported, but now as information rather than a lost fact: the plan's bays are being
+     * carried over exactly, and this says what they are so the operator can confirm them.
+     */
     assumed.push({
       what: 'Bay spacing',
-      detail: `The old plan's bays are ${bays.widths.join(' / ')} mm. This build quotes one spacing for every bay, so it uses ${nomBaySpacing} mm and the length it adds up to. Check the plan.`,
+      detail: `The old plan's bays are ${bays.widths.join(' / ')} mm and have been carried over as they are. The steel frame is sized from the longest one.`,
+    });
+  } else if (typedSpacing > 0 && typedSpacing * bays.count !== bays.length) {
+    assumed.push({
+      what: 'Bay spacing',
+      detail: `The old plan types a ${typedSpacing} mm spacing but its bays add up to ${bays.length} mm. The bays are used as they are; the nominal spacing is the typed figure.`,
     });
   }
 
@@ -679,6 +691,12 @@ export function readLegacyPlan(revision: RawRevision): LegacyPlan | null {
     length: bays.length,
     height,
     bays: bays.count,
+    /*
+     * The bay lengths, in the file's order. `normaliseShedConfig` keeps them only when the count,
+     * positivity and total all agree with the rest of the building, so a file that says one thing in
+     * `Bays` and another in `Width` loses the array rather than pricing from it.
+     */
+    ...(bays.uneven ? { bayWidths: bays.widths } : {}),
     nomBaySpacing,
     roofPitchDeg: Math.round((num(plan.RoofPitch) ?? 0) * 10) / 10,
     openings: openingsWithIds,
@@ -691,8 +709,16 @@ export function readLegacyPlan(revision: RawRevision): LegacyPlan | null {
     importanceLevel: importance ?? 1,
     topographyFactor: 1,
     stateCode: state ?? 'QLD',
-    wallProfile: str(plan.WallSheeting) || 'Corro',
-    roofProfile: str(plan.RoofSheeting) || 'Corro',
+    /*
+     * The `.sqd` joins profile and thickness (`'0.35 TL-5'`), and the book's lookup is keyed by the
+     * pair — a joined string matches no row, so every imported shed priced its sheeting as a mocked
+     * line. `parseSheeting` splits them; measured on the reference book, `'0.35 TL-5'` as a profile
+     * returns `NO ROW` while `{ profile: 'TL-5', bmt: 0.35 }` returns TL35 at $9.06.
+     */
+    wallProfile: parseSheeting(str(plan.WallSheeting)).profile,
+    wallBmt: parseSheeting(str(plan.WallSheeting)).bmtMm,
+    roofProfile: parseSheeting(str(plan.RoofSheeting)).profile,
+    roofBmt: parseSheeting(str(plan.RoofSheeting)).bmtMm,
     downpipeType: str(plan.DownpipeType),
     footingType: str(plan.FootingType),
     footingSubType: str(plan.FootingSubType),

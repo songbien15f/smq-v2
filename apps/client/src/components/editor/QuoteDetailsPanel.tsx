@@ -1466,24 +1466,65 @@ function ShedGroup({
         )}
       </div>
 
+      {/*
+        Sheeting: a **profile and a thickness**, chosen together.
+
+        ## Why the thickness is here at all
+
+        The book prices the pair (`view_cost_sheeting` is keyed by `profile` + `bmt`), and the pair
+        moves the quote twice over: a thicker sheet costs more per metre (Corro 0.42 is $8.45, 0.48 is
+        $9.93) and a different profile covers a different width (Corro 762 mm, Lo-Rib 817 mm, so 7%
+        fewer sheets). Measured on a 12 × 24 m shed: a Lo-Rib roof is **$273.63 lower** and a 0.48 Corro
+        roof **$430.63 higher** than the 0.42 Corro default this build used to hard-code.
+
+        ## Why the pair, not two free choices
+
+        A thickness the chosen profile is not sold in finds **no price row**, and the whole sheeting
+        group turns into a mocked line. So picking a profile snaps the thickness to one the book stocks
+        for it, and the dropdown only lists those.
+      */}
       <div className="grid grid-cols-2 gap-sq-2">
         {wallProfiles.length > 0 && (
-          <SelectField
-            id="shed-wallProfile"
-            label="Wall profile"
-            value={config.wallProfile}
-            options={wallProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
-            onChange={(value) => applyPartial({ wallProfile: value })}
-          />
+          <div className="flex flex-col gap-sq-1">
+            <SelectField
+              id="shed-wallProfile"
+              label="Wall profile"
+              value={config.wallProfile}
+              options={wallProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
+              onChange={(value) => {
+                const bmt = snapBmt(wallProfiles, value, config.wallBmt);
+                applyPartial({ wallProfile: value, wallBmt: bmt });
+              }}
+            />
+            <SelectField
+              id="shed-wallBmt"
+              label="Wall thickness"
+              value={String(snapBmt(wallProfiles, config.wallProfile, config.wallBmt))}
+              options={bmtOptions(wallProfiles, config.wallProfile)}
+              onChange={(value) => applyPartial({ wallBmt: Number(value) })}
+            />
+          </div>
         )}
         {roofProfiles.length > 0 && (
-          <SelectField
-            id="shed-roofProfile"
-            label="Roof profile"
-            value={config.roofProfile}
-            options={roofProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
-            onChange={(value) => applyPartial({ roofProfile: value })}
-          />
+          <div className="flex flex-col gap-sq-1">
+            <SelectField
+              id="shed-roofProfile"
+              label="Roof profile"
+              value={config.roofProfile}
+              options={roofProfiles.map((profile) => ({ value: profile.profile, label: profile.profile }))}
+              onChange={(value) => {
+                const bmt = snapBmt(roofProfiles, value, config.roofBmt);
+                applyPartial({ roofProfile: value, roofBmt: bmt });
+              }}
+            />
+            <SelectField
+              id="shed-roofBmt"
+              label="Roof thickness"
+              value={String(snapBmt(roofProfiles, config.roofProfile, config.roofBmt))}
+              options={bmtOptions(roofProfiles, config.roofProfile)}
+              onChange={(value) => applyPartial({ roofBmt: Number(value) })}
+            />
+          </div>
         )}
       </div>
 
@@ -1920,6 +1961,47 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
 }
 
 /* ------------------------------------------------------------------ Shared */
+
+/**
+ * Snap a thickness to one the chosen profile is sold in.
+ *
+ * A profile is not sold in every thickness: on the reference book `Lo-Rib` has 0.35 and 0.42 but no
+ * 0.48. Asking the book for a pair it does not carry returns no row, and the whole sheeting group
+ * becomes one mocked line — the failure mode is silent, so the snap happens at the moment of choosing
+ * rather than being detected later.
+ *
+ * The nearest stocked thickness wins, and a tie goes to the thicker sheet: an under-specified roof is
+ * the failure that cannot be built.
+ */
+function snapBmt(
+  profiles: readonly { profile: string; bmtValues: number[] }[],
+  profile: string,
+  wanted: number | undefined,
+): number {
+  const values = profiles.find((entry) => entry.profile === profile)?.bmtValues ?? [];
+  if (values.length === 0) return wanted ?? 0.42;
+  if (wanted !== undefined && values.includes(wanted)) return wanted;
+  const target = wanted ?? 0.42;
+  let best = values[0]!;
+  let bestDistance = Math.abs(target - best);
+  for (const value of values) {
+    const distance = Math.abs(target - value);
+    if (distance < bestDistance || (distance === bestDistance && value > best)) {
+      best = value;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** The thickness options a profile offers, as `value`/`label` pairs. */
+function bmtOptions(
+  profiles: readonly { profile: string; bmtValues: number[] }[],
+  profile: string,
+): { value: string; label: string }[] {
+  const values = profiles.find((entry) => entry.profile === profile)?.bmtValues ?? [];
+  return values.map((bmt) => ({ value: String(bmt), label: `${bmt} BMT` }));
+}
 
 /**
  * The sentence for a value the price book cannot price.

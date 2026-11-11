@@ -3374,15 +3374,110 @@ Ghi lại để khỏi làm lại — **ghi chú cũ của tôi sai ở cả hai
 
 ---
 
+## 13.34 Sáu lựa chọn ở Step 1 không làm giá nhích một cent (2026-11-11)
+
+Đo bằng cách dựng BOM trên sách thật và đổi **từng trường một**:
+
+```
+BASE 1707893
+wallProfile Lo-Rib   SAME
+roofProfile Lo-Rib   SAME
+downpipe STEEL       SAME
+footing PIG          SAME
+footing CS           SAME
+shielding 0.8        SAME
+```
+
+Sáu điều khiển có trên màn hình, được lưu vào quote, được in ra `.vqu` và PDF — và **không một cent**
+nào đọc từ chúng. Đây đúng loại lỗi dự án đã ghi là không chấp nhận được: màn hình nói một đằng, giá
+tính một nẻo.
+
+### 13.34.1 Profile + độ dày tấm (BMT)
+
+`sheeting.ts` hard-code `FALLBACK_PROFILE = 'Corro'` / `FALLBACK_BMT = 0.42`, và `optimise.ts:202`,
+`options.ts:35-36` cũng hard-code `'Corro'`, `0.42`. Không chỗ nào đọc `wallProfile`/`roofProfile`.
+
+Sách giá định giá theo **cặp** (`view_cost_sheeting` khoá bằng `profile` + `bmt`), và cặp đó đổi giá hai
+lần:
+
+| profile | bmt | cover | cost/m (trung bình) |
+|---|---|---|---|
+| Corro | 0.42 | 762 | 10.42 |
+| Lo-Rib | 0.42 | **817** | **10.56** |
+| Corro | 0.48 | 762 | 11.71 |
+
+Đo sau khi sửa trên nhà 12 × 24 m: mái Lo-Rib **−$273,63**; mái Corro 0.48 **+$430,63**; tường TL-5 0.35
+**−$475,68**.
+
+Đã thêm `ShedConfig.wallBmt`/`roofBmt` (optional — revision cũ không ghi), `domain/sheeting.ts` với
+`parseSheeting`/`sheetingSpec`, và hàm `roofSheetingOf`/`wallSheetingOf` trong nhóm sheeting. Bốn chỗ
+từng hard-code giờ hỏi shed: `sheetCounts`, `sheetLine`, `optimise`'s roof/wall span cap, và năm hàm
+option (awning, dividing wall, stable, overhang, skylight).
+
+Cover tách **hai** giá trị vì mái và tường có thể khác profile: Corro 762, Lo-Rib 817 — chênh 7% số tấm.
+
+### 13.34.2 Downpipe: vật liệu, màu **và** state
+
+`gutter.ts` hard-code `DEFAULT_DOWNPIPE_KIND = 'PVC'`, `DEFAULT_DOWNPIPE_SIZE = '90mm'`. Không đọc
+`downpipeType`.
+
+Desktop tra bằng `FindDownpipeBySpecs(colour, DOWNPIPE, kind, state)` (`BOMFactory.cs:118`) — **ba** phần
+khoá, và cả ba đổi giá:
+
+- **màu**: Z450 Galv $8,86/m so Basalt $8,44
+- **state**: steel bán ở NSW (100×75) và SA (100×50), $8,44 so $8,02
+- **kind**: PVC chỉ White
+
+Lỗi thứ hai lộ ra cùng lúc: query cũ `ORDER BY downpipe_price DESC` nên **mọi** nhà lấy màu đắt nhất
+trong sách — 5% cao trên mọi quote, không một dòng nào nói vì sao. Nay khoá theo màu của shed, state map
+như desktop (`PVC → NSW`; `SA → SA`; còn lại `NSW`), và fallback lấy **rẻ nhất** chứ không đắt nhất.
+
+### 13.34.3 Footing → chiều dài cột
+
+Desktop cộng `footing_parameters` vào chiều cao tường (`SkillionBuildingQuote.cs:299`,
+`TopHatQuote.cs:49`): post-in-ground +500 mm, mọi footing trên slab +0. Đo trước khi sửa: **28,80 m cột ở
+cả ba tổ hợp footing** — nhà post-in-ground thiếu 500 mm thép mỗi cột.
+
+Sách có `view_system_footing` (5 dòng): `footing_parameters` là 0 (Cast-in Strap), −12 (HD Bolts,
+Chemset, Rigid Bracket), **500** (Post in Ground). Đã thêm `lookup.footingParameters(code, subType)` và
+`columnLength` nhận nó; giá trị ≤ 0 nghĩa là cột dừng ở mặt sàn, không phải chiều dài âm.
+
+Đo sau khi sửa: CIS **24,00 m**, PIG **28,00 m**, HDB/CS **24,00 m** — và bảng cắt giữ đúng con số đã
+định giá, vì cả hai gọi cùng một `columnLength`.
+
+### 13.34.4 `.sqd` ghi `profile` và `bmt` **liền nhau**
+
+`RoofSheeting: '0.42 TL-5'`, `WallSheeting: '0.35 TL-5'`. v2 gán nguyên chuỗi vào `roofProfile`, nên
+lookup không khớp dòng nào — **mọi** quote import đều có sheeting mocked. Đo: `'0.35 TL-5'` → `NO ROW`;
+`{profile:'TL-5', bmt:0.35}` → `TL35`, $9,06.
+
+`legacyPlan` giờ tách bằng `parseSheeting`; `vqu` xuất lại dạng liền (`sheetingSpec`) vì reader của
+desktop tách nó.
+
+### 13.34.5 Import `.sqd` từng **bỏ** mảng bay
+
+`readBays` đọc được `Bays: [3750, 3750, 3000]` rồi vứt đi, chia đều thành 3 500 × 3 và ghi một dòng
+"assumed". Đó là đúng khi chỉ mô tả được bay bằng nhau — và sai từ §13.30, vì bảng kết cấu khoá theo bay
+**lớn nhất**. Nay `bayWidths` được giữ, và dòng ghi chú đổi từ "đã mất" thành "đã giữ nguyên".
+
+### Kiểm chứng
+
+- 1 072 test core (13 test mới trong `stepOneInputsReachThePrice.test.ts` — test nào cũng đỏ trước khi
+  sửa), 294 API, 57 client
+- **35/35 e2e** trên chrome, gồm một test mới: profile + độ dày, và `Lo-Rib` không bán 0,48
+- Typecheck sạch 12 package
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 1 057 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, `averageHeightMm`/`ridgeHeightMm`, Importance Level 1–4, wind region codes, `suggestedValues` + `outsideBookBounds`, **internal pressure suy từ tường**, **9 cho `downpipePalette`/`reconcileDownpipeColour`**, `downpipeMaterials` trong catalogue, **`bayWidthsFor`/`positionsFromWidths`**, **`roofPitchHintsForSpan`/`roofPitchBoundsForSpan`/`pitchOutsideBookSpan`**, **`maxBay` = bay lớn nhất**) |
+| `@sq/core` | 1 072 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, `averageHeightMm`/`ridgeHeightMm`, Importance Level 1–4, wind region codes, `suggestedValues` + `outsideBookBounds`, **internal pressure suy từ tường**, **9 cho `downpipePalette`/`reconcileDownpipeColour`**, `downpipeMaterials` trong catalogue, **`bayWidthsFor`/`positionsFromWidths`**, **`roofPitchHintsForSpan`/`roofPitchBoundsForSpan`/`pitchOutsideBookSpan`**, **`maxBay` = bay lớn nhất**) |
 | `@sq/api` | 294 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 34 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | 35 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

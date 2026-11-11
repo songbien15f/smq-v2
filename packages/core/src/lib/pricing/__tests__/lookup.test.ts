@@ -110,6 +110,13 @@ beforeEach(() => {
       { downpipe_kind: 'PVC', downpipe_size: '90mm RND', downpipe_color: 'White',
         downpipe_type: 'DOWNPIPE', downpipe_price: 10.972, downpipe_mass: 1.4,
         downpipe_product_code: 'BA21485' },
+      // Steel, two finishes: the colour decides the price, which is the rule the lookup now applies.
+      { downpipe_kind: 'STEEL', downpipe_size: '100x75', downpipe_color: 'Basalt',
+        downpipe_type: 'DOWNPIPE', downpipe_price: 8.44, downpipe_mass: 2.1,
+        downpipe_product_code: 'ST-BASALT' },
+      { downpipe_kind: 'STEEL', downpipe_size: '100x75', downpipe_color: 'Z450 Galv',
+        downpipe_type: 'DOWNPIPE', downpipe_price: 8.862, downpipe_mass: 2.2,
+        downpipe_product_code: 'ST-Z450' },
     ],
     gutter: [
       { gutter_type: 'GUTTER', gutter_size: '115 Quad', gutter_product_code: '',
@@ -273,7 +280,23 @@ describe('pack-priced and colour-matched lookups', () => {
   });
 
   it('prices a downpipe run from the DOWNPIPE row, not the elbow of the same size', () => {
-    expect(createLookup(db).downpipe('PVC', '90mm RND')!.unitCost).toBe(1097);
+    // The signature is (kind, colour, state) now: a downpipe is priced per colour the way the
+    // desktop priced it (`FindDownpipeBySpecs(colour, DOWNPIPE, kind, state)`), and the book carries
+    // an elbow of the same size for a tenth of the price.
+    expect(createLookup(db).downpipe('PVC', 'White', 'NSW')!.unitCost).toBe(1097);
+    // The colour is optional: the fixture states one pipe, so the fallback finds it.
+    expect(createLookup(db).downpipe('PVC')!.unitCost).toBe(1097);
+  });
+
+  it('matches a downpipe on its colour, so a different finish prices differently', () => {
+    /*
+     * The book prices a steel pipe per finish — Z450 Galv at $8.86/m where the standard colours are
+     * $8.44 — and the previous query asked for **any** colour ordered by `price DESC`. Every shed was
+     * therefore quoted at the dearest finish in the book, 5% high, and the line said nothing about it.
+     */
+    const lookup = createLookup(db);
+    expect(lookup.downpipe('STEEL', 'Basalt', 'NSW')!.unitCost).toBe(844);
+    expect(lookup.downpipe('STEEL', 'Z450 Galv', 'NSW')!.unitCost).toBe(886);
   });
 
   it('derives a code for a gutter line the book leaves blank', () => {

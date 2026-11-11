@@ -18,6 +18,7 @@ export * from "./roof";
 export * from "./roofPitch";
 export * from "./schema";
 export * from "./selection";
+export * from "./sheeting";
 export * from "./skylightSnap";
 export * from "./structureCodes";
 export * from "./suggest";

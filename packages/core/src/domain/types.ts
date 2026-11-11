@@ -440,10 +440,27 @@ export interface ShedConfig {
   topographyFactor: number;
   /** State the site is in, which selects the price margin. */
   stateCode: StateCode;
-  /** Wall sheeting profile; horizontal cladding is only offered on `Corro`. */
+  /**
+   * Wall sheeting profile, as the book names it (`'Corro'`, `'Lo-Rib'`, `'TL-5'`).
+   *
+   * Stored **without** the thickness. A `.sqd` joins the two (`'0.35 TL-5'`) and
+   * `parseSheeting` splits them on import, because the book's lookup is keyed by the pair and a
+   * joined string matches no row.
+   */
   wallProfile: string;
-  /** Roof sheeting profile. */
+  /** Roof sheeting profile. See `wallProfile`. */
   roofProfile: string;
+  /**
+   * Wall sheet thickness, mm (`0.35`, `0.42`, `0.48`).
+   *
+   * Separate from the profile because the book prices the **pair**: on the reference book a
+   * `Corro` sheet is 8.45/m at 0.42 and 9.93/m at 0.48, a 17% difference on every square metre of
+   * wall. Absent means the default the BOM has always used (0.42), which is why it is optional
+   * rather than required — an old revision did not record it.
+   */
+  wallBmt?: number;
+  /** Roof sheet thickness, mm. See `wallBmt`. */
+  roofBmt?: number;
   /** Downpipe catalogue code. */
   downpipeType: string;
   /** Footing type code; the sub-type list is filtered by it. */

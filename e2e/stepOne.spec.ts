@@ -206,6 +206,57 @@ test.describe('Step 1 — quote details', () => {
     await expect.poll(parse).toBeGreaterThan(atTwo);
   });
 
+  test('the sheeting profile and thickness are both chosen, and both reach the price', async ({ page }) => {
+    /*
+     * ## The defect
+     *
+     * `wallProfile` and `roofProfile` were dropdowns, they were stored, the document printed them — and
+     * the BOM hard-coded `Corro` at `0.42` in five places. Measured 2026-11-11 on the reference book:
+     * changing the profile returned **the identical total**, 1 707 893 cents, every time.
+     *
+     * The numbers are not cosmetic. Lo-Rib covers 817 mm where Corro covers 762 (7% fewer sheets) and a
+     * 0.48 Corro sheet is $9.93/m where 0.42 is $8.45.
+     *
+     * ## Why this asserts the thickness list rather than a price
+     *
+     * The price lives in the API and is covered by `stepOneInputsReachThePrice`. What a browser test can
+     * see — and a unit test cannot — is that the thickness control exists, follows the profile, and
+     * offers only what the book stocks for it. `Lo-Rib` has no 0.48 row, so offering one would produce a
+     * mocked sheeting line on a real quote.
+     */
+    const wall = page.locator('#shed-wallProfile');
+    const roof = page.locator('#shed-roofProfile');
+    await expect(wall).toBeVisible();
+    await expect(page.locator('#shed-wallBmt')).toBeVisible();
+    await expect(page.locator('#shed-roofBmt')).toBeVisible();
+
+    const thicknesses = async (id: string): Promise<string[]> =>
+      page.locator(`${id} option`).evaluateAll((els) =>
+        els.map((el) => (el as HTMLOptionElement).value),
+      );
+
+    // Corro is sold in all three thicknesses.
+    await wall.selectOption('Corro');
+    expect(await thicknesses('#shed-wallBmt')).toEqual(['0.35', '0.42', '0.48']);
+
+    /*
+     * Lo-Rib has no 0.48 row in the book: selecting it must snap, not offer a pair nothing prices.
+     *
+     * Polled rather than read once: the option list is derived from the store, which the change reaches
+     * on the next render, and a single read saw the previous profile's list.
+     */
+    await wall.selectOption('Lo-Rib');
+    await expect
+      .poll(async () => thicknesses('#shed-wallBmt'))
+      .toEqual(['0.35', '0.42']);
+    const shown = await page.locator('#shed-wallBmt').inputValue();
+    expect(['0.35', '0.42']).toContain(shown);
+
+    // The roof profile is a separate choice with its own thickness — TL-5 does have a 0.48.
+    await roof.selectOption('TL-5');
+    await expect.poll(async () => thicknesses('#shed-roofBmt')).toEqual(['0.35', '0.42', '0.48']);
+  });
+
   test('the downpipe material decides which colours the downpipe can be', async ({ page }) => {
     /*
      * ## The rule, from the desktop's event handler
@@ -286,6 +337,14 @@ test.describe('Step 1 — quote details', () => {
      * panel exists: it would block the very building the panel creates. The assertion that the field
      * is not marked invalid is therefore part of the behaviour, not decoration.
      */
+    /*
+     * Changing a dimension can wipe options, and the app asks first (`applyDimension` →
+     * `shouldWipeOptions`). An earlier test leaves a cantilever on the building, so the guard fires and
+     * Playwright's default is to dismiss — the fill then silently does nothing, which is how this test
+     * passed alone and failed in the suite.
+     */
+    page.on('dialog', (dialog) => void dialog.accept());
+
     const bays = page.locator('#shed-bays');
     const length = page.locator('#shed-length');
 

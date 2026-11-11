@@ -121,15 +121,52 @@ function endMemberCount(shed: ShedConfig): number {
 }
 
 /**
- * A column's length: the wall height plus whatever the design puts below the
- * floor.
+ * A column's length: the wall height plus whatever goes below the floor.
  *
- * The book states that depth per design (`system_lookup_data.embedment`: 450 mm
- * or 300 mm on the shipped book). When there is no schedule the flat 600 mm
- * allowance is kept, because a column that is 600 mm short cannot be used.
+ * ## Which number wins, and why the footing now has a say
+ *
+ * The frame design states its own embedment (`view_system_lookup_data.embedment`: 450 mm on the
+ * reference book), and that is the depth the design was calculated for. But the **footing** decides
+ * whether the column stands on a slab or is buried: a post in the ground is `height + 500`, everything
+ * on a slab stops at the floor (`−12` means "pinned at the slab", which is not a negative length).
+ *
+ * Until 2026-11-11 nothing read the footing at all: the desktop's own
+ * `Height + getCodeFooting(FootingType)` (`SkillionBuildingQuote.cs:299`, `TopHatQuote.cs:49`) had no
+ * equivalent here, so switching a shed from HD bolts to post-in-ground changed **nothing** — measured:
+ * 28.80 column metres either way, and a post-in-ground shed ordered 500 mm less steel per column than
+ * the factory pours.
+ *
+ * The footing wins when the book states it, because it is the more specific fact: it describes this
+ * building's foundations rather than the generic design the sections came from. A book without the
+ * pair falls back to the design's embedment, and then to the flat allowance.
  */
-function columnLength(shed: ShedConfig, embedment: number | null, rules: BomRules): number {
+function columnLength(
+  shed: ShedConfig,
+  embedment: number | null,
+  footingParameters: number | null,
+  rules: BomRules,
+): number {
+  /*
+   * A footing parameter of zero or less adds nothing.
+   *
+   * `−12` is the book's way of writing "pinned at the slab": the column stops at the floor, and adding
+   * a negative length would shorten it. `0` is a cast-in strap, which is cast into the slab — also no
+   * extra length.
+   */
+  if (footingParameters !== null) {
+    return shed.height + Math.max(0, footingParameters);
+  }
   return shed.height + (embedment ?? rules.footingAllowance);
+}
+
+/**
+ * The footing's parameter for this shed, mm, or `null` when the book has no row for the pair.
+ *
+ * One helper because both frame call sites need the same answer, and two lookups could drift.
+ */
+function footingFor(shed: ShedConfig, lookup: PriceLookup): number | null {
+  if (shed.footingType.trim() === '' || shed.footingSubType.trim() === '') return null;
+  return safeCall(() => lookup.footingParameters(shed.footingType, shed.footingSubType)) ?? null;
 }
 
 /**
@@ -226,8 +263,9 @@ export function frameLines(
   // A design with no knee brace has none to price. The fallback section is only
   // used when there is no schedule at all, where the brace is assumed present.
   const braceSection = schedule === undefined ? FALLBACK_SIZE : schedule.kneeBrace;
+  const footing = footingFor(shed, lookup);
 
-  const column = columnLength(shed, schedule?.embedment ?? null, rules);
+  const column = columnLength(shed, schedule?.embedment ?? null, footing, rules);
 
   /*
    * The infill columns, priced.
@@ -439,7 +477,11 @@ export function frameMemberSchedule(
   const end = endMemberCount(shed);
   const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
   const assumed = schedule === undefined;
-  const column = columnLength(shed, schedule?.embedment ?? null, rules);
+  /*
+   * The same footing the priced lines use: a cut list that disagrees with the order is a list
+   * somebody cuts to, and 500 mm per column is not a rounding difference.
+   */
+  const column = columnLength(shed, schedule?.embedment ?? null, footingFor(shed, lookup), rules);
   const rafter = rafterLength(shed, rules);
 
   /** The section's cross-section, so the connector tables can be asked for it. */

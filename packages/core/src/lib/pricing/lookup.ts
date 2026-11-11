@@ -409,22 +409,60 @@ export function createLookup(db: DatabaseSync): PriceLookup {
      WHERE gutter_type = 'GUTTER_BRACKET' AND gutter_size = ?
      ORDER BY gutter_price ASC, gutter_product_code ASC LIMIT 1`,
   );
-  // `downpipe_type` matters: the book carries an adaptor, a pop, an elbow, a
-  // shoe and a trap under the same size, and a pipe run is only the `DOWNPIPE`
-  // rows. Without this filter a 4-downpipe shed is priced as four elbows.
-  const downpipeByKindSize = prepare(
+  /*
+   * `downpipe_type` matters: the book carries an adaptor, a pop, an elbow, a shoe and a trap under
+   * the same size, and a pipe run is only the `DOWNPIPE` rows. Without this filter a 4-downpipe shed
+   * is priced as four elbows.
+   *
+   * ## The colours are kept, because the price depends on which one
+   *
+   * The desktop's lookup is `FindDownpipeBySpecs(colour, DOWNPIPE, kind, state)`
+   * (`BOMFactory.cs:118`) — colour in, one row out. This build asked for **any** colour and ordered by
+   * `downpipe_price DESC`, so every shed got the dearest finish in the book: Z450 at $8.86/m where
+   * Basalt is $8.44, 5% high on every quote (measured 2026-11-11).
+   *
+   * The state matters too: the book prices a steel downpipe in **NSW** (100×75) and in **SA**
+   * (100×50), and PVC only in NSW. Asking without one returns the dearest of the two states.
+   */
+  /*
+   * A book without a `state` column still has to price a downpipe.
+   *
+   * The column exists on the reference book, but a leaner export may omit it — and a statement that
+   * names a missing column fails to prepare, which would make every downpipe line mocked. `hasColumn`
+   * asks first, the same way the `devided` girt material does.
+   */
+  const downpipeHasState = hasColumn('downpipe', 'state');
+  const downpipeByColourState = downpipeHasState
+    ? prepare(
+        `SELECT downpipe_product_code AS code, downpipe_size AS description,
+                downpipe_price AS cost, downpipe_mass AS mass, *
+         FROM downpipe
+         WHERE downpipe_kind = ? AND downpipe_type = 'DOWNPIPE'
+           AND LOWER(downpipe_color) = LOWER(?) AND (state = ? OR ? = '')
+         ORDER BY downpipe_price ASC, downpipe_product_code ASC LIMIT 1`,
+      )
+    : null;
+  const downpipeByColour = prepare(
     `SELECT downpipe_product_code AS code, downpipe_size AS description,
             downpipe_price AS cost, downpipe_mass AS mass, *
      FROM downpipe
-     WHERE downpipe_kind = ? AND downpipe_size = ? AND downpipe_type = 'DOWNPIPE'
-     ORDER BY downpipe_price DESC, downpipe_product_code ASC, downpipe_size ASC LIMIT 1`,
+     WHERE downpipe_kind = ? AND downpipe_type = 'DOWNPIPE' AND LOWER(downpipe_color) = LOWER(?)
+     ORDER BY downpipe_price ASC, downpipe_product_code ASC LIMIT 1`,
   );
-  const downpipeByKind = prepare(
+  /*
+   * The last resort: a colour the book does not stock for this kind.
+   *
+   * Deliberately `ASC` on price, not `DESC` as it was. The old query read "give me any pipe" and
+   * ordered the dearest first, so a shed whose colour had no row was quoted at Z450 — 5% above the
+   * standard finish — with nothing on the line saying why. Taking the cheapest standard finish is
+   * the same guess made in the direction that cannot overcharge.
+   */
+  const downpipeAny = prepare(
     `SELECT downpipe_product_code AS code, downpipe_size AS description,
             downpipe_price AS cost, downpipe_mass AS mass, *
      FROM downpipe
      WHERE downpipe_kind = ? AND downpipe_type = 'DOWNPIPE'
-     ORDER BY downpipe_price DESC, downpipe_product_code ASC, downpipe_size ASC LIMIT 1`,
+     ORDER BY downpipe_price ASC, downpipe_product_code ASC LIMIT 1`,
   );
   // Flashing is colour-matched: the same profile is 6.86 painted and 7.20
   // galvanised. Ordering by price alone silently quotes galvanised on a Colorbond
@@ -456,6 +494,20 @@ export function createLookup(db: DatabaseSync): PriceLookup {
   );
   const purlinDepthByCode = prepare(
     'SELECT depth FROM cost_purlin WHERE description = ? LIMIT 1',
+  );
+  /*
+   * How far a column goes below the floor for a footing pair.
+   *
+   * `footing_code` is the type's numeric code (`1` In Slab, `2` On Slab) and `footing_sub_type_code`
+   * the sub-type (`CIS`, `HDB`, `PIG`, `CS`, `RB`). Keyed by both because the same type carries a
+   * different depth per sub-type — on the reference book In Slab is 0 for a cast-in strap and 500 for
+   * a post in the ground.
+   */
+  const footingParametersStatement = prepare(
+    `SELECT footing_parameters FROM view_system_footing
+     WHERE CAST(footing_code AS TEXT) = CAST(? AS TEXT)
+       AND UPPER(footing_sub_type_code) = UPPER(?)
+     LIMIT 1`,
   );
   /**
    * A frame section's cross-section, for the punching sheet.
@@ -837,11 +889,17 @@ export function createLookup(db: DatabaseSync): PriceLookup {
       };
     },
 
-    downpipe(kind, size) {
-      if (downpipeByKindSize === null) return undefined;
+    downpipe(kind, colour, state) {
+      if (downpipeAny === null) return undefined;
+      const wanted = (colour ?? '').trim();
+      const wantedState = (state ?? '').trim().toUpperCase();
+      const withColour =
+        wanted === ''
+          ? undefined
+          : ((downpipeByColourState?.get(kind, wanted, wantedState, wantedState) ??
+              downpipeByColour?.get(kind, wanted)) as Record<string, unknown> | undefined);
       const row =
-        (downpipeByKindSize.get(kind, size) as Record<string, unknown> | undefined) ??
-        (downpipeByKind?.get(kind) as Record<string, unknown> | undefined);
+        withColour ?? (downpipeAny?.get(kind) as Record<string, unknown> | undefined);
       if (row === undefined) return undefined;
       return {
         code: codeFor(row.code, `${str(row.description)} downpipe`),
@@ -867,6 +925,17 @@ export function createLookup(db: DatabaseSync): PriceLookup {
         massKg: num(row.mass),
         rowKey: rowKeyOf('flashing', row),
       };
+    },
+
+    footingParameters(footingCode, subTypeCode) {
+      if (footingParametersStatement === null) return null;
+      const row = footingParametersStatement.get(
+        footingCode,
+        subTypeCode.trim(),
+      ) as { footing_parameters: number | null } | undefined;
+      if (row === undefined) return null;
+      const value = num(row.footing_parameters);
+      return Number.isFinite(value) ? value : null;
     },
 
     purlinDepth(code) {
