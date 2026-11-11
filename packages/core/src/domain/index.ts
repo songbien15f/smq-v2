@@ -16,6 +16,7 @@ export * from "./roof";
 export * from "./schema";
 export * from "./selection";
 export * from "./skylightSnap";
+export * from "./suggest";
 export * from "./types";
 export * from "./units";
 export * from "./walls";

@@ -21,7 +21,13 @@
 
 import { useId, useState } from 'react';
 import { COLORBOND, COLOUR_ROLES } from '@sq/core/domain';
-import { averageHeightMm, ridgeHeightMm, formatDimension } from '@sq/core/domain';
+import {
+  averageHeightMm,
+  formatDimension,
+  outsideBookBounds,
+  ridgeHeightMm,
+  suggestedValues,
+} from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import { reconcileBays, shouldWipeOptions } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
@@ -884,6 +890,53 @@ function ShedGroup({
   const averageHeight = averageHeightMm(config);
   const ridgeHeight = ridgeHeightMm(config);
 
+  /*
+   * What the price book suggests, and only where the screen differs from it.
+   *
+   * ## Why this is an offer and not a default
+   *
+   * A new quote necessarily starts with numbers in it — `config.span` is read as a number in 27 files,
+   * and a `null` there would be a null check in every one. But a number sitting in a form reads as a
+   * building somebody chose. `suggestedValues` returns the **difference** between what the book states
+   * and what is on screen, so the button can say *"span 12 000 → 6 000"* and the operator knows where
+   * the figure came from. An empty list means the screen already matches the book.
+   */
+  const suggestions = catalogue === null ? [] : suggestedValues(config, catalogue.dimensions);
+  const suggestionLabel: Record<(typeof suggestions)[number]['field'], string> = {
+    span: 'Span',
+    height: 'Wall height',
+    nomBaySpacing: 'Bay spacing',
+    roofPitchDeg: 'Roof pitch',
+  };
+
+  /** Apply every suggestion at once. One history entry, and one confirm if it would wipe options. */
+  const applySuggestions = (): void => {
+    const patch: Partial<ShedConfig> = {};
+    for (const entry of suggestions) patch[entry.field] = entry.value;
+    applyDimension(patch);
+  };
+
+  /*
+   * The bounds the price book states, which replace hard-coded constants.
+   *
+   * The editor bounded span at 2 000–30 000 mm and height at 2 000–12 000 — numbers with no source.
+   * The book's rows cap span at **15 000**, so a 24 000 mm span was accepted here and then had no
+   * frame row to price from, surfacing two steps later as a BOM assumption. Its numbers are the valid
+   * range; a building outside them is one this book cannot price.
+   *
+   * The fallbacks are the old constants, used only for a book that states no bounds. `||` rather than
+   * `??` on purpose: a `0` from the book means "not stated", and a `min` of 0 would make every field
+   * report "below the minimum".
+   */
+  const spanBounds = {
+    min: catalogue?.dimensions.span.min || 1800,
+    max: catalogue?.dimensions.span.max || 15000,
+  };
+  const heightBounds = {
+    min: catalogue?.dimensions.height.min || 2200,
+    max: catalogue?.dimensions.height.max || 6000,
+  };
+
   /**
    * Apply a dimension change, asking first when it invalidates placed options.
    *
@@ -925,6 +978,44 @@ function ShedGroup({
       }
     >
       {/*
+        ## The book's suggestion, offered rather than applied
+
+        This screen starts with numbers in it because the drawing, the BOM and the price engine all
+        read `span` as a number. Those numbers came from a hard-coded constant once — 12 000 × 4 200 —
+        which is inside the book's list and therefore looked like a real building.
+
+        The desktop applied its own default silently when a quote was created. This asks instead: here
+        is what the book states, here is what you have, and here is the button. A figure the operator
+        did not type should be **visibly** the software's until they accept it — the same principle as
+        the site-check values being labelled by source rather than shown as if certified.
+      */}
+      {suggestions.length > 0 && (
+        <div className="flex flex-col gap-sq-2 rounded-md border border-sq-attention/40 bg-sq-attention/5 p-sq-2">
+          <p className="text-sq-micro font-medium text-sq-attention">
+            This price book suggests different dimensions
+          </p>
+          <ul className="flex flex-col gap-0.5">
+            {suggestions.map((entry) => (
+              <li key={entry.field} className="sq-numeric text-sq-micro text-sq-ink">
+                {suggestionLabel[entry.field]}: {entry.current.toLocaleString('en-AU')} →{' '}
+                <strong>{entry.value.toLocaleString('en-AU')}</strong> mm
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={applySuggestions}
+            className="min-h-9 self-start cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            Use the suggested values
+          </button>
+          <p className="text-sq-micro text-sq-ink-muted">
+            Nothing changes until you press it — these are the book&apos;s defaults, not your building.
+          </p>
+        </div>
+      )}
+
+      {/*
         The unit switch lives with the dimensions, not in a settings screen: it is a per-person
         preference and it changes what the numbers on screen mean. The record is always mm.
       */}
@@ -960,10 +1051,14 @@ function ShedGroup({
           label="Span (width)"
           valueMm={config.span}
           unit={unit}
-          minMm={2000}
-          maxMm={30000}
+          minMm={spanBounds.min}
+          maxMm={spanBounds.max}
           required
-          hint="Clear width, inside the columns."
+          hint={
+            outsideBookBounds(config.span, spanBounds) === null
+              ? 'Clear width, inside the columns.'
+              : outOfBookMessage('Span', config.span, spanBounds)
+          }
           error={errorAt('shed-span')}
           onCommit={(mm) => applyDimension({ span: mm })}
         />
@@ -972,9 +1067,14 @@ function ShedGroup({
           label="Wall height"
           valueMm={config.height}
           unit={unit}
-          minMm={2000}
-          maxMm={12000}
+          minMm={heightBounds.min}
+          maxMm={heightBounds.max}
           required
+          hint={
+            outsideBookBounds(config.height, heightBounds) === null
+              ? undefined
+              : outOfBookMessage('Wall height', config.height, heightBounds)
+          }
           error={errorAt('shed-height')}
           onCommit={(mm) => applyDimension({ height: mm })}
         />
@@ -1369,6 +1469,21 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
 }
 
 /* ------------------------------------------------------------------ Shared */
+
+/**
+ * The sentence for a value the price book cannot price.
+ *
+ * It names the book's range rather than saying "invalid", because the useful fact is **which** range
+ * this company's book covers — a dealer who sees "1 800–15 000 mm" learns something; one who sees
+ * "invalid" learns to guess.
+ */
+function outOfBookMessage(label: string, value: number, bounds: { min: number; max: number }): string {
+  const where = outsideBookBounds(value, bounds);
+  const range = `${bounds.min.toLocaleString('en-AU')}–${bounds.max.toLocaleString('en-AU')} mm`;
+  return where === 'below'
+    ? `${label} of ${value.toLocaleString('en-AU')} mm is below what this price book covers (${range}). The frame will be priced from an assumed section.`
+    : `${label} of ${value.toLocaleString('en-AU')} mm is above what this price book covers (${range}). The frame will be priced from an assumed section.`;
+}
 
 /**
  * One read-only value that came from a site check.

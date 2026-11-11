@@ -89,18 +89,47 @@ export function DimensionField({
     setText(format(valueMm, unit));
   }, [valueMm, unit]);
 
+  /**
+   * Why the last entry was refused, or `null`.
+   *
+   * ## Why a refusal has to say something
+   *
+   * `commit` used to `return` on an out-of-range value, which leaves the field showing what was typed
+   * while the quote keeps the old number — a silent divergence. Measured 2026-11-10: typing 24 000 into
+   * span (the book caps it at 15 000) left the box reading 24 000 and the config at 6 000, with nothing
+   * on screen explaining it. The operator's next action is to type it again.
+   *
+   * Clamping would be worse: it produces a building nobody described. So the value is refused **and**
+   * the reason is printed under the field, which is the only version of "no" a person can act on.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
+
   /** Parse and commit, or leave the text alone so the operator can finish typing. */
   const commit = (raw: string): void => {
     const trimmed = raw.trim();
-    if (trimmed === '') return;
+    if (trimmed === '') {
+      setRefusal(null);
+      return;
+    }
 
     const parsed = Number(trimmed.replace(',', '.'));
-    if (!Number.isFinite(parsed)) return;
+    if (!Number.isFinite(parsed)) {
+      setRefusal(null);
+      return;
+    }
 
     const mm = Math.round(unit === 'm' ? parsed * 1000 : parsed);
-    if (minMm !== undefined && mm < minMm) return;
-    if (maxMm !== undefined && mm > maxMm) return;
+    const shown = (value: number) => `${unit === 'm' ? (value / 1000).toFixed(2) : value} ${unit}`;
+    if (minMm !== undefined && mm < minMm) {
+      setRefusal(`${shown(mm)} is below the smallest this book sells (${shown(minMm)}).`);
+      return;
+    }
+    if (maxMm !== undefined && mm > maxMm) {
+      setRefusal(`${shown(mm)} is above the largest this book sells (${shown(maxMm)}).`);
+      return;
+    }
 
+    setRefusal(null);
     onCommit(mm);
   };
 
@@ -142,10 +171,18 @@ export function DimensionField({
           }}
           onBlur={(event) => {
             focused.current = false;
+            const before = text;
             commit(event.target.value);
-            // Snap the display to the stored value, so "9.0000" becomes "9" and a refused value
-            // visibly reverts rather than sitting there looking accepted.
-            setText(format(valueMm, unit));
+            /*
+             * Snap the display back to the **stored** value when the entry was refused, and leave the
+             * typed text alone when it was accepted.
+             *
+             * The unconditional snap that was here made a refusal invisible: 24 000 mm appeared in the
+             * box, blur reverted it to the stored 6 000, and the only trace was a number that changed
+             * back. `refusal` says why, and the box must show what is actually stored so the sentence
+             * and the field agree.
+             */
+            if (refusal !== null || before.trim() === '') setText(format(valueMm, unit));
           }}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -165,6 +202,19 @@ export function DimensionField({
           {unit}
         </span>
       </div>
+
+      {/*
+        The refusal, above the field's own error.
+
+        It is the same shape as the error so a person reads one kind of message here, but it is a
+        different fact: an error is "this value is not valid for the building", this is "I could not
+        accept what you typed at all". Both say what to do — the bound is named in the sentence.
+      */}
+      {refusal !== null && (
+        <p role="alert" className="text-sq-micro text-sq-danger">
+          {refusal}
+        </p>
+      )}
 
       {invalid ? (
         <p id={errorId} className="flex items-start gap-1 text-sq-micro text-sq-danger">

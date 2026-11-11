@@ -97,6 +97,53 @@ export interface DoorSize {
 }
 
 /** Everything the editor's Step 1 and Step 2 dropdowns need. */
+/**
+ * One shed dimension's recommended values, as **the price book** states them.
+ *
+ * ## Why these are not constants in the domain
+ *
+ * They used to be. `DEFAULT_SHED` hard-coded `span: 12000, height: 4200, length: 24000, bays: 4` and
+ * the editor bounded span at 2 000–30 000 mm — numbers with no source. The book says something else,
+ * measured on the reference book (2026-11-10):
+ *
+ * ```
+ * span     default 6000   min 1800   max 15000   hints 6000 7500 9000 10500 12000 13500 15000
+ * height   default 3000   min 2200   max 6000    hints 3000 3600 4200 4800 6000
+ * bay      default 3000   min 1000   max 4000    hints 3000 3500 4000
+ * pitch    default none   min 7.5    max 15/30   hints 7.5 10 15 (+20 25 30 on one group)
+ * ```
+ *
+ * A hard-coded 12 000 mm span sits inside this book's list, so it looks plausible — while the editor
+ * accepted a 24 000 mm span that is **outside** the book's 15 000 maximum. Same class of defect as
+ * the wind region being narrowed: a number the engine was never given a row for.
+ *
+ * `hints` is **de-duplicated**. The book stores one row per `shed_parameters` group, so the raw list
+ * repeats itself — 38 rows for 7 distinct spans. The desktop de-duplicates (`Distinct().OrderBy()`);
+ * a dropdown showing 7 500 mm five times looks broken.
+ */
+export interface ShedDimension {
+  /** What a new quote starts from — the book's `*_default`, or `null` when it states none. */
+  defaultValue: number | null;
+  min: number;
+  max: number;
+  /** The values the book sells, ascending and unique. */
+  hints: number[];
+}
+
+/**
+ * The four dimensions a shed is described by, each with the book's own bounds.
+ *
+ * Structurally identical to `BookDimensions` in `domain/suggest.ts`, and deliberately duplicated there
+ * rather than imported: `domain/` must not depend on `lib/pricing/`, whose barrel reaches `node:fs`.
+ * The two stay in step because a mismatch is a type error at the call site, not a runtime surprise.
+ */
+export interface ShedDimensions {
+  span: ShedDimension;
+  height: ShedDimension;
+  baySpacing: ShedDimension;
+  roofPitch: ShedDimension;
+}
+
 export interface Catalogue {
   colours: ColourOption[];
   miscOptions: CatalogueOption[];
@@ -113,6 +160,14 @@ export interface Catalogue {
   heightHints: number[];
   roofPitchHints: number[];
   bayHints: number[];
+  /**
+   * The book's own bounds and default for each dimension.
+   *
+   * Separate from the `*Hints` lists above, kept because other callers already read them. New code
+   * should use this object: it carries the min/max that decide **validity**, and the default that
+   * decides **where a new quote starts**.
+   */
+  dimensions: ShedDimensions;
   /**
    * The catalogue sizes per opening type.
    *
@@ -200,6 +255,79 @@ function parseStateValues(raw: unknown): Record<string, number> | null {
 /** Distinct numbers from a list, in first-seen order. */
 function distinct(values: number[]): number[] {
   return [...new Set(values)];
+}
+
+/**
+ * The hints of a dimension, unique and ascending.
+ *
+ * The book stores one row per `shed_parameters` group, so the same hint repeats: measured on the
+ * reference book, `shed_hint_span` holds **38 rows for 7 distinct spans**. The desktop called
+ * `Distinct()` before showing them; a dropdown listing 7 500 mm five times reads as broken data
+ * rather than as a book with several configuration groups.
+ */
+function uniqueHints(db: DatabaseSync, table: string): number[] {
+  return [...new Set(hints(db, table))].sort((a, b) => a - b);
+}
+
+/**
+ * The book's default, min and max for each shed dimension.
+ *
+ * ## One row per group, so the answer is the union
+ *
+ * `view_system_shed_parameters` has six rows on the reference book — one per `shed_parameters` group —
+ * and they disagree slightly (one group caps roof pitch at 15°, another at 30°). A quote has not chosen
+ * a group at this point, so the honest bounds are the **widest** the book offers: minimum of the
+ * minimums, maximum of the maximums. Anything narrower would refuse a building the book can price.
+ *
+ * The default is the **smallest** stated default, which is what the desktop takes for span and height
+ * (`OrderBy(x => x).FirstOrDefault()`). It notes separately that bay takes the **largest** — an
+ * inconsistency with no recorded reason, and this build does not copy it: a new quote starts from the
+ * smallest bay the book sells, and the operator widens it.
+ *
+ * A dimension the book gives no default for (roof pitch, on every row) comes back as `null`, which is
+ * different from `0`: **nothing to suggest**, not "suggest zero".
+ */
+function dimensionsFromBook(db: DatabaseSync): ShedDimensions {
+  const table = 'view_system_shed_parameters';
+  const present = rows(
+    db,
+    `SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name = '${table}'`,
+  );
+  if (present.length === 0) {
+    /*
+     * A book without the table: return empty hints and no default, with bounds that do not refuse
+     * everything. A partial book must still draw a shed; the caller shows the hints it has.
+     */
+    const empty: ShedDimension = { defaultValue: null, min: 0, max: 0, hints: [] };
+    return { span: empty, height: empty, baySpacing: empty, roofPitch: empty };
+  }
+
+  const all = rows(db, `SELECT * FROM ${table}`);
+  const collect = (prefix: string, hintTable: string): ShedDimension => {
+    const defaults = all
+      .map((row) => all[0] === undefined ? null : (row[`${prefix}_default`] ?? null))
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const mins = all
+      .map((row) => row[`${prefix}_min`])
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const maxes = all
+      .map((row) => row[`${prefix}_max`])
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+    return {
+      defaultValue: defaults.length === 0 ? null : Math.min(...defaults),
+      min: mins.length === 0 ? 0 : Math.min(...mins),
+      max: maxes.length === 0 ? 0 : Math.max(...maxes),
+      hints: uniqueHints(db, hintTable),
+    };
+  };
+
+  return {
+    span: collect('span', 'shed_hint_span'),
+    height: collect('height', 'shed_hint_height'),
+    baySpacing: collect('bay_spacing', 'shed_hint_bay'),
+    roofPitch: collect('roof_pitch', 'shed_hint_roof_pitch'),
+  };
 }
 
 /** Read the option catalogue lines of one `misc_option.type`. */
@@ -353,10 +481,11 @@ export function createSqliteCatalogueSource(db: DatabaseSync): EditorCatalogueSo
           indexOrder: num(row.index_order),
           stateValues: parseStateValues(row.state_value_array),
         })),
-        spanHints: hints(db, 'shed_hint_span'),
-        heightHints: hints(db, 'shed_hint_height'),
-        roofPitchHints: hints(db, 'shed_hint_roof_pitch'),
-        bayHints: hints(db, 'shed_hint_bay'),
+        spanHints: uniqueHints(db, 'shed_hint_span'),
+        heightHints: uniqueHints(db, 'shed_hint_height'),
+        roofPitchHints: uniqueHints(db, 'shed_hint_roof_pitch'),
+        bayHints: uniqueHints(db, 'shed_hint_bay'),
+        dimensions: dimensionsFromBook(db),
         doorSizes: {
           window: rows(
             db,

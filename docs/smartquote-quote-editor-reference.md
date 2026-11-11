@@ -3044,10 +3044,108 @@ again before saving"*. Bỏ luật đó là cho phép đóng băng một revisio
 
 ---
 
+## 13.28 Giá trị gợi ý lấy từ sách, và nút "Use the suggested values" (2026-11-10)
+
+Yêu cầu: *"như desktop thì ko có giá trị default cho các thuộc tính span, height (nhưng có min), toàn bộ
+ko có set default sẵn, nhưng có 1 alert thông báo còn bao nhiêu field require chưa điền, và có button
+auto fill các field đó > dạng khách hàng chủ động auto fill"*.
+
+### Kiểm chứng đầu tiên: desktop **có** default, và nó ở trong DB
+
+`ServiceStructureData.ShedParameters.cs:184-200`:
+
+```csharp
+if (isCreateFile) {
+    if (spanDefault == 0) spanItem.DisplayValue = null;
+    else                  spanItem.DisplayValue = spanDefault;   // ← ÁP DEFAULT
+    ...
+}
+```
+
+Và `view_system_shed_parameters` (sách thật, 6 dòng, cả 6 đều có giá trị):
+
+| | default | min | max | hints |
+|---|---|---|---|---|
+| span | **6000** | 1800 | **15000** | 6000 … 15000 (7 giá trị) |
+| height | **3000** | 2200 | **6000** | 3000 … 6000 (5) |
+| bay | **3000** | 1000 | **4000** | 3000, 3500, 4000 |
+| roof pitch | **null** | 7.5 | 15 hoặc 30 | 7.5 … 30 (6) |
+
+Nên desktop tạo quote mới ở **6 m**, không phải trống. Điều **không** đúng: default hard-code trong
+code — cả ba đều đọc từ DB.
+
+### Cái thật sự sai trong v2
+
+`DEFAULT_SHED` hard-code `span: 12000, height: 4200, length: 24000, bays: 4`, và editor giới hạn span
+`2000..30000`. Trong khi sách **cap ở 15000** — nên một span 24 000 được chấp nhận và sau đó **không có
+dòng khung nào** để định giá, lộ ra hai bước sau dưới dạng giả định trong BOM. Cùng họ với wind region bị
+thu hẹp: một con số mà engine không có dòng nào cho nó.
+
+### Sửa
+
+**`Catalogue.dimensions`** (mới) — `span/height/baySpacing/roofPitch`, mỗi cái `{ defaultValue, min, max, hints }`,
+đọc từ `view_system_shed_parameters`. `hints` **dedupe + sort**: sách lưu một dòng mỗi nhóm nên
+`span` có **38 dòng cho 7 giá trị** — dropdown hiện 7 500 mm năm lần trông như dữ liệu hỏng.
+
+Khi 6 dòng mâu thuẫn (nhóm cap pitch 15°, nhóm khác 30°), lấy **hợp rộng nhất**: min của các min, max
+của các max. Hẹp hơn sẽ từ chối một nhà mà sách định giá được.
+
+**`suggestedValues(config, dimensions)`** (`domain/suggest.ts`, mới) — trả **phần chênh lệch**:
+
+```
+Span: 12,000 → 6,000 mm
+Wall height: 4,200 → 3,000 mm
+Bay spacing: 6,000 → 3,000 mm
+[Use the suggested values]
+Nothing changes until you press it — these are the book's defaults, not your building.
+```
+
+Danh sách **rỗng** khi màn hình đã khớp sách → không có nút, thay vì một nút bấm không làm gì.
+Roof pitch **không bao giờ được gợi ý** vì sách không nói (`NULL`, không phải 0): pitch phụ thuộc span,
+đó là lý do desktop lọc danh sách pitch theo span.
+
+**Bounds thật cho field** — `spanBounds`/`heightBounds` từ sách thay `2000..30000` và `2000..12000`.
+
+### Lỗi thứ ba, chỉ lộ ra khi bấm thử
+
+`DimensionField.commit` **từ chối im lặng** giá trị ngoài khoảng: `return` mà không nói gì, rồi `onBlur`
+reset text về giá trị đã lưu. Đo được: gõ 24 000 vào span → hộp hiện 24 000, config vẫn 6 000, **không
+một chữ nào giải thích**, và blur xoá luôn số vừa gõ. Người dùng chỉ biết gõ lại.
+
+Nay nó nói:
+
+> *"24000 mm is above the largest this book sells (15000 mm)."*
+
+và text **giữ nguyên** khi bị từ chối (chỉ reset khi đã chấp nhận), để câu giải thích và ô field khớp nhau.
+
+### Alert "còn bao nhiêu field" — v2 **đã có nhiều hơn** desktop
+
+`ErrorSummary` hiện `"6 fields need attention"` và mỗi dòng là một **button nhảy tới field**
+(`ErrorSummary.tsx:104`). `StepRail` hiện `noticeCount`. Desktop chỉ báo lỗi từng field, không tổng.
+Nên đây là chỗ v2 hơn, không phải thiếu.
+
+### Đo được trong trình duyệt
+
+| | |
+|---|---|
+| Panel trên quote mới | 3 dòng: `12,000 → 6,000` · `4,200 → 3,000` · `6,000 → 3,000` |
+| Bấm "Use the suggested values" | span **6000**, height **3000**, panel **biến mất** |
+| `outsideBookBounds(24000, span)` | `above` (sách 1800–15000) |
+| Gõ 24000 vào span | *"24000 mm is above the largest this book sells (15000 mm)."*, giá trị bị từ chối |
+
+### Không làm trong lượt này
+
+- **`BayLargest` cho BOM.** v2 dùng `ceil(length/bays)`; desktop dùng **bay lớn nhất** làm khoá tra
+  kết cấu, nên nếu các bay khác nhau thì member size khác. Chưa cấp bách: v2 chưa cho sửa từng bay.
+- **Roof pitch lọc theo span.** Cần bảng span↔pitch; hiện chỉ hiện 6 gợi ý chung.
+- **Adjust Bay Spacing** (sửa từng bay).
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
-| `@sq/core` | 1 016 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**) |
+| `@sq/core` | 1 024 (domain, BOM, giá, tài liệu, catalogue, placement, add-mode, vqu, steelwork, punchings, infill, skylight, mezzanine, door frames, sliding doors, integrity, legacy `.sqd` import, freight, **`averageHeightMm`/`ridgeHeightMm`**, **Importance Level 1–4**, **wind region codes `windRegionCode`/`windRegionLetter`/`nearestTerrainCategory`**, **8 cho `suggestedValues` + `outsideBookBounds`**) |
 | `@sq/api` | 293 (auth, quote, evaluate, catalogue, site-check + autoCalc guard, ShedSafe pin payload, **`pinnedFor` — tham số lúc pin được lưu và đọc lại**, send modes, members, punchings, template files, template scope, template file flags, enquiry notification, body limit, pricing, `.sqd` import route, freight minimums, freight minimum **enforced on save**, quote header follows its newest revision, vendor usage route, visitor hashing + activity log, **AES-GCM address + mask/handle**, **5 cho `GET /site-checks/:id/status`** — Auto Calc watch: đọc không ghi, `missing` khác lỗi, cross-company 404) |
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
