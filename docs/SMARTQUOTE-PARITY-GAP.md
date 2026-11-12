@@ -185,8 +185,10 @@ Xác nhận cần làm: mở menu đó trong trình duyệt và đếm 12 dòng.
 ## 5. Những gì **chưa** kiểm
 
 - **Step 3 (Cost)** toàn bộ: chưa so trong đợt này.
-- **Panel Building Parameters**: hành vi đã sửa 2026-11-11 (mở trống + gate), nhưng **chưa kiểm** một
-  lần pin thật với tài khoản salesman để xác nhận ShedSafe nhận đúng bốn số của panel.
+- **Panel Building Parameters**: hành vi đã sửa 2026-11-11 (mở trống + gate) và **đã kiểm 2026-11-12**
+  bằng tài khoản salesman thật: gate mở đúng khi panel đủ. Câu cũ tôi viết ("chưa kiểm vì cần tài khoản
+  salesman") là **sai** — salesman chính là email user đăng nhập, và `HEADOFFICE` dùng được. Vẫn **chưa**
+  bấm `Go to ShedSafe` thật, vì việc đó tạo một building trong tài khoản ShedSafe thật của công ty.
 - **Nhóm 2/3 desktop** ở các field Hidden (`SuburbName`/`State`/`Postcode`) — v2 để cả ba sửa được;
   nếu desktop ẩn chúng vì Places điền vào, việc mở ba ô tự do có thể tạo địa chỉ không nhất quán.
   **Chưa kiểm.**

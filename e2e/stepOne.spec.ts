@@ -511,12 +511,21 @@ test.describe('Step 1 — quote details', () => {
     const bays = page.locator('#shed-bays');
     const length = page.locator('#shed-length');
 
-    // A known even building first, so the test does not inherit whatever ran before it.
+    /*
+     * A known even building first, so the test does not inherit whatever ran before it.
+     *
+     * **Polled, not read once.** `applyBays` reconciles length, bay count and spacing in one store
+     * write, so the assertion has to wait for the render that follows both fields rather than for the
+     * DOM the click left behind. Measured 2026-11-12: with `fill`/`blur` and an immediate read the
+     * field still held the previous 24 000 in a full-suite run, while a standalone run passed — the
+     * classic "passes alone, fails in the suite" shape, and `expect.poll` is the honest fix because it
+     * asserts the settled value instead of a race.
+     */
     await length.fill('12000');
     await length.blur();
     await bays.fill('3');
     await bays.blur();
-    await expect(length).toHaveValue('12000');
+    await expect.poll(async () => length.inputValue()).toBe('12000');
 
     await page.getByRole('button', { name: /Adjust bay spacing/i }).click();
     const first = page.locator('#shed-bayWidth-0');
@@ -667,6 +676,74 @@ test.describe('Step 1 — quote details', () => {
     const pitch = page.locator('#sitecheck-params-roofPitchDeg');
     if ((await pitch.inputValue()) === '') await pitch.selectOption({ index: 1 });
     await expect(page.locator('#sitecheck-params-averageHeight')).not.toHaveText('—');
+  });
+
+  test('the gate opens once the panel is complete, for a login ShedSafe accepts', async ({ page }) => {
+    /*
+     * ## Why this test skips, and what the skip means
+     *
+     * The suite signs in as `E2ESHEDS` / `owner`, a tenant created for it and **not** a registered
+     * ShedSafe salesman — so the enabled branch of `Go to ShedSafe` is unreachable there, and every
+     * other test in this file exercises the blocked one.
+     *
+     * The branch was verified on 2026-11-12 against the real thing: signed in as `HEADOFFICE` /
+     * `hoangduy7617` (whose email *is* a salesman, "Jayy Ngo, Head Office"), an empty panel reports
+     * the **panel** as the blocker and never mentions the account, and filling span/height/length/
+     * pitch/importance enables the button with the sentence "Creates the building on ShedSafe with the
+     * numbers above." Run it yourself with:
+     *
+     *     E2E_COMPANY_CODE=HEADOFFICE E2E_USERNAME=hoangduy7617      *     E2E_PASSWORD='…' npx playwright test --project=chrome --grep "gate opens once"
+     *
+     * The button is deliberately **not pressed**: that would create a building in the company's real
+     * ShedSafe account, which is the operator's data, not a test fixture.
+     */
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+
+    /*
+     * Wait for the identity sentence to resolve before reading it. It starts as "The site check is
+     * issued under this login…" while the salesman list is in flight, which reads exactly like the
+     * unknown case — a first version asserted on it immediately and reported a bug that was not there.
+     */
+    const state = page.locator('#sitecheck-salesman-state');
+    await expect(state).toHaveText(
+      /^Registered ShedSafe salesman|^This login is not a registered ShedSafe salesman/i,
+      { timeout: 20_000 },
+    );
+    const text = ((await state.textContent()) ?? '').trim();
+    if (!/^Registered ShedSafe salesman/i.test(text)) {
+      test.skip(true, 'this suite signs in as a tenant that is not a ShedSafe salesman; see the note above for the real-account run');
+      return;
+    }
+
+    await page.locator('#customer-firstName').fill('Dana');
+    await page.locator('#customer-lastName').fill('Nguyen');
+    await page.locator('#customer-email').fill('dana@example.com');
+    await page.locator('#customer-address').fill('1 Test Road');
+    await page.locator('#site-address').fill('1 Test Road');
+    await page.locator('#site-suburb').fill('Brisbane');
+    await page.locator('#site-state').fill('QLD');
+    await page.locator('#site-postcode').fill('4000');
+
+    await page.getByRole('button', { name: /Set the building to rate/ }).click();
+    const go = page.getByRole('button', { name: /^Go to ShedSafe$/ });
+
+    // Empty panel + accepted login: the reason is the panel, and the account is not mentioned.
+    await expect(go).toBeDisabled();
+    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Span \/ Width/);
+    await expect(page.getByText(/ShedSafe will refuse this login/i)).toHaveCount(0);
+
+    await page.locator('#sitecheck-params-spanMm').fill('12000');
+    await page.locator('#sitecheck-params-heightMm').fill('4200');
+    await page.locator('#sitecheck-params-lengthMm').fill('24000');
+    await page.locator('#sitecheck-params-roofPitchDeg').selectOption('15');
+    await page.locator('#sitecheck-params-importanceLevel').selectOption('2');
+
+    // Average height, from the panel's own numbers.
+    await expect(page.locator('#sitecheck-params-averageHeight')).toContainText('mm');
+
+    await expect(go).toBeEnabled();
+    await expect(page.getByText(/Creates the building on ShedSafe with the numbers above/)).toBeVisible();
   });
 
   test('changing the delivery scope un-ticks the acknowledgement', async ({ page }) => {

@@ -3651,8 +3651,36 @@ phép so trên số — không có mâu thuẫn giữa "giá trị" và "chữ �
 ### Kiểm chứng
 
 3 e2e mới: panel mở và các ô **trống** (không lấy từ quote), số dưới 100 bị từ chối kèm lý do,
-"Copy from the quote" điền và Avg. height xuất hiện. **39/39 e2e**, 1 072 core, 57 client, typecheck
-sạch 12 package.
+"Copy from the quote" điền và Avg. height xuất hiện. **39 e2e pass + 1 skip**, 1 072 core, 57 client,
+typecheck sạch 12 package.
+
+### 13.37.4 Kiểm với tài khoản salesman **thật** — và một câu tôi viết sai
+
+Tôi đã ghi rằng bước này *"chưa kiểm vì cần tài khoản salesman"*. **Sai.** Salesman **chính là email
+user đăng nhập** (`ShedSafe.Salesman` = email), và `HEADOFFICE` / `hoangduy7617@gmail.com` là salesman
+thật — `GET /shedsafe/salesmen` trả `you: { email: "hoangduy7617@gmail.com", isSalesman: true,
+formattedName: "Jayy Ngo", franchiseName: "Head Office" }`. Không có blocker nào; tôi chỉ chưa thử.
+
+Đo lại 2026-11-12 với tài khoản đó: panel hiện **"Registered ShedSafe salesman — Jayy Ngo, Head
+Office"**, panel trống thì lý do chặn là **panel** (không nhắc gì tới tài khoản), điền đủ
+span/height/length/pitch/importance thì nút **bật** với câu "Creates the building on ShedSafe with the
+numbers above." Test `the gate opens once the panel is complete, for a login ShedSafe accepts` giờ
+chạy nhánh này và **skip** trên tenant `E2ESHEDS` (không phải salesman), kèm chỉ dẫn chạy lại:
+
+```
+E2E_COMPANY_CODE=HEADOFFICE E2E_USERNAME=hoangduy7617 E2E_PASSWORD='…'   npx playwright test --project=chrome --grep "gate opens once"
+```
+
+**Không bấm `Go to ShedSafe`** trong test: việc đó tạo một building thật trong tài khoản ShedSafe của
+công ty — dữ liệu của operator, không phải fixture.
+
+### 13.37.5 Một race thật trong test cũ, tìm ra khi chạy toàn suite
+
+Test "bays can be given different lengths" pass khi chạy một mình nhưng fail trong suite: đọc
+`#shed-length` ngay sau `fill`/`blur` thấy giá trị **cũ** (24 000). Nguyên nhân không phải dialog —
+chẩn đoán trong chính test cho thấy `fill` hoạt động và không có dialog nào. `applyBays` hoà giải
+length + bay count + spacing trong **một** lần ghi store, nên phải chờ render sau **cả hai** ô.
+Sửa bằng `expect.poll(...).toBe('12000')` — assert giá trị đã ổn định thay vì đua với nó.
 
 ---
 
@@ -3664,7 +3692,7 @@ sạch 12 package.
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | 39 passed on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, PIN nói rõ thiếu gì, PIN bật khi đủ, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | **39 passed + 1 skipped** on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, **panel Building parameters mở trống + số dưới 100 bị từ chối + Copy from the quote**, **gate mở khi panel đủ (tài khoản salesman thật — skip trên E2ESHEDS)**, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 
