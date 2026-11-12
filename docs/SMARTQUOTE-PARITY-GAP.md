@@ -21,10 +21,12 @@ kèm bằng chứng từ source và từ đo, để phiên sau không phải h�
 | Step 1 — Shed | khớp; Typical Design + awning đã đúng nhóm |
 | Step 1 — Colours | khớp; Horizontal Cladding đã bổ sung |
 | Step 2 — Options dock | khớp chức năng (12 loại qua context menu); dock chỉ liệt kê 7+3 |
-| Step 3 — Cost | **chưa kiểm** trong đợt này |
+| Step 3 — Cost | **đã so 2026-11-12** — 6/6 trường đổi giá, không có lỗi (§7) |
 
-**Trạng thái sau khi sửa (2026-11-11):** các mục 1–5 của §6 đã xong. Còn mục 6 (min bays 1 vs 2,
-là quyết định không phải lỗi), Show More Parameters, và toàn bộ Step 3 chưa kiểm.
+**Trạng thái 2026-11-12:** các mục 1–5 của §6 đã xong; Step 3 đã so và không có lỗi (§7); ba điểm
+"chưa kiểm" của §5 đã kiểm xong, cả ba là **quyết định thiết kế**, không phải lỗi. Còn lại chỉ là
+**Show More Parameters** (7 field địa lý desktop có flyout, v2 đọc và lưu nhưng không hiện) và mục 6
+(min bays 1 vs 2).
 
 Phát hiện lớn nhất không phải về thứ tự: **ba loại option tồn tại trong domain, được BOM định giá,
 và không có cách nào tạo ra chúng từ giao diện.**
@@ -184,18 +186,35 @@ Xác nhận cần làm: mở menu đó trong trình duyệt và đếm 12 dòng.
 
 ## 5. Những gì **chưa** kiểm
 
-- **Step 3 (Cost)** toàn bộ: chưa so trong đợt này.
+- ~~**Step 3 (Cost)** toàn bộ: chưa so trong đợt này.~~ **ĐÃ SO 2026-11-12** — xem §7.
 - **Panel Building Parameters**: hành vi đã sửa 2026-11-11 (mở trống + gate) và **đã kiểm 2026-11-12**
   bằng tài khoản salesman thật: gate mở đúng khi panel đủ. Câu cũ tôi viết ("chưa kiểm vì cần tài khoản
   salesman") là **sai** — salesman chính là email user đăng nhập, và `HEADOFFICE` dùng được. Vẫn **chưa**
   bấm `Go to ShedSafe` thật, vì việc đó tạo một building trong tài khoản ShedSafe thật của công ty.
-- **Nhóm 2/3 desktop** ở các field Hidden (`SuburbName`/`State`/`Postcode`) — v2 để cả ba sửa được;
-  nếu desktop ẩn chúng vì Places điền vào, việc mở ba ô tự do có thể tạo địa chỉ không nhất quán.
-  **Chưa kiểm.**
-- **Quote Rate**: desktop là danh sách (`XCustomerRate`, `RateCode`); v2 là số 0–100. Có thể là đơn
-  giản hoá đúng, có thể là mất dữ liệu. **Chưa kiểm.**
-- **Steelwork Schedule**, **RESET**, **SAVE && NEXT** ở top bar: v2 có Save và Reset ở chỗ khác;
-  phiếu steelwork có thành `SteelworkPanel`. Mapeamento **chưa kiểm**.
+- ~~**Nhóm 2/3 desktop** ở các field Hidden (`SuburbName`/`State`/`Postcode`)~~ **ĐÃ KIỂM 2026-11-12.**
+  Desktop đặt cả ba `Enable = false` **và** `Visibility = Hidden`
+  (`MQuoteDetailView.cs:246-320`) — chúng chỉ được Places **điền**, không ai gõ. v2 để cả ba sửa tự do.
+  **Đây là khác biệt có chủ ý và nên giữ**: ở v2, Places là tuỳ chọn (không có key thì là ô văn bản),
+  nên một địa chỉ không có Places **vẫn phải nhập được** — ẩn ô đi thì không có đường nào nhập suburb.
+  Cái đáng làm là *cảnh báo* khi suburb/state/postcode không khớp địa chỉ Places trả, không phải khoá
+  chúng.
+- ~~**Quote Rate**: desktop là danh sách (`XCustomerRate`, `RateCode`); v2 là số 0–100. Có thể là đơn
+  giản hoá đúng, có thể là mất dữ liệu.~~ **ĐÃ KIỂM 2026-11-12 — không mất dữ liệu.** Desktop có năm
+  mức đặt tên (`None` 0 %, `Diamond` 10, `Gold` 12, `Silver` 14, `Bronze` 16 —
+  `MAllSetting.cs:27-58`), **nhưng quote chỉ lưu `CustomerRateValue`** (`CustomerData.cs:79,430`),
+  không lưu `RateCode`/`RateName`. Nên một ô số 0–100 biểu đạt được mọi giá trị quote từng giữ. Cái
+  **thiếu là danh sách gợi ý**, không phải dữ liệu: hôm nay người dùng phải nhớ 10/12/14/16. Đây là
+  việc nhỏ, có thể thêm như một `datalist` từ Settings.
+- ~~**Steelwork Schedule**, **RESET**, **SAVE && NEXT** ở top bar~~ **ĐÃ KIỂM 2026-11-12.** Cả ba **có
+  mặt**, đặt khác chỗ và đó là đúng:
+  - `STEELWORK SCHEDULE...` của desktop mở một dialog chỉ đọc (`ShowMembersizeData`). v2 có
+    `SteelworkPanel` ở Step 3 — cùng dữ liệu (cut list), không cần dialog.
+  - `RESET` của desktop là reset **bản nháp**; v2 reset khi mở `/quotes/new` (store là singleton nên
+    phải làm thế — xem `NEW_DRAFT`). Không có nút thứ hai vì một nút "xoá hết" cạnh Save là một cái bẫy.
+  - `SAVE && NEXT` của desktop gộp lưu + đi bước. v2 **tách**: Save ở header mọi step, điều hướng ở
+    thanh dưới. Lý do đã ghi ở §13.27 — một nút làm hai việc thì người dùng không biết mình vừa lưu
+    hay vừa đi tiếp.
+  Không mục nào thiếu chức năng.
 
 ---
 
@@ -210,3 +229,45 @@ Xác nhận cần làm: mở menu đó trong trình duyệt và đếm 12 dòng.
    awning về Shed đúng #43-44.
 5. **Show More Parameters (7 field địa lý)** (§3.4 #32) — v2 đã đọc và lưu; chỉ chưa hiện.
 6. **Min bays 1 vs 2** — quyết định, không phải lỗi: desktop cho phép 1.
+
+---
+
+## 7. Step 3 (Cost) — đã so, không tìm thấy lỗi (2026-11-12)
+
+Đợt trước ghi "chưa so", và đây là lỗ duy nhất còn lại trong tài liệu này. Đã so bằng **cùng phương
+pháp** đã tìm ra sáu lỗi ở Step 1: đổi từng trường một rồi dựng lại giá, chứ không đọc code rồi tin.
+
+### 7.1 Sáu trường, sáu lần giá đổi
+
+| Trường | Contract trước | Sau | Chênh |
+|---|---|---|---|
+| Delivery 27 500 | 2 780 450 | 2 807 950 | **+27 500** |
+| Engineering 11 000 | 2 780 450 | 2 791 450 | **+11 000** |
+| Extra 5 000 | 2 780 450 | 2 785 450 | **+5 000** |
+| Additions 10 000 | 2 780 450 | 2 790 450 | **+10 000** |
+| Quote rate 5% | 2 780 450 | 2 919 473 | **+139 023** |
+| Margin 1.48 → 1.69 | 2 780 450 | 3 174 973 | **+394 523** |
+
+Không trường nào là "có control mà giá không đọc" — khác hẳn Step 1, nơi sáu trường trả về **đúng
+một con số** (1 707 893) bất kể đổi gì.
+
+### 7.2 Ba nhánh đặc biệt, đều đúng đặc tả
+
+| Nhánh | Đặc tả | Đo được |
+|---|---|---|
+| `isRoundingConflict` (50/50) | `Deposit = round(×50%)`, `Progress = Contract − Deposit` | 1 001 cent → 501 / 500 / **0**, tổng đúng 1 001 |
+| Mặc định 10/70 | balance = 20% | 100 000 → 10 000 / 70 000 / **20 000** |
+| Hai tỉ lệ vượt 100% | balance âm, không che | 60/60 của 100 000 → balance **−20 000** |
+| GST trích ra, không cộng thêm | `contract − round(contract/1.1)` | khớp tuyệt đối |
+
+### 7.3 Một khác biệt có lý, không phải lỗi
+
+Desktop, với **công trình non-standard**, đặt `KitOnly = TotalPrice = NaN` — giá **nhập tay**, không
+tính. v2 không có nhánh đó trong `price.ts`, nhưng có `contractOverrideCents` trên quote: người dùng
+gõ thẳng con số hợp đồng và nó được ghi đè sau khi tính. Cùng một hành vi, khác cách bày — và cách của
+v2 giữ lại giá engine tính để so, thay vì vứt đi.
+
+### 7.4 Kết luận
+
+Step 3 không có lỗi tương đương Step 1. Bảng paridade giờ **không còn mục "chưa so"** nào; chỉ còn ba
+điểm nhỏ đã ghi ở §5 (Quote Rate, ba ô địa chỉ, top bar), và chúng là câu hỏi về **thiết kế** hơn là lỗi.

@@ -3756,6 +3756,60 @@ quote mới trống + lý do; panel và Shed group một record **hai chiều** 
 
 ---
 
+## 13.39 Kiểm hồi quy sau khi bỏ default, và so Step 3 (2026-11-12)
+
+Hai việc sau đợt §13.38: bỏ `DEFAULT_SHED` có làm hỏng quote cũ không, và Step 3 — lỗ duy nhất trong
+bảng paridade chưa so.
+
+### 13.39.1 `.sqd` cũ và template cũ **không** bị ảnh hưởng
+
+Rủi ro là thật: `span`/`length`/`height` giờ `null` khi vắng, nên một file thiếu `Width` sẽ ra một
+quote không mở được — trước đây nó lấy default.
+
+Quét **37 file `.sqd` thật** trong workspace (repo desktop, package, licence server, template):
+
+```
+files=37  readable=17  refused=20  opened=16  noPlan=1  noDims=0
+```
+
+- **16/16 file đọc được đều có đủ ba chiều.** Không file nào ra `null`.
+- 20 file bị từ chối vì **lý do khác**: 19 là định dạng `.NET BinaryFormatter` cũ (v2 đã từ chối có
+  chủ ý), 1 là file rỗng.
+- 1 file `noPlan` là `9c0451a9….sqd` trong `template-files/` — nó **không có `HousePlan`**, tức là
+  template rỗng, không phải quote.
+
+Template trong Postgres: 1 dòng, `span 9000 / length 18000 / height 3000` — đủ.
+
+**Kết luận: 0 hồi quy.** Lý do cấu trúc: `.sqd` luôn ghi `Width`/`Height` (desktop bắt buộc), nên
+đường import không bao giờ rơi vào trường hợp `null`.
+
+### 13.39.2 Step 3 — sáu trường, sáu lần giá đổi
+
+Cùng phương pháp đã tìm ra sáu lỗi Step 1: đổi một trường, dựng lại giá.
+
+| Trường | Chênh lệch |
+|---|---|
+| Delivery 27 500 | **+27 500** |
+| Engineering 11 000 | **+11 000** |
+| Extra 5 000 | **+5 000** |
+| Additions 10 000 | **+10 000** |
+| Quote rate 5% | **+139 023** |
+| Margin 1.48 → 1.69 | **+394 523** |
+
+Ba nhánh đặc biệt cũng đúng: 50/50 của 1 001 cent → 501/500/**0** (tổng đúng, không âm một cent);
+10/70 của 100 000 → balance **20 000**; hai tỉ lệ vượt 100% → balance **âm**, không bị che; GST trích
+ra khớp tuyệt đối.
+
+**Khác biệt có lý:** desktop đặt `KitOnly = TotalPrice = NaN` cho công trình non-standard (giá nhập
+tay). v2 không có nhánh đó trong `price.ts` nhưng có `contractOverrideCents` — người dùng gõ thẳng con
+số hợp đồng, và giá engine vẫn được giữ để so. Cùng hành vi, cách bày khác.
+
+### Kết luận
+
+Step 3 **không có** lỗi tương đương Step 1. Bảng paridade không còn mục "chưa so" nào.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
