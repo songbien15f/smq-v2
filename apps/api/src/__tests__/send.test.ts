@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { publishPriceBook } from '@sq/core/pricing';
-import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
+import { DEFAULT_SHED, normaliseShedConfig, TEST_SHED } from '@sq/core/domain';
 import { newId, now } from '@sq/db';
 import { hashPassword } from '../lib/password';
 import { enqueueSend, claimJob, dispatchNextJob } from '../lib/mail/queue';
@@ -35,7 +35,7 @@ const hasDump = existsSync(join(DUMP, 'cost_frame.json'));
 /** A shed, as the editor posts it. */
 function config(): Record<string, unknown> {
   return normaliseShedConfig({
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     structureType: 'gable',
     span: 9000,
     length: 18000,
@@ -189,13 +189,19 @@ describe.skipIf(!hasDump)('settings, the team, sending and the quote status', ()
           customer_json, company_json, provenance_json, config_hash, result_hash, bom_hash,
           price_book_hash, engine_version, contract_cents, total_cost_cents, total_mass_kg,
           mocked_lines, idempotency_key, created_by, created_by_email, created_at)
-       VALUES (?, ?, ?, ?, '{}', '[]', '{}', ?, '{}', '{"name":"Send Test Sheds"}', '{}',
+       VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, '{}', '{"name":"Send Test Sheds"}', '{}',
                'x', 'x', 'x', 'x', 1, 0, 0, 0, ?, ?, ?, ?, ?)`,
       [
         id,
         input.quote,
         tenantId,
         input.revision,
+        /*
+         * A **described** building. This used to be `'{}'`, which worked while `DEFAULT_SHED` filled
+         * in 12 000 × 24 000 × 4 200 — so the test rendered a document for a shed the revision never
+         * stated. Now the renderer refuses that, which is the behaviour being protected.
+         */
+        JSON.stringify(TEST_SHED),
         JSON.stringify(input.issues ?? []),
         input.mockedLines ?? 0,
         input.key,

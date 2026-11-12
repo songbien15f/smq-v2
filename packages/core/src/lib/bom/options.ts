@@ -17,13 +17,11 @@
  * description, so the operator can see what was assumed.
  */
 
-import type {
-  AwningOption,
+import type { AwningOption,
   MezzanineOption,
   ShedConfig,
   ShedOption,
-  StableOption,
-} from '@/domain/types';
+  StableOption, DimensionedShed } from '@/domain/types';
 import { bayWidthsFor } from '@/domain/bays';
 import { roofSheetingOf, wallSheetingOf } from './groups/sheeting';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
@@ -42,12 +40,12 @@ import type { BomRules } from './rules';
  */
 
 /** The wall sheet this shed is clad in — every option's walls use it. */
-function wallSheetOf(shed: ShedConfig) {
+function wallSheetOf(shed: DimensionedShed) {
   return wallSheetingOf(shed);
 }
 
 /** The roof sheet this shed is clad in — an awning and an overhang use it. */
-function roofSheetOf(shed: ShedConfig) {
+function roofSheetOf(shed: DimensionedShed) {
   return roofSheetingOf(shed);
 }
 
@@ -174,13 +172,13 @@ function sheetAreaLine(
 }
 
 /** The roof sheet length a skylight replaces, mm: the slope run plus its ends. */
-function roofSheetLength(shed: ShedConfig): number {
+function roofSheetLength(shed: DimensionedShed): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   return Math.round(shed.span / 2 / Math.cos(pitch) + 80);
 }
 
 /** A skylight's sheet, plus the clearfix screws that hold it. */
-export function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
+export function skylightLines(shed: DimensionedShed, lookup: PriceLookup): BomLine[] {
   const skylights = shed.options.filter(
     (option): option is Extract<ShedOption, { kind: 'skylight' }> => option.kind === 'skylight',
   );
@@ -206,7 +204,7 @@ export function skylightLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] 
 }
 
 /** A mezzanine: a priced floor area, not a list of members. */
-function mezzanineLines(shed: ShedConfig, option: MezzanineOption): BomLine[] {
+function mezzanineLines(shed: DimensionedShed, option: MezzanineOption): BomLine[] {
   const area = (option.width / 1000) * (option.depth / 1000);
   const load = option.floorLoad ?? 1.5;
   const rate = mezzanineRateCentsPerM2(load, shed.stateCode);
@@ -225,7 +223,7 @@ function mezzanineLines(shed: ShedConfig, option: MezzanineOption): BomLine[] {
 }
 
 /** An awning's roof and wall sheets. */
-function awningLines(shed: ShedConfig, option: AwningOption, lookup: PriceLookup): BomLine[] {
+function awningLines(shed: DimensionedShed, option: AwningOption, lookup: PriceLookup): BomLine[] {
   const roofSheet = roofSheetOf(shed);
   const row = safeCall(() => lookup.sheeting(roofSheet.profile, roofSheet.bmtMm));
   const area = (option.width / 1000) * (option.depth / 1000);
@@ -242,7 +240,7 @@ function awningLines(shed: ShedConfig, option: AwningOption, lookup: PriceLookup
  * mix two sections in one building.
  */
 function dividingWallLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   option: Extract<ShedOption, { kind: 'dividing_wall' }>,
   lookup: PriceLookup,
@@ -266,7 +264,7 @@ function dividingWallLines(
 
 /** Horizontal cladding: the batten runs behind the sheet band. */
 function claddingLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   option: Extract<ShedOption, { kind: 'horizontal_cladding' }>,
   lookup: PriceLookup,
@@ -282,7 +280,7 @@ function claddingLines(
 }
 
 /** A stable's wall panels, by the sides the option keeps. */
-function stableLines(shed: ShedConfig, option: StableOption, lookup: PriceLookup): BomLine[] {
+function stableLines(shed: DimensionedShed, option: StableOption, lookup: PriceLookup): BomLine[] {
   const sides = [option.panels.left, option.panels.right, option.panels.front, option.panels.back]
     .filter(Boolean).length;
   if (sides === 0) return [];
@@ -309,7 +307,7 @@ function stableLines(shed: ShedConfig, option: StableOption, lookup: PriceLookup
 
 /** A carry beam's transfer beam and its capping. */
 function carryBeamLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   option: Extract<ShedOption, { kind: 'carry_beam' }>,
   lookup: PriceLookup,
 ): BomLine[] {
@@ -328,7 +326,7 @@ function carryBeamLines(
 
 /** An overhang's extra roof sheet. */
 function overhangLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   option: Extract<ShedOption, { kind: 'overhang' }>,
   lookup: PriceLookup,
 ): BomLine[] {
@@ -373,7 +371,7 @@ function cantileverLines(
  * full gable.
  */
 export function optionLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   // The option branches take their spacing from the option's own fields; none of

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import { COLOUR_ROLES, doorColour, migrateColors } from '../colors';
 
 describe('migrateColors', () => {
@@ -17,21 +17,21 @@ describe('migrateColors', () => {
   });
 
   it('trả default cho đầu vào không đọc được', () => {
-    expect(migrateColors(null)).toEqual(DEFAULT_SHED.colors);
-    expect(migrateColors({ wall: 42 })).toEqual(DEFAULT_SHED.colors);
+    expect(migrateColors(null)).toEqual(TEST_SHED.colors);
+    expect(migrateColors({ wall: 42 })).toEqual(TEST_SHED.colors);
   });
 
   it('mọi vai trò đều có trong default', () => {
     expect(COLOUR_ROLES).toHaveLength(10);
     for (const role of COLOUR_ROLES) {
-      expect(DEFAULT_SHED.colors[role]).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(TEST_SHED.colors[role]).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });
 });
 
 describe('doorColour', () => {
   it('chọn vai trò theo loại cửa', () => {
-    const c = DEFAULT_SHED.colors;
+    const c = TEST_SHED.colors;
     expect(doorColour(c, 'window')).toBe(c.window);
     expect(doorColour(c, 'pa_door')).toBe(c.paDoor);
     expect(doorColour(c, 'sliding_door')).toBe(c.slidingDoor);

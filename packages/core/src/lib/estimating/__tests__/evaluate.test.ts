@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
+import { TEST_SHED } from '@/domain/defaults';
 import { evaluateQuote } from '@/lib/estimating/evaluate';
 import { ENGINE_VERSION } from '@/lib/estimating/versions';
 import type { PricingContext } from '@/lib/estimating/types';
@@ -28,16 +28,16 @@ const input = {
   progressPct: 70,
 };
 
-const config = { ...DEFAULT_SHED, span: 6000, length: 10_000, height: 2400, roofPitchDeg: 0, bays: 2, openings: [], charges: [] };
+const config = { ...TEST_SHED, span: 6000, length: 10_000, height: 2400, roofPitchDeg: 0, bays: 2, openings: [], charges: [] };
 
 describe('evaluateQuote', () => {
   it('is deterministic for the same input', () => {
-    expect(evaluateQuote(config, input, book())).toEqual(evaluateQuote(config, input, book()));
+    expect(evaluateQuote(config, input, book()!)!).toEqual(evaluateQuote(config, input, book()!)!);
   });
 
   it('does not mutate its arguments', () => {
     const frozen = JSON.stringify({ config, input });
-    evaluateQuote(config, input, book());
+    evaluateQuote(config, input, book()!)!;
     expect(JSON.stringify({ config, input })).toBe(frozen);
   });
 
@@ -45,15 +45,15 @@ describe('evaluateQuote', () => {
     const other = book({
       provenance: { ...book().provenance, baseBookHash: 'b'.repeat(64) },
     });
-    expect(evaluateQuote(config, input, other).provenance.baseBookHash).toBe('b'.repeat(64));
+    expect(evaluateQuote(config, input, other)!.provenance.baseBookHash).toBe('b'.repeat(64));
   });
 
   it('applies the policy margin rather than taking one from the caller', () => {
     const doubled = book({
       policy: { margin: 2, currency: 'AUD', chargeBasis: 'selling-gst-inclusive' },
     });
-    const plain = evaluateQuote(config, input, book());
-    const dearer = evaluateQuote(config, input, doubled);
+    const plain = evaluateQuote(config, input, book()!)!;
+    const dearer = evaluateQuote(config, input, doubled)!;
     expect(dearer.price.contractCents).toBeGreaterThan(plain.price.contractCents);
   });
 
@@ -62,38 +62,38 @@ describe('evaluateQuote', () => {
       { ...config, charges: [{ id: 'c1', label: 'Crane', quantity: 1, unit: 'ea', unitPriceCents: 15_000 }] },
       input,
       book(),
-    );
-    const plain = evaluateQuote(config, input, book());
+    )!;
+    const plain = evaluateQuote(config, input, book()!)!;
     expect(charged.price.contractCents - plain.price.contractCents).toBe(15_000);
     // The material cost is untouched: a charge is not a material.
     expect(charged.bom.totalCost).toBe(plain.bom.totalCost);
   });
 
   it('reports a status of indicative while design assumptions remain', () => {
-    expect(evaluateQuote(config, input, book()).status).toBe('indicative');
+    expect(evaluateQuote(config, input, book()!)!.status).toBe('indicative');
   });
 
   it('reports blocked when a required price is missing', () => {
     const noSheeting = book({ lookup: syntheticLookup({ sheeting: () => undefined }) });
-    const result = evaluateQuote(config, input, noSheeting);
+    const result = evaluateQuote(config, input, noSheeting)!;
     expect(result.status).toBe('blocked');
     expect(result.issues.some((issue) => issue.severity === 'blocker')).toBe(true);
   });
 
   it('reconciles the three payment stages to the contract', () => {
-    const result = evaluateQuote(config, input, book());
+    const result = evaluateQuote(config, input, book()!)!;
     expect(
       result.price.depositCents + result.price.progressCents + result.price.balanceCents,
     ).toBe(result.price.contractCents);
   });
 
   it('produces JSON with no NaN or Infinity anywhere', () => {
-    const json = JSON.stringify(evaluateQuote(config, input, book()));
+    const json = JSON.stringify(evaluateQuote(config, input, book()!)!);
     expect(json).not.toMatch(/NaN|Infinity/);
   });
 
   it('rejects an invalid price input', () => {
-    expect(() => evaluateQuote(config, { ...input, depositPct: 60, progressPct: 60 }, book())).toThrow();
+    expect(() => evaluateQuote(config, { ...input, depositPct: 60, progressPct: 60 }, book()!)!).toThrow();
   });
 
   it('normalises a config that arrives with metre-valued dimensions', () => {
@@ -103,7 +103,7 @@ describe('evaluateQuote', () => {
       { ...config, span: 6000, length: 10_000 } as never,
       input,
       book(),
-    );
+    )!;
     expect(result.config.span).toBe(6000);
   });
 });

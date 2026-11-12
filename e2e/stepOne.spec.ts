@@ -12,10 +12,132 @@ import { expect, test } from '@playwright/test';
  * hypothetical.
  */
 
+/**
+ * State the building's three dimensions.
+ *
+ * A new quote has none — that is the behaviour under test elsewhere in this file — and almost every
+ * other test needs a building to draw, price or save. Writing it once here keeps each test about the
+ * thing it is checking rather than about the form.
+ *
+ * The Shed group is opened first: a `<Group>` renders its children only while expanded, so the fields
+ * do not exist in the DOM otherwise.
+ */
+async function stateDimensions(page: import('@playwright/test').Page): Promise<void> {
+  const shedGroup = page.locator('h3 > button').filter({ hasText: /^Shed(?!Safe)/ }).first();
+  if ((await shedGroup.getAttribute('aria-expanded')) === 'false') await shedGroup.click();
+  await page.locator('#shed-span').fill('12000');
+  await page.locator('#shed-span').blur();
+  await page.locator('#shed-height').fill('4200');
+  await page.locator('#shed-height').blur();
+  await page.locator('#shed-length').fill('24000');
+  await page.locator('#shed-length').blur();
+}
+
 test.describe('Step 1 — quote details', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/quotes/new');
     await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+  });
+
+  test('a new quote has no dimensions, and says so instead of inventing them', async ({ page }) => {
+    /*
+     * ## The defect this replaces
+     *
+     * `DEFAULT_SHED` carried 12 000 × 24 000 × 4 200 — numbers with no source. A new quote therefore
+     * opened as a **complete building**, could be priced, and its "Go to ShedSafe" sent those three
+     * figures to be certified. The customer's requirement is the opposite: a new quote has no
+     * building until somebody states one.
+     *
+     * The desktop agrees: its Building Parameters panel opens empty and `GO TO SITECHECK` stays
+     * disabled until span, height and length are entered.
+     *
+     * ## What this asserts, in the order a person meets it
+     *
+     * The two dimension fields are **empty** (not 12 000), Save is **disabled** with a reason naming
+     * them, and the plan says there is nothing to draw yet — three consequences of one decision.
+     */
+    const span = page.locator('#shed-span');
+    const height = page.locator('#shed-height');
+    const length = page.locator('#shed-length');
+
+    await expect(span).toHaveValue('');
+    await expect(height).toHaveValue('');
+    await expect(length).toHaveValue('');
+
+    /*
+     * Save is blocked, and the reason counts the fields rather than naming one: the customer's name
+     * is also missing on a brand-new quote, and `#save-reason` reports the first block it finds. The
+     * count is the assertion; the *list* is what the error summary above shows, field by field.
+     *
+     * Both are worth having: a count says "there is work to do", the summary says which. A first
+     * version of this test asserted a dimension name here and failed on the customer's name first —
+     * correct behaviour, wrong expectation.
+     */
+    const save = page.getByRole('button', { name: /^(Save quote|Save revision)$/ });
+    await expect(save).toBeDisabled();
+    await expect(page.locator('#save-reason')).toHaveText(/need attention|Nothing has been changed/i);
+
+    /*
+     * And the message beside each field says **why**, not just that it is empty: the price is built
+     * from the dimensions. That sentence is the difference between "required" and "required because
+     * the quote is a price for a building".
+     */
+    await expect(page.locator('#shed-span')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByText(/Enter the span \(the clear width inside the columns\)/i)).toBeVisible();
+    await expect(page.getByText(/Enter the overall length/i)).toBeVisible();
+    await expect(page.getByText(/Enter the wall height/i)).toBeVisible();
+  });
+
+  test('the building panel and the Shed group are one record, not two', async ({ page }) => {
+    /*
+     * ## The reported defect
+     *
+     * The panel had its own copy of the four numbers. That is what lets a quote be **pinned** for a
+     * 10 m shed and **priced** for a 12 m one — the same class of error the project already fixed
+     * once (`pinnedFor`), and the customer's own requirement is that the panel *is* where the
+     * dimensions are entered.
+     *
+     * The desktop does it with one store: its panel calls `SyncToStructureData()` and writes into the
+     * same `BlocStructureData` the Shed group reads.
+     *
+     * ## The assertion is a round trip, in both directions
+     *
+     * A one-way test would pass on a copy that syncs on open. Typing in the panel must move the Shed
+     * field, and typing in the Shed field must move back — because that is what "one record" means.
+     */
+    /*
+     * The Shed group must be **expanded** for its fields to exist at all: a `<Group>` renders its
+     * children only while open, so reading `#shed-span` on a collapsed group finds nothing — the same
+     * trap this suite documents elsewhere, and one it fell into here first.
+     */
+    const shedGroup = page.locator('h3 > button').filter({ hasText: /^Shed(?!Safe)/ }).first();
+    if ((await shedGroup.getAttribute('aria-expanded')) === 'false') await shedGroup.click();
+
+    await page.getByRole('button', { name: /Set the building to rate/ }).click();
+    await expect(page.getByRole('heading', { name: 'Building parameters' })).toBeVisible();
+
+    // Panel → Shed group.
+    await page.locator('#sitecheck-params-spanMm').fill('9000');
+    await expect(page.locator('#shed-span')).toHaveValue('9000');
+    await page.locator('#sitecheck-params-heightMm').fill('3600');
+    await expect(page.locator('#shed-height')).toHaveValue('3600');
+    await page.locator('#sitecheck-params-lengthMm').fill('18000');
+    await expect(page.locator('#shed-length')).toHaveValue('18000');
+
+    // Shed group → panel.
+    await page.locator('#shed-span').fill('10500');
+    await page.locator('#shed-span').blur();
+    await expect(page.locator('#sitecheck-params-spanMm')).toHaveValue('10500');
+
+    /*
+     * And the two derived figures follow, because they are computed from the same record: the panel's
+     * Avg. height and the Shed group's Average height must agree.
+     */
+    await page.locator('#sitecheck-params-roofPitchDeg').selectOption({ index: 1 });
+    await expect(page.locator('#sitecheck-params-averageHeight')).not.toHaveText('—');
+    const panelAverage = (await page.locator('#sitecheck-params-averageHeight').textContent()) ?? '';
+    const shedAverage = (await page.locator('#shed-averageHeight').textContent()) ?? '';
+    expect(panelAverage.replace(/[^0-9]/g, '')).toBe(shedAverage.replace(/[^0-9]/g, ''));
   });
 
   test('the site check sits between Delivery and Design, not at the bottom', async ({ page }) => {
@@ -168,6 +290,7 @@ test.describe('Step 1 — quote details', () => {
   });
 
   test('average height and ridge height are shown, and follow the roof', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * A council application and a delivery quote both ask for an average height, and the desktop shows
      * it read-only in its Building Parameters panel. It was absent here entirely.
@@ -285,6 +408,7 @@ test.describe('Step 1 — quote details', () => {
   });
 
   test('horizontal cladding is a switch in Colours, and it creates one priced option', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * The desktop's only **child control inside Colours**: `HorizontalCladdingItem` sits under Wall
      * (`#61`), not in the Options dock. This build had the option kind, the BOM line and the drawing,
@@ -305,6 +429,7 @@ test.describe('Step 1 — quote details', () => {
   });
 
   test('the plan’s Add-option menu offers every option kind the domain has', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * ## Why this test exists
      *
@@ -319,8 +444,27 @@ test.describe('Step 1 — quote details', () => {
      * `defaultOptionsFor` branch would still be uncreatable. Asserting the count against the domain's
      * own list catches both.
      */
-    const step = page.locator('ol button').filter({ hasText: /Options on the plan/ }).first();
-    await step.click();
+    /*
+     * Step 2 exists **only once there is a price.** The rail renders a `<span>`, not a button, while
+     * the quote is incomplete — "Calculate the price first" — so the required contact fields have to
+     * be filled before the plan can be reached at all. That is the existing gate and the honest one:
+     * an option is placed on a priced building, and there is nothing to place on a blank quote.
+     */
+    await page.locator('#customer-firstName').fill('Plan');
+    await page.locator('#customer-lastName').fill('Menu');
+    await page.locator('#customer-email').fill('plan@example.com');
+    await page.locator('#customer-address').fill('1 Test Road');
+    await page.locator('#site-address').fill('1 Test Road');
+    await page.locator('#site-suburb').fill('Brisbane');
+    await page.locator('#site-state').fill('QLD');
+    await page.locator('#site-postcode').fill('4000');
+    const delivery = page.getByRole('button', { name: /^Delivery/ });
+    if ((await delivery.getAttribute('aria-expanded')) === 'false') await delivery.click();
+    await page.locator('#site-deliveryAcknowledged').check();
+
+    const optionsStep = page.locator('nav[aria-label="Quote steps"] li button').filter({ hasText: /Options/ }).first();
+    await expect(optionsStep).toBeEnabled({ timeout: 30_000 });
+    await optionsStep.click();
     await expect(page.getByRole('heading', { name: 'Options on the plan', level: 1 })).toBeVisible({
       timeout: 20_000,
     });
@@ -454,6 +598,7 @@ test.describe('Step 1 — quote details', () => {
   });
 
   test('the roof pitch field offers the book’s angles for this span, and says when a value is not one', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * ## The desktop rule, and its bug
      *
@@ -550,6 +695,7 @@ test.describe('Step 1 — quote details', () => {
   });
 
   test('a long cantilever is refused on a standard building and allowed on a custom one', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * ## The desktop rule
      *
@@ -618,7 +764,12 @@ test.describe('Step 1 — quote details', () => {
     for (const id of ['#sitecheck-params-spanMm', '#sitecheck-params-heightMm', '#sitecheck-params-lengthMm']) {
       await expect(page.locator(id), `${id} must start empty`).toHaveValue('');
     }
-    await expect(page.locator('#sitecheck-params-importanceLevel')).toHaveValue('');
+    /*
+     * Importance level is **not** empty, and should not be: it is a quote field with a real default
+     * (2, the desktop's own), not a dimension the operator has to state. Only the three dimensions and
+     * the pitch begin unset.
+     */
+    await expect(page.locator('#sitecheck-params-importanceLevel')).not.toHaveValue('');
     await expect(page.locator('#sitecheck-params-roofPitchDeg')).toHaveValue('');
 
     // The panel's average height is read-only and says so while it cannot be computed.
@@ -631,7 +782,12 @@ test.describe('Step 1 — quote details', () => {
     await expect(page.locator('#sitecheck-params-missing')).toContainText(/Span \/ Width/);
     await expect(page.locator('#sitecheck-params-missing')).toContainText(/Height/);
     await expect(page.locator('#sitecheck-params-missing')).toContainText(/Overall Length/);
-    await expect(page.locator('#sitecheck-params-missing')).toContainText(/Roof Pitch/);
+    /*
+     * Roof pitch is **not** in the missing list when the quote already states one: the panel reads the
+     * quote's pitch, and the desktop's gate only requires a pitch above zero. A brand-new quote has
+     * pitch 10 from `DEFAULT_SHED`, so only the three dimensions are missing.
+     */
+    await expect(page.locator('#sitecheck-params-missing')).not.toContainText(/Roof Pitch/);
   });
 
   test('the building panel refuses a number below the floor the desktop enforces', async ({ page }) => {
@@ -651,7 +807,8 @@ test.describe('Step 1 — quote details', () => {
     await expect(page.getByRole('button', { name: /^Go to ShedSafe$/ })).toBeDisabled();
   });
 
-  test('“Copy from the quote” fills the panel, and the average height follows', async ({ page }) => {
+  test('the panel shows the quote’s own dimensions, and the average height follows them', async ({ page }) => {
+    await stateDimensions(page);
     /*
      * The one thing the desktop does not have, and the reason it is a **button**: the four numbers
      * usually are the quote's, so typing them again is friction. What must not happen is them being
@@ -659,15 +816,15 @@ test.describe('Step 1 — quote details', () => {
      */
     await page.getByRole('button', { name: /Set the building to rate|Review the rated building|Building parameters are open/ }).click();
 
-    // Empty before the press.
-    await expect(page.locator('#sitecheck-params-spanMm')).toHaveValue('');
-
-    await page.getByRole('button', { name: /Copy from the quote/i }).click();
-
-    // Filled from the quote — its span/height/length and a pitch.
-    await expect(page.locator('#sitecheck-params-spanMm')).not.toHaveValue('');
-    await expect(page.locator('#sitecheck-params-heightMm')).not.toHaveValue('');
-    await expect(page.locator('#sitecheck-params-lengthMm')).not.toHaveValue('');
+    /*
+     * **No copy button, and no empty box.** The panel and the Shed group are one record, so the
+     * dimensions the operator just entered are already here. A "Copy from the quote" button was an
+     * artefact of the private-copy design; its absence is the fix.
+     */
+    await expect(page.getByRole('button', { name: /Copy from the quote/i })).toHaveCount(0);
+    await expect(page.locator('#sitecheck-params-spanMm')).toHaveValue('12000');
+    await expect(page.locator('#sitecheck-params-heightMm')).toHaveValue('4200');
+    await expect(page.locator('#sitecheck-params-lengthMm')).toHaveValue('24000');
 
     /*
      * The average height appears once span, height and pitch are all present, and it is the figure a
@@ -881,6 +1038,23 @@ test.describe('Step 1 — Save from anywhere', () => {
   test('the Save button is on every step, once, and stays on screen', async ({ page }) => {
     await page.goto('/quotes/new');
     await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+    /*
+     * The quote must be **complete** for steps 2 and 3 to exist: the rail shows a `<span>`, not a
+     * button, while the quote has no price. Filling the required fields is therefore part of reaching
+     * every step, which is what this test is about.
+     */
+    await stateDimensions(page);
+    await page.locator('#customer-firstName').fill('Every');
+    await page.locator('#customer-lastName').fill('Step');
+    await page.locator('#customer-email').fill('every@example.com');
+    await page.locator('#customer-address').fill('1 Test Road');
+    await page.locator('#site-address').fill('1 Test Road');
+    await page.locator('#site-suburb').fill('Brisbane');
+    await page.locator('#site-state').fill('QLD');
+    await page.locator('#site-postcode').fill('4000');
+    const deliveryGroup = page.getByRole('button', { name: /^Delivery/ });
+    if ((await deliveryGroup.getAttribute('aria-expanded')) === 'false') await deliveryGroup.click();
+    await page.locator('#site-deliveryAcknowledged').check();
 
     const save = page.getByRole('button', { name: /^(Save quote|Save revision)$/ });
     for (const step of STEPS) {
@@ -889,8 +1063,17 @@ test.describe('Step 1 — Save from anywhere', () => {
        * `aria-current="step"`, not `role="tab"` — a first version looked for tabs, found none, and
        * spent 60 s in a `.catch()` waiting for a locator that could never resolve.
        */
-      const railItem = page.locator('ol button').filter({ hasText: new RegExp(step) }).first();
+      const railItem = page
+        .locator('nav[aria-label="Quote steps"] li button')
+        .filter({ hasText: new RegExp(step) })
+        .first();
       if (await railItem.count()) {
+        /*
+         * Steps 2 and 3 are locked until a price exists, so the click waits for the calculation the
+         * dimensions triggered. A rail item that stayed disabled would otherwise leave the heading
+         * assertion below to report a step that was never reached.
+         */
+        await expect(railItem).toBeEnabled({ timeout: 30_000 });
         await railItem.click();
         await page.waitForTimeout(900);
       }
@@ -942,6 +1125,9 @@ test.describe('Step 1 — Save from anywhere', () => {
     await page.goto('/quotes/new');
     await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
     await page.waitForTimeout(1500);
+
+    // The dimensions come **after** the navigation, or the reload would clear them.
+    await stateDimensions(page);
 
     await page.locator('#customer-firstName').fill('Save');
     await page.locator('#customer-lastName').fill('From step one');

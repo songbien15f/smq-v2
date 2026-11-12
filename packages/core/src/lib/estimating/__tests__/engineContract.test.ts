@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
+import { TEST_SHED } from '@/domain/defaults';
 import { PRESETS } from '@/domain/presets';
 import type { ShedOption } from '@/domain/types';
 import { evaluateQuote } from '@/lib/estimating/evaluate';
@@ -47,7 +47,7 @@ const EVERY_OPTION: ShedOption[] = [
 describe('the engine contract', () => {
   it('prices every preset, and every result is calculable or explicitly blocked', () => {
     for (const preset of PRESETS) {
-      const result = evaluateQuote(preset.config, input, book);
+      const result = evaluateQuote(preset.config, input, book)!;
       expect(['priced', 'indicative', 'blocked']).toContain(result.status);
       // A result that is not blocked must have a price and a reason for its
       // status; there is no "silently fine" state.
@@ -58,14 +58,14 @@ describe('the engine contract', () => {
   });
 
   it('prices a building with every option kind', () => {
-    const result = evaluateQuote({ ...DEFAULT_SHED, options: EVERY_OPTION }, input, book);
+    const result = evaluateQuote({ ...TEST_SHED, options: EVERY_OPTION }, input, book)!;
     expect(result.bom.groups.find((g) => g.id === 'option')!.lines.length).toBeGreaterThan(5);
     expect(['priced', 'indicative', 'blocked']).toContain(result.status);
   });
 
   it('gives every issue a code, a severity and a message', () => {
     for (const preset of PRESETS) {
-      for (const issue of evaluateQuote(preset.config, input, book).issues) {
+      for (const issue of evaluateQuote(preset.config, input, book)!.issues) {
         expect(issue.code.length).toBeGreaterThan(2);
         expect(['blocker', 'assumption', 'warning']).toContain(issue.severity);
         expect(issue.message.length).toBeGreaterThan(10);
@@ -99,7 +99,7 @@ describe('the engine contract', () => {
       'UNIT_ASSUMED_OPTION',
     ]);
     for (const preset of PRESETS) {
-      for (const issue of evaluateQuote(preset.config, input, book).issues) {
+      for (const issue of evaluateQuote(preset.config, input, book)!.issues) {
         expect(known.has(issue.code), `unexplained issue ${issue.code}`).toBe(true);
       }
     }
@@ -107,7 +107,7 @@ describe('the engine contract', () => {
 
   it('reconciles the payment stages for every preset', () => {
     for (const preset of PRESETS) {
-      const { price } = evaluateQuote(preset.config, input, book);
+      const { price } = evaluateQuote(preset.config, input, book)!;
       expect(price.depositCents + price.progressCents + price.balanceCents).toBe(
         price.contractCents,
       );
@@ -115,14 +115,14 @@ describe('the engine contract', () => {
   });
 
   it('stamps its provenance on every result', () => {
-    const result = evaluateQuote(DEFAULT_SHED, input, book);
+    const result = evaluateQuote(TEST_SHED, input, book)!;
     expect(result.provenance.engineVersion).toBe(ENGINE_VERSION);
     expect(result.provenance.baseBookHash).toBe(book.provenance.baseBookHash);
   });
 
   it('never claims a status better than its issues allow', () => {
     for (const preset of PRESETS) {
-      const result = evaluateQuote(preset.config, input, book);
+      const result = evaluateQuote(preset.config, input, book)!;
       const hasBlocker = result.issues.some((issue) => issue.severity === 'blocker');
       const hasAssumption = result.issues.some((issue) => issue.severity === 'assumption');
       if (hasBlocker) expect(result.status).toBe('blocked');

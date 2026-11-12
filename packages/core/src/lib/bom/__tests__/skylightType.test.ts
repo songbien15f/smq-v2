@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
+import { TEST_SHED } from '@/domain/defaults';
 import { normaliseOption } from '@/domain/options';
 import type { SkylightOption } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
@@ -37,16 +37,16 @@ function lookup(): PriceLookup {
 
 describe('skylight type', () => {
   it('defaults to Corro and keeps TL-5', () => {
-    const corro = normaliseOption(skylight(), DEFAULT_SHED);
+    const corro = normaliseOption(skylight(), TEST_SHED);
     expect(corro.kind === 'skylight' && corro.skylightType).toBe('Corro');
 
-    const tl5 = normaliseOption(skylight({ skylightType: 'TL-5' }), DEFAULT_SHED);
+    const tl5 = normaliseOption(skylight({ skylightType: 'TL-5' }), TEST_SHED);
     expect(tl5.kind === 'skylight' && tl5.skylightType).toBe('TL-5');
   });
 
   it('prices each type on its own line', () => {
     const shed = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         skylight({ skylightType: 'Corro' }),
         skylight({ skylightType: 'TL-5' }),

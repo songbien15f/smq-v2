@@ -27,7 +27,7 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import type { Opening, ShedConfig, WallSide } from './types';
+import type { Opening, ShedConfig, WallSide, DimensionedShed } from './types';
 import { nearestWall, planPointToWallU } from './placement';
 
 /** Clearance from either end of a wall, mm. The desktop's own figure. */
@@ -75,7 +75,7 @@ export type OpeningPlacement =
   | { ok: false; proposals: OpeningProposal[] };
 
 /** The run of `wall` in millimetres. */
-function wallRun(shed: ShedConfig, wall: WallSide): number {
+function wallRun(shed: DimensionedShed, wall: WallSide): number {
   return wall === 'front' || wall === 'back' ? shed.span : shed.length;
 }
 
@@ -118,7 +118,7 @@ function overlaps(a: [number, number], b: [number, number]): boolean {
  */
 export function placeOpening(
   request: Opening,
-  shed: ShedConfig,
+  shed: DimensionedShed,
   options: {
     /**
      * Where the gable's infill columns stand, mm along the span.
@@ -279,7 +279,7 @@ export type OpeningRequest = Omit<Opening, 'id' | 'wall' | 'align' | 'offset' | 
  * The renderer only has to colour the answer; it makes no decision of its own.
  */
 export function openingAtPoint(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   request: OpeningRequest,
   point: { x: number; y: number },
 ): OpeningAtPoint {
@@ -299,7 +299,7 @@ export function openingAtPoint(
 }
 
 /** R7 — a carry beam is not offered above this span. */
-export function carryBeamRefusal(shed: ShedConfig): string | null {
+export function carryBeamRefusal(shed: DimensionedShed): string | null {
   if (shed.span > CARRY_BEAM_MAX_RUN) {
     return `A carry beam is not available on a building wider than ${CARRY_BEAM_MAX_RUN} mm (this one is ${shed.span} mm).`;
   }
@@ -325,7 +325,7 @@ export function carryBeamRefusal(shed: ShedConfig): string | null {
  * `null` means the placement is allowed. A sentence explains a refusal.
  */
 export function infillOverrideRefusal(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   positionsMm: readonly number[],
   openingLeftMm: number,
@@ -351,7 +351,7 @@ export function infillOverrideRefusal(
  * A beam whose pointer is left dangling would draw as spanning a door that is no
  * longer there; clearing the pointer keeps the beam and drops the false claim.
  */
-export function removeOpeningWithCascade(id: string, shed: ShedConfig): ShedConfig {
+export function removeOpeningWithCascade(id: string, shed: DimensionedShed): ShedConfig {
   return {
     ...shed,
     openings: shed.openings.filter((opening) => opening.id !== id),
@@ -364,7 +364,7 @@ export function removeOpeningWithCascade(id: string, shed: ShedConfig): ShedConf
 }
 
 /** Remove one option. */
-export function removeOptionWithCascade(id: string, shed: ShedConfig): ShedConfig {
+export function removeOptionWithCascade(id: string, shed: DimensionedShed): ShedConfig {
   return { ...shed, options: shed.options.filter((option) => option.id !== id) };
 }
 
@@ -375,7 +375,7 @@ export function removeOptionWithCascade(id: string, shed: ShedConfig): ShedConfi
  * were placed against a building that no longer exists. Openings are not part of the
  * wipe because the desktop keeps them; charges are commercial and unrelated.
  */
-export function wipeOptions(shed: ShedConfig): ShedConfig {
+export function wipeOptions(shed: DimensionedShed): ShedConfig {
   return { ...shed, options: [] };
 }
 

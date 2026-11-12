@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import { buildVqu } from '../vqu';
 
 const input = {
@@ -13,7 +13,7 @@ const input = {
     sitePostcode: '4000',
   },
   config: {
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     structureType: 'gable' as const,
     windRegion: 'B' as const,
     terrainCategory: 2.5 as const,

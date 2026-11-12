@@ -21,7 +21,7 @@
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { ShedConfig, Opening, OpeningType, OptionKind } from '@sq/core/domain';
+import type {  ShedConfig, Opening, OpeningType, OptionKind, DimensionedShed } from '@sq/core/domain';
 import { buildWallGeometries, type WallGeometry, type WallHole } from '@sq/core/domain';
 import { bayWidthsFor, positionsFromWidths } from '@sq/core/domain';
 import { doorColour, resolveOptions, type ResolvedOption } from '@sq/core/domain';
@@ -85,7 +85,7 @@ export interface OptionMesh {
  * kind produces a positive-size box at the right height, which a rendered scene
  * in jsdom cannot.
  */
-export function buildOptionMeshes(shed: ShedConfig): OptionMesh[] {
+export function buildOptionMeshes(shed: DimensionedShed): OptionMesh[] {
   return resolveOptions(shed).map((option: ResolvedOption): OptionMesh | null => {
     const { rect, id, kind } = option;
     const centreX = rect.x + rect.width / 2;
@@ -238,7 +238,7 @@ function pushQuad(
  * `tan(pitch) × span / 2`. Skillion: a single plane falling along the length.
  * Both get a small eave overhang so the roof reads as a roof.
  */
-function buildRoofGeometry(shed: ShedConfig): THREE.BufferGeometry {
+function buildRoofGeometry(shed: DimensionedShed): THREE.BufferGeometry {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const rise = Math.tan(pitch) * (shed.span / 2);
   const eaveDrop = Math.tan(pitch) * EAVE;
@@ -387,7 +387,7 @@ function OpeningPanel({
  *
  * Geometry is memoised on the config, so only what moved re-renders (spec §7.2).
  */
-export function Shed3D({ config }: { config: ShedConfig }) {
+export function Shed3D({ config }: { config: DimensionedShed }) {
   const walls = useMemo(() => buildWallGeometries(config), [config]);
   const roof = useMemo(() => buildRoofGeometry(config), [config]);
   const optionMeshes = useMemo(() => buildOptionMeshes(config), [config]);

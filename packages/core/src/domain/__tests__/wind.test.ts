@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { nearestTerrainCategory, windRegionCode, windRegionLetter } from '../wind';
 import { normaliseShedConfig } from '../schema';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 
 /**
  * The wind region is a **certificate code**, not a letter.
@@ -23,27 +23,27 @@ import { DEFAULT_SHED } from '../defaults';
 describe('windRegion is kept exactly as the certificate states it', () => {
   it('keeps A5, A2 and B1 through the normaliser', () => {
     for (const code of ['A5', 'A2', 'B1', 'C3', 'D4'] as const) {
-      expect(normaliseShedConfig({ ...DEFAULT_SHED, windRegion: code }).windRegion).toBe(code);
+      expect(normaliseShedConfig({ ...TEST_SHED, windRegion: code }).windRegion).toBe(code);
     }
   });
 
   it('does not rewrite A5 to A — the defect this fixes', () => {
     // Measured before the fix: normaliseShedConfig({windRegion:'A5'}).windRegion === 'A'.
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'A5' }).windRegion).not.toBe('A');
+    expect(normaliseShedConfig({ ...TEST_SHED, windRegion: 'A5' }).windRegion).not.toBe('A');
   });
 
   it('accepts an obsolete code an old quote file still carries', () => {
     // `W41` and `N2` are the codes the desktop's own notes call obsolete. Refusing them would make an
     // old file impossible to open; pricing them reports a miss, which is visible.
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'W41' }).windRegion).toBe('W41');
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'N2' }).windRegion).toBe('N2');
+    expect(normaliseShedConfig({ ...TEST_SHED, windRegion: 'W41' }).windRegion).toBe('W41');
+    expect(normaliseShedConfig({ ...TEST_SHED, windRegion: 'N2' }).windRegion).toBe('N2');
   });
 
   it('still rejects something that is not a code', () => {
     // A sentence is not a wind region, and silently substituting `A` for one is how a quote ends up
     // priced against a default nobody chose.
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'open country' }).windRegion).toBe(
-      DEFAULT_SHED.windRegion,
+    expect(normaliseShedConfig({ ...TEST_SHED, windRegion: 'open country' }).windRegion).toBe(
+      TEST_SHED.windRegion,
     );
   });
 });

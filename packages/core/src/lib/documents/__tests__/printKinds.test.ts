@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import { normaliseShedConfig } from '@/domain/schema';
+import { TEST_SHED } from '@/domain/defaults';
+import {  normaliseShedConfig, normaliseDimensionedShed } from '@/domain/schema';
 import { toCustomerDocument } from '../projection';
 import { isSupplierPrint, renderQuoteHtml } from '../html';
 
@@ -10,7 +10,7 @@ function document(priceOverrides: Record<string, number> = {}) {
     revision: 1,
     createdAt: '2026-11-01T02:03:04.000Z',
     validUntil: '2026-12-01',
-    config: normaliseShedConfig({ ...DEFAULT_SHED, span: 9000, length: 18000, bays: 3 }),
+    config: normaliseDimensionedShed({ ...TEST_SHED, span: 9000, length: 18000, bays: 3 }),
     price: {
       contractCents: 2_750_000,
       gstCents: 250_000,

@@ -23,7 +23,7 @@
  */
 
 import { bayWidthsFor } from '@/domain/bays';
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import { windRegionLetter } from '@/domain/wind';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
@@ -44,12 +44,12 @@ import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
  * The longest run between supports, for the same reason `optimise.ts` keys the frame table by it: a
  * purlin has to carry its longest span. See the note there.
  */
-function maxBay(shed: ShedConfig): number {
+function maxBay(shed: DimensionedShed): number {
   return Math.max(...bayWidthsFor(shed));
 }
 
 /** The lap fraction for this shed. */
-function lapFraction(shed: ShedConfig, rules: BomRules): number {
+function lapFraction(shed: DimensionedShed, rules: BomRules): number {
   const topHat = shed.structureType === 'gable' || shed.structureType === 'skillion';
   /*
    * Region C by **letter**, not by exact string.
@@ -158,7 +158,7 @@ function girtLine(
 
 /** The purlin and girt lines. */
 export function purlinLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,

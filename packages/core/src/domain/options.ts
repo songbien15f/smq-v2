@@ -27,8 +27,7 @@
  */
 
 import { bayWidthsFor, positionsFromWidths } from './bays';
-import type {
-  AwningOption,
+import type { AwningOption,
   CantileverOption,
   CarryBeamOption,
   DividingWallOption,
@@ -42,8 +41,7 @@ import type {
   SkylightOption,
   StableOption,
   WallSide,
-  MiscOption,
-} from './types';
+  MiscOption, DimensionedShed } from './types';
 
 /** A plan-space rectangle in millimetres. */
 export interface ResolvedRect {
@@ -164,7 +162,7 @@ function mintId(kind: OptionKind): string {
 }
 
 /** The run of `wall` in millimetres: front/back along the span, left/right along the length. */
-function wallRun(shed: ShedConfig, wall: WallSide): number {
+function wallRun(shed: DimensionedShed, wall: WallSide): number {
   return wall === 'front' || wall === 'back' ? shed.span : shed.length;
 }
 
@@ -181,7 +179,7 @@ function wallRun(shed: ShedConfig, wall: WallSide): number {
  * `height` is the wall height, not the roof height, which is why the rise is
  * added to it rather than replacing it.
  */
-function roofRiseAt(shed: ShedConfig, x: number, y: number): number {
+function roofRiseAt(shed: DimensionedShed, x: number, y: number): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const rise = Math.tan(pitch);
   if (shed.structureType === 'skillion' || shed.structureType === 'skillion_carport') {
@@ -200,7 +198,7 @@ function roofRiseAt(shed: ShedConfig, x: number, y: number): number {
  * means, so both ends are created together. They are still separate instances,
  * so removing one later is an ordinary `removeOption`.
  */
-export function defaultOptionsFor(kind: OptionKind, shed: ShedConfig): ShedOption[] {
+export function defaultOptionsFor(kind: OptionKind, shed: DimensionedShed): ShedOption[] {
   switch (kind) {
     case 'skylight':
       return [
@@ -306,7 +304,7 @@ export function defaultOptionsFor(kind: OptionKind, shed: ShedConfig): ShedOptio
  * outside them — including values that were legal when the option was created but
  * are not after the user shrank the shed.
  */
-export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOption {
+export function normaliseOption(option: ShedOption, shed: DimensionedShed): ShedOption {
   switch (option.kind) {
     case 'misc_option':
       return {
@@ -421,14 +419,14 @@ export function normaliseOption(option: ShedOption, shed: ShedConfig): ShedOptio
 // --- Geometry --------------------------------------------------------------
 
 /** The bay interval `[start, end]` that `bay` names, clamped into the shed. */
-function bayInterval(shed: ShedConfig, bay: number): { start: number; end: number } {
+function bayInterval(shed: DimensionedShed, bay: number): { start: number; end: number } {
   const positions = positionsFromWidths(bayWidthsFor(shed));
   const index = Math.min(Math.max(0, Math.round(bay)), positions.length - 2);
   return { start: positions[index], end: positions[index + 1] };
 }
 
 /** Resolve one option into plan millimetres and a height range. */
-export function resolveOption(option: ShedOption, shed: ShedConfig): ResolvedOption {
+export function resolveOption(option: ShedOption, shed: DimensionedShed): ResolvedOption {
   const normalised = normaliseOption(option, shed);
 
   switch (normalised.kind) {
@@ -642,7 +640,7 @@ export function canDuplicate(option: ShedOption): boolean {
  * Exported because the beam's editor shows which opening it spans, and the
  * caller needs the same interval the resolver used.
  */
-export function carryBeamSpan(shed: ShedConfig, beam: CarryBeamOption): { start: number; end: number } {
+export function carryBeamSpan(shed: DimensionedShed, beam: CarryBeamOption): { start: number; end: number } {
   return bayInterval(shed, beam.beginBay);
 }
 
@@ -659,7 +657,7 @@ export function hasPlanGeometry(kind: OptionKind): boolean {
 }
 
 /** Resolve every stored option that has a shape, in creation order. */
-export function resolveOptions(shed: ShedConfig): ResolvedOption[] {
+export function resolveOptions(shed: DimensionedShed): ResolvedOption[] {
   return shed.options
     .filter((option) => hasPlanGeometry(option.kind))
     .map((option) => resolveOption(option, shed));
@@ -700,7 +698,7 @@ function alignOffset(
  * makes an awning or outrigger visible outside the footprint in plan.
  */
 function wallStrip(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   u: number,
   width: number,

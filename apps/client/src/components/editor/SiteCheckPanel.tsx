@@ -26,6 +26,7 @@ import { averageHeightMm } from '@sq/core/domain';
 import { Group } from './QuoteDetailsPanel';
 import { api } from '@/lib/sq';
 import { useDraftStore } from '@/store/useDraftStore';
+import { useShedStore } from '@/store/useShedStore';
 import {
   numberOf,
   stringOf,
@@ -40,25 +41,6 @@ export interface SiteCheckPanelProps {
   /** What to pin. Absent when the quote has not been saved — a check belongs to a quote. */
   site: { address: string; suburb: string; state: string; postcode: string };
   client: { firstName: string; lastName: string; email: string };
-  /**
-   * The building as the quote currently stands, used **only** for two things:
-   *
-   * 1. the "Copy from Shed" offer, which a person presses, and
-   * 2. telling the operator when the panel and the quote disagree.
-   *
-   * It never seeds the panel. The desktop's Building Parameters panel opens with its fields empty and
-   * the customer types the dimensions the factory will rate; seeding them from the quote made the one
-   * input the certificate depends on a value nobody chose (`SiteCheckPanel` sent `spanMm` etc. straight
-   * through, so a default 12 000 × 24 000 × 4 200 building was pinned without a keystroke).
-   */
-  shed: {
-    spanMm: number;
-    heightMm: number;
-    lengthMm: number;
-    importanceLevel: number;
-    roofPitchDeg: number;
-    structureType: string;
-  };
   /** The roof pitches the book sells for a span, for the pitch select. */
   roofPitchHints: number[];
   /**
@@ -89,7 +71,6 @@ export function SiteCheckPanel({
   quoteId,
   site,
   client,
-  shed,
   roofPitchHints,
   defaultSalesman,
   canWrite,
@@ -120,28 +101,67 @@ export function SiteCheckPanel({
    * `null` is a real state here, distinct from `0`: an empty field means "not entered yet", which is
    * why every check below is `=== null` rather than a falsiness test.
    */
-  const [params, setParams] = useState<{
-    importanceLevel: number | null;
-    spanMm: number | null;
-    heightMm: number | null;
-    lengthMm: number | null;
-    roofPitchDeg: number | null;
-  }>({
-    importanceLevel: null,
-    spanMm: null,
-    heightMm: null,
-    lengthMm: null,
-    roofPitchDeg: null,
-  });
+  // The building this panel edits — the same record the Shed group renders.
+  const config = useShedStore((state) => state.config);
+  const applyPartial = useShedStore((state) => state.applyPartial);
+
+  /*
+   * ## The panel and the quote are **one** record, not two
+   *
+   * The desktop's panel calls `SyncToStructureData()` and writes into the same `BlocStructureData`
+   * the Shed group reads (`UcShowBuildingParameterss.cs:1235`). That is the shape here: every field
+   * below reads `config` and writes through `applyPartial`, so entering a span in the panel changes
+   * the Shed group in the same commit and vice versa.
+   *
+   * The alternative — a private copy that is only sent to ShedSafe — is what this build first had,
+   * and it produces exactly the defect the project already fixed once (`pinnedFor`): a building
+   * pinned at 10 m for a quote priced at 12 m, with the screen showing both numbers and neither of
+   * them wrong on its own.
+   *
+   * `null` still means "not entered", and the gate below reads it as such.
+   */
+  const params = {
+    importanceLevel: config.importanceLevel,
+    spanMm: config.span,
+    heightMm: config.height,
+    lengthMm: config.length,
+    roofPitchDeg: config.roofPitchDeg > 0 ? config.roofPitchDeg : null,
+  };
+  /**
+   * One writer **per field**, so a change touches only what changed.
+   *
+   * ## Why not a whole-object setter
+   *
+   * The first version took all five values and wrote them together (`setParams({ ...params, span })`).
+   * `params` is derived from the store, so between two keystrokes in two different boxes the second
+   * call read a **stale** snapshot and wrote the first box back to its old value. Typing span, then
+   * height, then length left only the last one set — measured in the browser, and exactly the class of
+   * bug a whole-object setter hides.
+   *
+   * Writing one field at a time makes that impossible: nothing is written that the operator did not
+   * just change.
+   */
+  const setParam = <K extends keyof typeof params>(key: K, value: (typeof params)[K]): void => {
+    switch (key) {
+      case 'spanMm':
+        applyPartial({ span: value as typeof params.spanMm });
+        return;
+      case 'heightMm':
+        applyPartial({ height: value as typeof params.heightMm });
+        return;
+      case 'lengthMm':
+        applyPartial({ length: value as typeof params.lengthMm });
+        return;
+      case 'roofPitchDeg':
+        if (value !== null) applyPartial({ roofPitchDeg: value as number });
+        return;
+      case 'importanceLevel':
+        if (value !== null) applyPartial({ importanceLevel: value as never });
+        return;
+    }
+  };
   /** The panel is opened by PIN, as the desktop's flyout is — not always expanded. */
   const [paramsOpen, setParamsOpen] = useState(false);
-  /**
-   * True once a pin has been made from this panel, so re-opening it shows what was sent.
-   *
-   * Kept separate from `params` so "the field is empty because nobody typed" and "the field is empty
-   * because a previous pin used it and the quote changed" cannot be confused.
-   */
-  const [pinnedParams, setPinnedParams] = useState<typeof params | null>(null);
   /**
    * The salesman is the **signed-in person's email**, and it is not editable.
    *
@@ -248,23 +268,19 @@ export function SiteCheckPanel({
     params.spanMm === null || params.heightMm === null || params.roofPitchDeg === null
       ? null
       : averageHeightMm({
-          structureType: shed.structureType as never,
+          structureType: config.structureType as never,
           span: params.spanMm,
           height: params.heightMm,
           roofPitchDeg: params.roofPitchDeg,
         });
 
-  /** What the panel and the quote disagree about, in words. Empty when they agree. */
-  const drifts: string[] = [];
-  if (params.spanMm !== null && params.spanMm !== shed.spanMm) {
-    drifts.push(`span ${shed.spanMm.toLocaleString('en-AU')} → ${params.spanMm.toLocaleString('en-AU')} mm`);
-  }
-  if (params.heightMm !== null && params.heightMm !== shed.heightMm) {
-    drifts.push(`height ${shed.heightMm.toLocaleString('en-AU')} → ${params.heightMm.toLocaleString('en-AU')} mm`);
-  }
-  if (params.lengthMm !== null && params.lengthMm !== shed.lengthMm) {
-    drifts.push(`length ${shed.lengthMm.toLocaleString('en-AU')} → ${params.lengthMm.toLocaleString('en-AU')} mm`);
-  }
+  /*
+   * **No drift warning any more.**
+   *
+   * The panel writes to the Shed group's own record, so a number cannot differ between the two: the
+   * comparison this used to make was a symptom of the private copy, and its removal is the fix rather
+   * than a tidy-up.
+   */
 
   /**
    * Whether this login may pin at all, asked **before** the button is pressed.
@@ -377,7 +393,7 @@ export function SiteCheckPanel({
         heightMm: params.heightMm,
         spanMm: params.spanMm,
         lengthMm: params.lengthMm,
-        importanceLevel: params.importanceLevel ?? shed.importanceLevel,
+        importanceLevel: params.importanceLevel,
         // Who is doing the check. Empty is what the desktop sent; a name is what ShedSafe shows.
         salesman,
       },
@@ -387,7 +403,6 @@ export function SiteCheckPanel({
     if (result.ok) {
       // Remember what this pin sent, so re-opening the panel shows the rated building rather than
       // five empty boxes that look like the pin never happened.
-      setPinnedParams({ ...params });
       replace(result.data.check);
       if (quoteId === null && result.data.check !== null) {
         setSiteCheckId(result.data.check.id);
@@ -479,17 +494,22 @@ export function SiteCheckPanel({
   const drift =
     check !== null && check.calculated && pinned !== null
       ? [
-          pinned.spanMm !== null && pinned.spanMm !== shed.spanMm
-            ? `span ${pinned.spanMm} → ${shed.spanMm} mm`
+          /*
+           * A rating is for a *stated* building. If the quote no longer states a dimension, the
+           * drift is real and severe — the rating describes a building this quote cannot even
+           * describe — so it is reported as the difference between what was pinned and nothing.
+           */
+          pinned.spanMm !== null && pinned.spanMm !== config.span
+            ? `span ${pinned.spanMm} → ${config.span === null ? 'not entered' : `${config.span} mm`}`
             : null,
-          pinned.heightMm !== null && pinned.heightMm !== shed.heightMm
-            ? `wall height ${pinned.heightMm} → ${shed.heightMm} mm`
+          pinned.heightMm !== null && pinned.heightMm !== config.height
+            ? `wall height ${pinned.heightMm} → ${config.height === null ? 'not entered' : `${config.height} mm`}`
             : null,
-          pinned.lengthMm !== null && pinned.lengthMm !== shed.lengthMm
-            ? `length ${pinned.lengthMm} → ${shed.lengthMm} mm`
+          pinned.lengthMm !== null && pinned.lengthMm !== config.length
+            ? `length ${pinned.lengthMm} → ${config.length === null ? 'not entered' : `${config.length} mm`}`
             : null,
-          pinned.importanceLevel !== null && pinned.importanceLevel !== shed.importanceLevel
-            ? `importance level ${pinned.importanceLevel} → ${shed.importanceLevel}`
+          pinned.importanceLevel !== null && pinned.importanceLevel !== config.importanceLevel
+            ? `importance level ${pinned.importanceLevel} → ${config.importanceLevel}`
             : null,
         ].filter((entry): entry is string => entry !== null)
       : [];
@@ -940,24 +960,11 @@ export function SiteCheckPanel({
                   </div>
                   <div className="flex shrink-0 items-center gap-sq-1">
                     {/*
-                      The offer the desktop does not have, and the reason it is a button: the four
-                      numbers usually *are* the quote's, and typing them again is friction. What must
-                      not happen is them being filled without anybody deciding.
+                      **No "Copy from the quote" any more**, and its absence is the point.
+                      The panel and the Shed group are one record now, so the numbers are already the
+                      quote's — a button that copied them onto themselves was an artefact of the
+                      private-copy design this replaced.
                     */}
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        setParams({
-                          importanceLevel: shed.importanceLevel,
-                          spanMm: shed.spanMm,
-                          heightMm: shed.heightMm,
-                          lengthMm: shed.lengthMm,
-                          roofPitchDeg: shed.roofPitchDeg > 0 ? shed.roofPitchDeg : null,
-                        })
-                      }
-                    >
-                      Copy from the quote
-                    </Button>
                     <Button variant="ghost" onClick={() => setParamsOpen(false)}>
                       Close
                     </Button>
@@ -969,12 +976,14 @@ export function SiteCheckPanel({
                     <span className="text-sq-micro font-medium text-sq-ink">Importance level</span>
                     <select
                       id="sitecheck-params-importanceLevel"
-                      value={params.importanceLevel === null ? '' : String(params.importanceLevel)}
+                      value={String(params.importanceLevel)}
                       onChange={(event) =>
-                        setParams({
-                          ...params,
-                          importanceLevel: event.target.value === '' ? null : Number(event.target.value),
-                        })
+                        setParam(
+                          'importanceLevel',
+                          event.target.value === ''
+                            ? params.importanceLevel
+                            : (Number(event.target.value) as typeof params.importanceLevel),
+                        )
                       }
                       className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
                     >
@@ -992,10 +1001,10 @@ export function SiteCheckPanel({
                       id="sitecheck-params-roofPitchDeg"
                       value={params.roofPitchDeg === null ? '' : String(params.roofPitchDeg)}
                       onChange={(event) =>
-                        setParams({
-                          ...params,
-                          roofPitchDeg: event.target.value === '' ? null : Number(event.target.value),
-                        })
+                        setParam(
+                          'roofPitchDeg',
+                          event.target.value === '' ? null : Number(event.target.value),
+                        )
                       }
                       aria-invalid={
                         params.roofPitchDeg !== null && params.roofPitchDeg <= 0 ? true : undefined
@@ -1040,13 +1049,12 @@ export function SiteCheckPanel({
                            */
                           value={shown === null ? '' : shown}
                           onChange={(event) =>
-                            setParams({
-                              ...params,
-                              [key]:
-                                event.target.value === ''
-                                  ? null
-                                  : Math.round(Number(event.target.value)),
-                            })
+                            setParam(
+                              key,
+                              event.target.value === ''
+                                ? null
+                                : Math.round(Number(event.target.value)),
+                            )
                           }
                           aria-invalid={below || undefined}
                           aria-describedby={below ? `sitecheck-params-${key}-error` : undefined}
@@ -1081,14 +1089,6 @@ export function SiteCheckPanel({
                     </span>
                   </div>
                 </div>
-
-                {drifts.length > 0 && (
-                  <p role="status" className="text-sq-micro text-sq-attention">
-                    The quote is {drifts.join('; ')}. ShedSafe will rate the numbers above, so the price
-                    will still come from the quote — change one of the two, or expect a rating for a
-                    different building.
-                  </p>
-                )}
 
                 {(missingParams.length > 0 || paramsBelowFloor.length > 0) && (
                   <p id="sitecheck-params-missing" className="text-sq-micro text-sq-attention">
@@ -1211,10 +1211,11 @@ export function SiteCheckPanel({
               aria-controls="sitecheck-params-title"
               onClick={() => {
                 /*
-                 * Opening shows what the last pin sent, when there was one — otherwise the five empty
-                 * fields would read as a bug rather than as "this is yours to fill in".
+                 * Opening does **not** restore anything: the fields already show the quote, because
+                 * the panel and the quote are one record. Restoring a former snapshot would be the
+                 * private-copy behaviour this replaced, and would write stale numbers back into the
+                 * building.
                  */
-                if (pinnedParams !== null && missingParams.length > 0) setParams(pinnedParams);
                 setParamsOpen(true);
               }}
             >

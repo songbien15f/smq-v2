@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import { normaliseShedConfig } from '@/domain/schema';
+import { TEST_SHED } from '@/domain/defaults';
+import {  normaliseShedConfig, normaliseDimensionedShed } from '@/domain/schema';
 import { toCustomerDocument } from '../projection';
 import { renderQuoteHtml } from '../html';
 import type { FrozenRevision } from '../types';
@@ -28,7 +28,7 @@ function revision(logoHash: string | null): FrozenRevision {
     revision: 3,
     createdAt: '2026-11-01T02:03:04.000Z',
     validUntil: '2026-12-01',
-    config: normaliseShedConfig({ ...DEFAULT_SHED, structureType: 'gable', span: 9000, length: 18000 }),
+    config: normaliseDimensionedShed({ ...TEST_SHED, structureType: 'gable', span: 9000, length: 18000 })!,
     price: {
       contractCents: 2_750_000,
       gstCents: 250_000,

@@ -15,7 +15,7 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import type { Opening, ShedConfig, ShedOption, WallSide } from './types';
+import type { Opening, ShedConfig, ShedOption, WallSide, DimensionedShed } from './types';
 import type { PlanGeometry, PlacedOpening, PlacedOption } from './plan';
 import { normaliseOption } from './options';
 import { bayWidthsFor, positionsFromWidths } from './bays';
@@ -50,7 +50,7 @@ export interface DragGuide {
  * The overall run of `wall` in millimetres. Front/back walls run along the span;
  * left/right walls run along the length.
  */
-export function wallLength(shed: ShedConfig, wall: WallSide): number {
+export function wallLength(shed: DimensionedShed, wall: WallSide): number {
   return wall === 'front' || wall === 'back' ? shed.span : shed.length;
 }
 
@@ -61,7 +61,7 @@ export function wallLength(shed: ShedConfig, wall: WallSide): number {
  * `valid: false` with a `reason`, so the UI can show it rather than silently
  * dropping it.
  */
-export function resolveOpeningPlacement(opening: Opening, shed: ShedConfig): Placement {
+export function resolveOpeningPlacement(opening: Opening, shed: DimensionedShed): Placement {
   const run = wallLength(shed, opening.wall);
 
   let u: number;
@@ -88,7 +88,7 @@ export function resolveOpeningPlacement(opening: Opening, shed: ShedConfig): Pla
 /** Returns a human-readable reason when the opening does not fit, else undefined. */
 function invalidReason(
   opening: Opening,
-  shed: ShedConfig,
+  shed: DimensionedShed,
   run: number,
   u: number,
 ): string | undefined {
@@ -126,7 +126,7 @@ function invalidReason(
  */
 export function placementToPlanRect(
   opening: Opening,
-  shed: ShedConfig,
+  shed: DimensionedShed,
 ): { x: number; y: number; width: number; height: number } {
   const { u } = resolveOpeningPlacement(opening, shed);
   const { width } = opening;
@@ -176,7 +176,7 @@ function clamp(value: number, min: number, max: number): number {
  * `constrainOpeningU` is what keeps an opening inside its wall.
  */
 export function planPointToWallU(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   point: { x: number; y: number },
 ): number {
@@ -206,7 +206,7 @@ export function planPointToWallU(
  * Ties are broken in the fixed order front, back, left, right, so the result is
  * deterministic.
  */
-export function nearestWall(shed: ShedConfig, point: { x: number; y: number }): WallSide {
+export function nearestWall(shed: DimensionedShed, point: { x: number; y: number }): WallSide {
   const distances: { wall: WallSide; distance: number }[] = [
     { wall: 'front', distance: Math.abs(point.y) },
     { wall: 'back', distance: Math.abs(shed.length - point.y) },
@@ -232,7 +232,7 @@ export function nearestWall(shed: ShedConfig, point: { x: number; y: number }): 
  * rather than across the plan — a side-wall guide is not drawn sideways.
  */
 function wallLocalPoint(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   u: number,
   n: number,
@@ -273,7 +273,7 @@ const GUIDE_OFFSET_MM = 450;
  * The offset is reported in whole millimetres — the canonical unit — even though
  * `u` itself stays exact during the drag.
  */
-export function dragGuide(shed: ShedConfig, opening: Opening, u: number): DragGuide {
+export function dragGuide(shed: DimensionedShed, opening: Opening, u: number): DragGuide {
   const start = wallLocalPoint(shed, opening.wall, 0, 0);
   const end = wallLocalPoint(shed, opening.wall, u, 0);
   const textAt = wallLocalPoint(shed, opening.wall, u / 2, GUIDE_OFFSET_MM);
@@ -293,7 +293,7 @@ export function dragGuide(shed: ShedConfig, opening: Opening, u: number): DragGu
  * The `max(0, …)` pins an opening wider than its wall to `0`, rather than
  * producing a negative upper bound that would be inverted.
  */
-export function constrainOpeningU(shed: ShedConfig, opening: Opening, candidateU: number): number {
+export function constrainOpeningU(shed: DimensionedShed, opening: Opening, candidateU: number): number {
   const upper = Math.max(0, wallLength(shed, opening.wall) - opening.width);
   return clamp(candidateU, 0, upper);
 }
@@ -316,7 +316,7 @@ export function constrainOpeningU(shed: ShedConfig, opening: Opening, candidateU
  * displacement increases `u` on `right` but decreases it on `left`.
  */
 export function displacementToDu(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   d: { x: number; y: number },
 ): number {
@@ -331,7 +331,7 @@ export function displacementToDu(
  * for the direction.
  */
 export function wallDisplacement(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   wall: WallSide,
   du: number,
 ): { x: number; y: number } {
@@ -411,7 +411,7 @@ export function openingAtPlanPoint(
  * offset is clamped into the wall by `constrainOpeningU`.
  */
 export function moveOpeningTo(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   id: string,
   u: number,
 ): { id: string; patch: Partial<Opening> } | null {
@@ -474,7 +474,7 @@ export function optionAtPlanPoint(
 }
 
 /** The bay whose interval contains `y`, clamped to the first/last bay. */
-function bayAtY(shed: ShedConfig, y: number): { index: number; start: number; end: number } {
+function bayAtY(shed: DimensionedShed, y: number): { index: number; start: number; end: number } {
   const positions = positionsFromWidths(bayWidthsFor(shed));
   for (let index = 0; index < positions.length - 1; index++) {
     if (y <= positions[index + 1]) {
@@ -486,7 +486,7 @@ function bayAtY(shed: ShedConfig, y: number): { index: number; start: number; en
 }
 
 /** The bay index whose centre line is nearest to `u` along a wall. */
-function nearestBayIndex(shed: ShedConfig, u: number): number {
+function nearestBayIndex(shed: DimensionedShed, u: number): number {
   const positions = positionsFromWidths(bayWidthsFor(shed));
   let best = 0;
   let bestDistance = Infinity;
@@ -512,7 +512,7 @@ function nearestBayIndex(shed: ShedConfig, u: number): number {
  * position to move — its end is its identity — so it is returned unchanged.
  */
 export function constrainOptionDrag(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   option: ShedOption,
   point: { x: number; y: number },
 ): ShedOption {
@@ -593,7 +593,7 @@ export function constrainOptionDrag(
  * the option is shaped around.
  */
 export function moveOptionTo(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   id: string,
   point: { x: number; y: number },
 ): { id: string; patch: Partial<ShedOption> } | null {

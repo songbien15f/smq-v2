@@ -22,7 +22,7 @@
  * than pricing it once.
  */
 
-import type { Opening, OpeningType, ShedConfig } from '@/domain/types';
+import type { Opening, OpeningType, ShedConfig, DimensionedShed } from '@/domain/types';
 import { doorColour } from '@/domain/colors';
 import type { DoorKind, PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from './types';
@@ -82,7 +82,7 @@ function openingLine(
  * `sld_price` column is zero on every row. Passing the placement is what keeps a
  * sliding door from being quoted at nothing.
  */
-export function openingLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
+export function openingLines(shed: DimensionedShed, lookup: PriceLookup): BomLine[] {
   const lines: BomLine[] = [];
   const hangar = shed.structureType === 'aircraft_hangar';
 

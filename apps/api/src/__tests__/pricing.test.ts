@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { publishPriceBook } from '@sq/core/pricing';
 import { readLegacyPlan } from '@sq/core/quoteFile';
-import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
+import { DEFAULT_SHED, normaliseShedConfig, TEST_SHED } from '@sq/core/domain';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
 
 /** A roller door as the desktop writes one: a 3 000 × 2 800 series B. */
@@ -66,7 +66,7 @@ const hasDump = existsSync(join(DUMP, 'cost_frame.json'));
  */
 function config(): Record<string, unknown> {
   return normaliseShedConfig({
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     structureType: 'gable',
     span: 9000,
     length: 18000,

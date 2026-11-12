@@ -31,7 +31,7 @@
  *   a rule that guesses is worse than no rule.
  */
 
-import type { OptionKind, ShedConfig, ShedOption, SkylightOption } from './types';
+import type { OptionKind, ShedConfig, ShedOption, SkylightOption, DimensionedShed } from './types';
 import { hasPlanGeometry, resolveOption } from './options';
 import { carryBeamRefusal } from './placementRules';
 import { skylightCollision } from './skylightSnap';
@@ -76,7 +76,7 @@ const OPENING_LABEL: Record<string, string> = {
  * style folded in; this build has no headroom field, so the door's own height is the head,
  * which is the conservative reading: a door that just reaches the slab is still in the way.
  */
-function optionsUnderMezzanine(shed: ShedConfig): string[] {
+function optionsUnderMezzanine(shed: DimensionedShed): string[] {
   const mezzanine = shed.options.find((option) => option.kind === 'mezzanine');
   // No mezzanine yet: a new one lands at `back_left` with a 3 m square, which is where the
   // check has to look.
@@ -109,7 +109,7 @@ function optionsUnderMezzanine(shed: ShedConfig): string[] {
  * Returns `null` when the placement is allowed. The check is **read-only**: it never changes the
  * config, so a caller can ask before it acts.
  */
-export function refusePlacement(kind: OptionKind, shed: ShedConfig): PlacementRefusal | null {
+export function refusePlacement(kind: OptionKind, shed: DimensionedShed): PlacementRefusal | null {
   switch (kind) {
     case 'gable_infill': {
       // A gable end is closed or open; both being filled is the finished state.
@@ -267,7 +267,7 @@ export function refusePlacement(kind: OptionKind, shed: ShedConfig): PlacementRe
  * A place-button that is disabled needs a reason next to it, and asking `refusePlacement` per kind is
  * the same answer in one call.
  */
-export function placementRefusals(shed: ShedConfig, kinds: readonly OptionKind[]): PlacementRefusal[] {
+export function placementRefusals(shed: DimensionedShed, kinds: readonly OptionKind[]): PlacementRefusal[] {
   return kinds.flatMap((kind) => {
     const refusal = refusePlacement(kind, shed);
     return refusal === null ? [] : [refusal];
@@ -286,7 +286,7 @@ export function placementRefusals(shed: ShedConfig, kinds: readonly OptionKind[]
  * edit to a quote, and the operator is the only one who knows whether the mezzanine should go or the
  * wall should come back.
  */
-export function optionsThatNoLongerFit(shed: ShedConfig): { id: string; kind: OptionKind; reason: string }[] {
+export function optionsThatNoLongerFit(shed: DimensionedShed): { id: string; kind: OptionKind; reason: string }[] {
   const problems: { id: string; kind: OptionKind; reason: string }[] = [];
 
   for (const option of shed.options) {

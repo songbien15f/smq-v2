@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import { baySpacingMismatch, reconcileBays } from '../bays';
 import { normaliseShedConfig } from '../schema';
 
@@ -30,8 +30,8 @@ describe('normaliseShedConfig với trường mới', () => {
     const c = normaliseShedConfig({ span: 9000, length: 18000, bays: 3 });
     expect(c.span).toBe(9000);
     expect(c.nomBaySpacing).toBe(6000);
-    expect(c.wallProfile).toBe(DEFAULT_SHED.wallProfile);
-    expect(c.footingType).toBe(DEFAULT_SHED.footingType);
+    expect(c.wallProfile).toBe(TEST_SHED.wallProfile);
+    expect(c.footingType).toBe(TEST_SHED.footingType);
     expect(c.endOpening).toEqual({ left: false, right: false });
     expect(c.buildingClass).toBeNull();
   });
@@ -54,23 +54,23 @@ describe('normaliseShedConfig với trường mới', () => {
 describe('importance level 1 to 4', () => {
   it('giữ nguyên cả bốn mức qua normaliseShedConfig', () => {
     for (const level of [1, 2, 3, 4] as const) {
-      const config = normaliseShedConfig({ ...DEFAULT_SHED, importanceLevel: level });
+      const config = normaliseShedConfig({ ...TEST_SHED, importanceLevel: level });
       expect(config.importanceLevel, `level ${level} must not be rewritten`).toBe(level);
     }
   });
 
   it('không hạ 3 và 4 xuống 1 — đây chính là lỗi cũ', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, importanceLevel: 3 }).importanceLevel).not.toBe(1);
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, importanceLevel: 4 }).importanceLevel).not.toBe(1);
+    expect(normaliseShedConfig({ ...TEST_SHED, importanceLevel: 3 }).importanceLevel).not.toBe(1);
+    expect(normaliseShedConfig({ ...TEST_SHED, importanceLevel: 4 }).importanceLevel).not.toBe(1);
   });
 
   it('một giá trị ngoài 1..4 vẫn rơi về default, không phải NaN', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, importanceLevel: 7 }).importanceLevel).toBe(
-      DEFAULT_SHED.importanceLevel,
+    expect(normaliseShedConfig({ ...TEST_SHED, importanceLevel: 7 }).importanceLevel).toBe(
+      TEST_SHED.importanceLevel,
     );
   });
 
   it('default là 2, khớp desktop và khớp pinRequest', () => {
-    expect(DEFAULT_SHED.importanceLevel).toBe(2);
+    expect(TEST_SHED.importanceLevel).toBe(2);
   });
 });

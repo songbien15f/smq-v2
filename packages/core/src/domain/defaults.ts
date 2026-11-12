@@ -1,4 +1,4 @@
-import type { OpeningType, ShedConfig } from './types';
+import type { DimensionedShed, OpeningType, ShedConfig } from './types';
 
 /**
  * Colorbond colour values, keyed by the name the price book uses.
@@ -78,9 +78,20 @@ export const DEFAULT_OPENING_BY_TYPE: Record<
 /** The starting configuration for a new shed. All linear values are millimetres. */
 export const DEFAULT_SHED: ShedConfig = {
   structureType: 'gable',
-  span: 12000,
-  length: 24000,
-  height: 4200,
+  /*
+   * The three dimensions a new quote **does not have**.
+   *
+   * These used to be 12 000 × 24 000 × 4 200 — numbers with no source. They made a quote priceable,
+   * and made ShedSafe rate a building, before anybody said what the shed was. The desktop's Building
+   * Parameters panel opens empty and its `GO TO SITECHECK` stays disabled until these are entered;
+   * `null` is how that absence travels through this codebase.
+   *
+   * Everything else below still has a value, because it is a **default somebody may change**
+   * (structure type, pitch, bays, colours) rather than a fact about a building.
+   */
+  span: null,
+  length: null,
+  height: null,
   roofPitchDeg: 10,
   bays: 4,
   nomBaySpacing: 6000,
@@ -141,3 +152,22 @@ export const DEFAULT_SHED: ShedConfig = {
   },
   displayUnit: 'm',
 };
+
+/**
+ * A **described** building, for tests and for the editor's starting sketch.
+ *
+ * `DEFAULT_SHED` deliberately has no dimensions, because a new quote has no building. That makes it
+ * useless as a fixture: almost every test wants a shed it can price. This is that shed — the same
+ * 12 × 24 m figure the old `DEFAULT_SHED` carried, now named for what it is (a test building) instead
+ * of pretending to be a default.
+ *
+ * Production code must not use it as a starting point. If something needs a building to exist before
+ * an operator has described one, the answer is a gate, not this constant.
+ */
+export const TEST_SHED: DimensionedShed = {
+  ...DEFAULT_SHED,
+  span: 12000,
+  length: 24000,
+  height: 4200,
+};
+

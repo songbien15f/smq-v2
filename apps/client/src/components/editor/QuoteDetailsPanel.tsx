@@ -29,7 +29,7 @@ import {
   ridgeHeightMm,
   suggestedValues,
 } from '@sq/core/domain';
-import { downpipePalette, reconcileDownpipeColour } from '@sq/core/domain';
+import { downpipePalette, reconcileDownpipeColour, withDimensions } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import {
   bayWidthsFor,
@@ -685,12 +685,20 @@ function DesignGroup({
   const options = config.options;
   const hasGable = (end: 'front' | 'back'): boolean =>
     options.some((option) => option.kind === 'gable_infill' && option.end === end);
+  /*
+   * The two helpers below add an **option**, and an option is placed on a building. With no
+   * dimensions there is nothing to clamp it against, so they do nothing — the fields are still shown,
+   * and the required-dimension message in the Shed group says what to fill in first.
+   */
+  const building = withDimensions(config);
+
   const toggleGable = (end: 'front' | 'back'): void => {
+    if (building === null) return;
     const next = hasGable(end)
       ? options.filter((option) => !(option.kind === 'gable_infill' && option.end === end))
       : [
           ...options,
-          ...defaultOptionsFor('gable_infill', config).filter(
+          ...defaultOptionsFor('gable_infill', building).filter(
             (option) => option.kind === 'gable_infill' && option.end === end,
           ),
         ];
@@ -700,6 +708,7 @@ function DesignGroup({
   const cantileverFor = (wall: 'front' | 'back') =>
     options.find((option) => option.kind === 'cantilever' && option.wall === wall);
   const setCantilever = (wall: 'front' | 'back', length: number): void => {
+    if (building === null) return;
     const existing = cantileverFor(wall);
     let next;
     if (length <= 0) {
@@ -707,7 +716,7 @@ function DesignGroup({
     } else if (existing !== undefined) {
       next = options.map((option) => (option === existing ? { ...option, length } : option));
     } else {
-      const base = defaultOptionsFor('cantilever', config).find(
+      const base = defaultOptionsFor('cantilever', building).find(
         (option) => option.kind === 'cantilever',
       );
       if (base === undefined || base.kind !== 'cantilever') return;
@@ -973,6 +982,14 @@ function ShedGroup({
   kneeBrace: string | null;
 }) {
   const config = useShedStoreConfig();
+  /*
+   * The building with its dimensions, or `null` while the fields are still empty.
+   *
+   * Everything derived — the bay grid, the average and ridge heights, the book's suggestions — is a
+   * function of span, length and height. Narrowing once here means each of those uses a value the
+   * compiler knows is complete, instead of spreading `?? 0` through the panel.
+   */
+  const building = withDimensions(config);
   const applyPartial = useApplyBuilding();
   const errorAt = (path: string): string | undefined => issuesByPath.get(path)?.message;
   /*
@@ -989,7 +1006,12 @@ function ShedGroup({
    * `perBay` is shown beside the bay count, and it used to be a division. On an edited building that
    * number describes no bay in the shed — the panel lists the real ones below.
    */
-  const bayWidths = bayWidthsFor(config);
+  /*
+   * The bay grid and the two heights are derived from the three dimensions, so they exist only once
+   * those do. `null` here is not an error: the fields above are empty and the validation message says
+   * which ones to fill in.
+   */
+  const bayWidths = config.length === null ? [0] : bayWidthsFor(config as never);
   const perBay = bayWidths.reduce((sum, width) => sum + width, 0) / Math.max(1, bayWidths.length);
   const unevenBays = new Set(bayWidths).size > 1;
   const [baysOpen, setBaysOpen] = useState(false);
@@ -1001,8 +1023,8 @@ function ShedGroup({
    * testable without a browser. `null` means the roof cannot be described yet — a zero pitch is a flat
    * roof, and reporting the wall height as an "average" would be a number nobody measured.
    */
-  const averageHeight = averageHeightMm(config);
-  const ridgeHeight = ridgeHeightMm(config);
+  const averageHeight = building === null ? null : averageHeightMm(building);
+  const ridgeHeight = building === null ? null : ridgeHeightMm(building);
 
   /*
    * What the price book suggests, and only where the screen differs from it.
@@ -1062,10 +1084,18 @@ function ShedGroup({
    * operator may legitimately quote (the desktop's dropdown is editable), so the field says the book
    * does not list it instead of snapping the roof to something the customer did not agree to.
    */
+  /*
+   * The book's pitch list is filtered by span, so it exists only once a span does.
+   *
+   * Before that the list is empty and the slider keeps the caller's own 0–45 range — which is what a
+   * suggestion list absent its filter should be: no claim about the roof.
+   */
   const pitchGroups = catalogue?.roofPitchGroups ?? [];
-  const pitchHints = roofPitchHintsForSpan(pitchGroups, config.span);
-  const pitchBounds = roofPitchBoundsForSpan(pitchGroups, config.span);
-  const pitchUnlisted = pitchOutsideBookSpan(pitchGroups, config.span, config.roofPitchDeg);
+  const spanForBook = config.span;
+  const pitchHints = spanForBook === null ? [] : roofPitchHintsForSpan(pitchGroups, spanForBook);
+  const pitchBounds = spanForBook === null ? null : roofPitchBoundsForSpan(pitchGroups, spanForBook);
+  const pitchUnlisted =
+    spanForBook === null ? false : pitchOutsideBookSpan(pitchGroups, spanForBook, config.roofPitchDeg);
 
   /**
    * Apply a dimension change, asking first when it invalidates placed options.
@@ -1228,9 +1258,11 @@ function ShedGroup({
           maxMm={spanBounds.max}
           required
           hint={
-            outsideBookBounds(config.span, spanBounds) === null
-              ? 'Clear width, inside the columns.'
-              : outOfBookMessage('Span', config.span, spanBounds)
+            config.span === null
+              ? 'Enter the clear width inside the columns.'
+              : outsideBookBounds(config.span, spanBounds) === null
+                ? 'Clear width, inside the columns.'
+                : outOfBookMessage('Span', config.span, spanBounds)
           }
           error={errorAt('shed-span')}
           onCommit={(mm) => applyDimension({ span: mm })}
@@ -1244,9 +1276,11 @@ function ShedGroup({
           maxMm={heightBounds.max}
           required
           hint={
-            outsideBookBounds(config.height, heightBounds) === null
-              ? undefined
-              : outOfBookMessage('Wall height', config.height, heightBounds)
+            config.height === null
+              ? 'Enter the wall height, floor to eave.'
+              : outsideBookBounds(config.height, heightBounds) === null
+                ? undefined
+                : outOfBookMessage('Wall height', config.height, heightBounds)
           }
           error={errorAt('shed-height')}
           onCommit={(mm) => applyDimension({ height: mm })}
@@ -1316,7 +1350,8 @@ function ShedGroup({
                      * inventing a projection would be a design decision, not a reading.
                      */
                     onClick={() => {
-                      const base = defaultOptionsFor('awning', config).find(
+                      if (building === null) return;
+                      const base = defaultOptionsFor('awning', building).find(
                         (option) => option.kind === 'awning',
                       );
                       if (base === undefined || base.kind !== 'awning') return;
@@ -1407,7 +1442,8 @@ function ShedGroup({
             aria-describedby={errorAt('shed-bays') !== undefined ? 'shed-bays-error' : 'shed-bays-hint'}
             onChange={(event) => {
               const next = Number(event.target.value);
-              if (Number.isFinite(next)) {
+              // A bay count without a length has nothing to divide; the length field says so.
+              if (Number.isFinite(next) && config.length !== null) {
                 applyBays({ length: config.length, bays: next, nomBaySpacing: 0 });
               }
             }}
@@ -1446,7 +1482,9 @@ function ShedGroup({
             onChange={(event) => {
               const next = Number(event.target.value);
               if (Number.isFinite(next)) {
-                applyBays({ length: config.length, bays: config.bays, nomBaySpacing: next });
+                // A spacing and a bay count are enough to state a length — that is the desktop's own
+                // rule, and it is how a person enters the first dimension on a blank quote.
+                applyBays({ length: config.length ?? next * config.bays, bays: config.bays, nomBaySpacing: next });
               }
             }}
             className="min-h-[38px] w-32 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body outline-none"
@@ -1484,7 +1522,9 @@ function ShedGroup({
           <div className="flex flex-col">
             <span className="text-sq-micro font-medium text-sq-ink">Bay spacing</span>
             <span className="sq-numeric text-sq-micro text-sq-ink-muted">
-              {config.length.toLocaleString('en-AU')} mm overall · {config.bays} bays
+              {config.length === null ? 'Length not entered' : `${config.length.toLocaleString('en-AU')} mm overall`}
+              {' · '}
+              {config.bays} bays
               {unevenBays ? ' · uneven' : ''}
             </span>
           </div>
@@ -1533,7 +1573,10 @@ function ShedGroup({
             {unevenBays && (
               <button
                 type="button"
-                onClick={() => applyBays({ length: config.length, bays: config.bays, nomBaySpacing: 0 })}
+                onClick={() => {
+                  if (config.length === null) return;
+                  applyBays({ length: config.length, bays: config.bays, nomBaySpacing: 0 });
+                }}
                 className="col-span-2 min-h-9 self-start cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium transition-colors duration-sq-fast hover:bg-sq-ground"
               >
                 Divide equally again
@@ -1727,8 +1770,8 @@ function ShedGroup({
         {pitchUnlisted ? (
           <span className="text-sq-micro text-sq-attention">
             {config.roofPitchDeg}° is between the pitches this book lists for a{' '}
-            {(config.span / 1000).toFixed(1)} m span ({pitchHints.join(', ')}°). It prices as an
-            assumption.
+            {spanForBook === null ? 'this' : `${(spanForBook / 1000).toFixed(1)} m`} span (
+            {pitchHints.join(', ')}°). It prices as an assumption.
           </span>
         ) : pitchHints.length > 0 ? (
           <span className="text-sq-micro text-sq-ink-muted">
@@ -1794,6 +1837,8 @@ const COLOUR_LABELS: Record<keyof ShedColors, string> = {
 
 function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }) {
   const config = useShedStoreConfig();
+  /** The switch creates an option, and an option needs a building to sit on. */
+  const building = withDimensions(config);
   const applyPartial = useApplyBuilding();
   const { catalogue } = useCatalogue();
   /*
@@ -2069,7 +2114,8 @@ function ColourGroup({ issuesByPath }: { issuesByPath: Map<string, DraftIssue> }
             checked={claddingOn}
             onChange={(event) => {
               if (event.target.checked) {
-                const base = defaultOptionsFor('horizontal_cladding', config).find(
+                if (building === null) return;
+                const base = defaultOptionsFor('horizontal_cladding', building).find(
                   (option) => option.kind === 'horizontal_cladding',
                 );
                 if (base === undefined) return;

@@ -22,7 +22,7 @@ import {
   renderQuoteHtml,
   toCustomerDocument,
 } from '@sq/core/documents';
-import { normaliseShedConfig } from '@sq/core/domain';
+import { normaliseShedConfig, withDimensions } from '@sq/core/domain';
 import { loadLogo } from '@sq/core/branding';
 
 /**
@@ -87,6 +87,20 @@ export async function renderFrozenElevations(frozen: FrozenRevision): Promise<st
 }
 
 /** Raised when the revision does not exist, or belongs to another company. */
+/**
+ * A revision whose stored building states no dimensions.
+ *
+ * Reachable only for a revision saved before dimensions were required — and reading it as though it
+ * had a 12 000 mm span would print a document describing a shed the customer never received. A
+ * document needs a building, so this is the honest answer.
+ */
+export class RevisionHasNoBuilding extends Error {
+  constructor() {
+    super('This revision does not state the building’s dimensions, so it cannot be printed.');
+    this.name = 'RevisionHasNoBuilding';
+  }
+}
+
 export class RevisionNotFound extends Error {
   constructor() {
     super('Not found.');
@@ -150,12 +164,22 @@ export async function loadFrozenRevision(
     ? new Date(created + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     : row.created_at.slice(0, 10);
 
+  /*
+   * A document exists only for a building, so the narrowing happens here.
+   *
+   * `FrozenRevision.config` is `DimensionedShed` because every field the renderer reads — `span`,
+   * `length`, `height` — is a number there, and a document that printed an underline where the width
+   * belongs would be worse than a refusal.
+   */
+  const config = withDimensions(normaliseShedConfig(parse<unknown>(row.config_json, {})));
+  if (config === null) throw new RevisionHasNoBuilding();
+
   return {
     quoteNumber: row.quote_number,
     revision: Number(row.revision),
     createdAt: row.created_at,
     validUntil,
-    config: normaliseShedConfig(parse<unknown>(row.config_json, {})),
+    config,
     price: {
       contractCents: Number(price.contractCents ?? 0),
       /*

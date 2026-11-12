@@ -354,9 +354,28 @@ export interface Charge {
 /** Complete, self-contained shed specification. */
 export interface ShedConfig {
   structureType: StructureType;
-  span: number; // overall width / facade, mm
-  length: number; // overall depth (bay direction), mm
-  height: number; // wall height, mm
+  /**
+   * Overall width across the facade, mm — **`null` until somebody states it**.
+   *
+   * ## Why nullable, and why that is the point
+   *
+   * A new quote has no building. The desktop opens Building Parameters empty and refuses
+   * `GO TO SITECHECK` until span, height and length are entered; the old `DEFAULT_SHED` here carried
+   * 12 000 × 24 000 × 4 200, so a quote could be priced — and ShedSafe asked to rate — a shed nobody
+   * described.
+   *
+   * `null` rather than `0` on purpose: `0` is a dimension somebody typed, which is why the desktop
+   * needed a `Text == "0"` hack to tell them apart. Here the gate is `=== null` and no arithmetic can
+   * quietly treat "not stated" as a real number.
+   *
+   * Code that needs the number takes `DimensionedShed`, so the compiler asks "is this building
+   * described yet?" at every entry point instead of asking `?? 0`.
+   */
+  span: number | null;
+  /** Overall depth along the bay direction, mm. `null` until stated — see `span`. */
+  length: number | null;
+  /** Wall height, mm. `null` until stated — see `span`. */
+  height: number | null;
   roofPitchDeg: number; // 0..45
   bays: number; // 2..30, along `length`
   /**
@@ -498,6 +517,38 @@ export interface ShedConfig {
  * another code. The known codes are documented on `KNOWN_WIND_REGIONS` instead, for a UI that wants
  * to offer them.
  */
+/**
+ * The three dimensions a building needs before anything can be drawn, priced or rated.
+ *
+ * Split from `ShedConfig` because **most of this codebase cannot work without them**: a plan has no
+ * outline, a BOM has no frame, and a site check has nothing to ask ShedSafe to rate. Making that a
+ * type rather than a runtime check moves the question to the compiler, so a function that needs a
+ * width cannot be handed a building that has none.
+ */
+export interface StatedDimensions {
+  span: number;
+  length: number;
+  height: number;
+}
+
+/** A shed whose three dimensions are known — the only kind the engine can price. */
+export type DimensionedShed = ShedConfig & StatedDimensions;
+
+/** True when all three dimensions are stated. A guard, so the narrowing survives into the caller. */
+export function isDimensioned(shed: ShedConfig): shed is DimensionedShed {
+  return shed.span !== null && shed.length !== null && shed.height !== null;
+}
+
+/**
+ * The building with its dimensions, or `null` when it has not been described yet.
+ *
+ * The `null` is the useful half: a caller has to decide what to show instead of a price, and that
+ * decision is visible in the code rather than hidden in a default.
+ */
+export function withDimensions(shed: ShedConfig): DimensionedShed | null {
+  return isDimensioned(shed) ? shed : null;
+}
+
 export type WindRegion = string;
 
 /** Terrain categories used for Australian shed design. */

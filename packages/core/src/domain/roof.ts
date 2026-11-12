@@ -32,7 +32,7 @@
  * this product gets to improve on.
  */
 
-import type { ShedConfig } from './types';
+import type { ShedConfig, DimensionedShed } from './types';
 
 /**
  * True when the structure is a single-slope roof.
@@ -43,7 +43,7 @@ import type { ShedConfig } from './types';
  * `skillion` is treated as single-slope, which is what the desktop's string match effectively does for
  * the values its list contains.
  */
-function isSkillion(shed: Pick<ShedConfig, 'structureType'>): boolean {
+function isSkillion(shed: Pick<DimensionedShed, 'structureType'>): boolean {
   return shed.structureType === 'skillion';
 }
 
@@ -57,7 +57,7 @@ function isSkillion(shed: Pick<ShedConfig, 'structureType'>): boolean {
  * them is true.
  */
 export function averageHeightMm(
-  shed: Pick<ShedConfig, 'structureType' | 'span' | 'height' | 'roofPitchDeg'>,
+  shed: Pick<DimensionedShed, 'structureType' | 'span' | 'height' | 'roofPitchDeg'>,
 ): number | null {
   if (shed.height <= 0 || shed.span <= 0 || shed.roofPitchDeg <= 0) return null;
 
@@ -74,7 +74,7 @@ export function averageHeightMm(
  * `(span / 2) × tan(pitch)`; a skillion's high side is wall height plus `span × tan(pitch)`.
  */
 export function ridgeHeightMm(
-  shed: Pick<ShedConfig, 'structureType' | 'span' | 'height' | 'roofPitchDeg'>,
+  shed: Pick<DimensionedShed, 'structureType' | 'span' | 'height' | 'roofPitchDeg'>,
 ): number | null {
   if (shed.height <= 0 || shed.span <= 0 || shed.roofPitchDeg <= 0) return null;
 

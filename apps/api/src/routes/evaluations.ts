@@ -317,6 +317,28 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       },
     );
 
+    /*
+     * **No building, no price — and the answer says which numbers are missing.**
+     *
+     * `evaluateQuote` returns `null` when span, height or length is absent, because a shed nobody has
+     * described has no frame to size and nothing ShedSafe could rate. Answering 422 rather than a
+     * zero-priced evaluation matters: a `$0` quote is a quotable thing, and this is not one — it is a
+     * building that has not been specified yet.
+     */
+    if (evaluation === null) {
+      const missing = [
+        body.config.span === null || body.config.span === undefined ? 'span' : null,
+        body.config.height === null || body.config.height === undefined ? 'height' : null,
+        body.config.length === null || body.config.length === undefined ? 'length' : null,
+      ].filter((field): field is string => field !== null);
+      return sendFail(
+        reply,
+        'validation_failed',
+        `Enter the building's ${missing.join(', ')} before it can be priced. A shed with no dimensions has no frame to price.`,
+        missing.map((field) => ({ path: `config.${field}`, message: `Enter the ${field}.` })),
+      );
+    }
+
     const normalised = normaliseShedConfig(body.config);
     // The same expression the save route uses. Two spellings of "what was priced" is exactly how
     // a check passes on one side and fails on the other.

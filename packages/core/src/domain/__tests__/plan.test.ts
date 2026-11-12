@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildPlanGeometry } from '../plan';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 
 const shed = {
-  ...DEFAULT_SHED,
+  ...TEST_SHED,
   openings: [
     { id: 'd1', type: 'roller_door' as const, width: 4200, height: 3600, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
@@ -43,11 +43,11 @@ describe('buildPlanGeometry', () => {
     expect(g.openings.find((o) => o.id === 'd2')!.swing).toBe('outward');
   });
   it('collects warnings for openings that do not fit', () => {
-    const bad = { ...DEFAULT_SHED, openings: [{ ...shed.openings[0], width: 13000 }] };
+    const bad = { ...TEST_SHED, openings: [{ ...shed.openings[0], width: 13000 }] };
     expect(buildPlanGeometry(bad).warnings).toHaveLength(1);
   });
   it('rounds dimension labels up to 50 mm without rounding the underlying values', () => {
-    const odd = { ...DEFAULT_SHED, span: 12001 };
+    const odd = { ...TEST_SHED, span: 12001 };
     const g = buildPlanGeometry(odd);
     const spanDim = g.dims.find((d) => d.value === 12001);
     expect(spanDim).toBeDefined();
@@ -57,7 +57,7 @@ describe('buildPlanGeometry', () => {
 });
 
 describe('dimension witness lines are orthogonal (refactor §3.1)', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000, bays: 4 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000, bays: 4 };
 
   it('never draws a sloped witness line or dimension line', () => {
     for (const d of buildPlanGeometry(shed).dims) {
@@ -98,7 +98,7 @@ describe('dimension witness lines are orthogonal (refactor §3.1)', () => {
 
 describe('door symbols are technical-drawing symbols (user requirement)', () => {
   const shed = (type: 'pa_door' | 'roller_door' | 'window', swing: 'inward' | 'outward' | null = null) => ({
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     openings: [{ id: 'd1', type, width: 900, height: 2100, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing, track: null }],
   });
@@ -149,7 +149,7 @@ describe('door symbols are technical-drawing symbols (user requirement)', () => 
   });
 
   it('orients the symbol along the wall (not sideways) on a side wall', () => {
-    const s = { ...DEFAULT_SHED, openings: [
+    const s = { ...TEST_SHED, openings: [
       { id: 'l1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'left' as const, align: 'custom' as const, offset: 500, swing: 'outward' as const, track: null },
     ]};
@@ -162,7 +162,7 @@ describe('door symbols are technical-drawing symbols (user requirement)', () => 
   });
 
   it('orients the symbol along the wall (not sideways) on a right wall', () => {
-    const s = { ...DEFAULT_SHED, openings: [
+    const s = { ...TEST_SHED, openings: [
       { id: 'r1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'right' as const, align: 'custom' as const, offset: 500, swing: 'inward' as const, track: null },
     ]};
@@ -173,7 +173,7 @@ describe('door symbols are technical-drawing symbols (user requirement)', () => 
   });
 
   it('orients the symbol along the wall (not sideways) on the back wall', () => {
-    const s = { ...DEFAULT_SHED, openings: [
+    const s = { ...TEST_SHED, openings: [
       { id: 'b1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'back' as const, align: 'custom' as const, offset: 500, swing: 'outward' as const, track: null },
     ]};
@@ -188,7 +188,7 @@ describe('door symbols are technical-drawing symbols (user requirement)', () => 
 describe('plan options', () => {
   it('emits one placed option per stored option, with a role', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'sk-1', kind: 'skylight' as const, bay: 0, alongBay: 0.5, width: 900, height: 900 },
         { id: 'dw-1', kind: 'dividing_wall' as const, axis: 'x' as const, at: 12000, height: 4200 },
@@ -202,7 +202,7 @@ describe('plan options', () => {
 
   it('draws a gable infill as a triangle across the full span', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'gi-1', kind: 'gable_infill' as const, end: 'front' as const }],
     };
     const placed = buildPlanGeometry(config).options[0];
@@ -213,7 +213,7 @@ describe('plan options', () => {
 
   it('marks structural options as dashed and roof options as not', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'sk-1', kind: 'skylight' as const, bay: 0, alongBay: 0.5, width: 900, height: 900 },
         { id: 'mz-1', kind: 'mezzanine' as const, corner: 'back_left' as const,
@@ -227,7 +227,7 @@ describe('plan options', () => {
 
   it('carries the option id and rect through unchanged', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'sk-7', kind: 'skylight' as const, bay: 1, alongBay: 0.5, width: 900, height: 900 }],
     };
     const placed = buildPlanGeometry(config).options[0];
@@ -237,14 +237,14 @@ describe('plan options', () => {
   });
 
   it('emits no options for a shed with none', () => {
-    expect(buildPlanGeometry(DEFAULT_SHED).options).toEqual([]);
+    expect(buildPlanGeometry(TEST_SHED).options).toEqual([]);
   });
 });
 
 describe('plain-hole opening (review I3)', () => {
   it('draws a plain hole with no leaf, no arc and no track', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'o1', type: 'opening' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null }],
     };
@@ -257,7 +257,7 @@ describe('plain-hole opening (review I3)', () => {
 
   it('ignores a stale swing on a plain hole', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'o1', type: 'opening' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const, track: null }],
     };
@@ -270,7 +270,7 @@ describe('plain-hole opening (review I3)', () => {
 describe('the five remaining kinds on the plan', () => {
   it('assigns a drawing role to each new kind', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'oh-1', kind: 'overhang' as const, wall: 'front' as const, depth: 600 },
         { id: 'cb-1', kind: 'carry_beam' as const, wall: 'front' as const, beginBay: 0, openingId: null },
@@ -285,7 +285,7 @@ describe('the five remaining kinds on the plan', () => {
 
   it('draws a carry beam solid and heavy, not dashed', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'cb-1', kind: 'carry_beam' as const, wall: 'front' as const, beginBay: 0, openingId: null }],
     };
     expect(buildPlanGeometry(config).options[0].dashed).toBe(false);
@@ -293,7 +293,7 @@ describe('the five remaining kinds on the plan', () => {
 
   it('draws every new kind with a non-zero footprint', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'st-1', kind: 'stable' as const, wall: 'left' as const, align: 'center' as const,
           offset: null, width: 3000, depth: 2400, height: 2400,
@@ -312,7 +312,7 @@ describe('the five remaining kinds on the plan', () => {
 
 describe('sliding door track in plan', () => {
   const sliding = (track: 'none' | 'single' | 'double') => ({
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     openings: [{ id: 'd1', type: 'sliding_door' as const, width: 3000, height: 2100, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const, track }],
   });
@@ -331,7 +331,7 @@ describe('sliding door track in plan', () => {
 
   it('adds no track line to a PA door', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const,
         track: null }],
@@ -344,7 +344,7 @@ describe('sliding door track in plan', () => {
 describe('stable and cladding symbols (review minor)', () => {
   it('gives a stable a corner-to-corner line so it is not just a rect', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'st-1', kind: 'stable' as const, wall: 'left' as const, align: 'center' as const,
         offset: null, width: 3000, depth: 2400, height: 2400,
         panels: { left: true, right: true, front: true, back: true } }],
@@ -355,7 +355,7 @@ describe('stable and cladding symbols (review minor)', () => {
 
   it('gives a cladding band batten lines across its run', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'hc-1', kind: 'horizontal_cladding' as const, wall: 'front' as const, from: 0, to: 4200 }],
     };
     const placed = buildPlanGeometry(config).options[0];

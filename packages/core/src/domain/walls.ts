@@ -15,7 +15,7 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import type { ShedConfig, WallSide } from './types';
+import type { ShedConfig, WallSide, DimensionedShed } from './types';
 import { resolveOpeningPlacement, wallLength } from './placement';
 
 /** A rectangular hole cut into a wall, in wall-local millimetres. */
@@ -58,7 +58,7 @@ const SIDES: WallSide[] = ['front', 'back', 'left', 'right'];
  * than outside it and its openings line up with the 2D plan.
  */
 function wallTransform(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   side: WallSide,
 ): { position: [number, number, number]; rotationY: number } {
   const { span, length } = shed;
@@ -93,7 +93,7 @@ function clamp(value: number, min: number, max: number): number {
  * legal even when the opening does not fit; the user-facing warning for a
  * non-fitting opening is raised by `plan.ts`.
  */
-export function buildWallGeometries(shed: ShedConfig): WallGeometry[] {
+export function buildWallGeometries(shed: DimensionedShed): WallGeometry[] {
   return SIDES.map((side) => {
     const width = wallLength(shed, side);
     const holes: WallHole[] = [];

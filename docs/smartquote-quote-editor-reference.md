@@ -3684,6 +3684,78 @@ Sửa bằng `expect.poll(...).toBe('12000')` — assert giá trị đã ổn đ
 
 ---
 
+## 13.38 Quote mới **không có nhà**: ba chiều là `null`, và panel là cùng một record (2026-11-12)
+
+Yêu cầu: *"như hiện tại version 2 này thì section sitecheck bên trên có giá trị default rồi cho Go to
+shedsafe (thì nó đi ngược lại mong muốn của client là các info đó phải được client nhập vào)"*, và
+*"các info cơ bản này nó bị duplicate và sync với trong shed parameter"*.
+
+Tôi đã làm panel (trống + gate) nhưng **chưa** làm hai điều này. Đợt này làm cả hai, cộng một điều bạn
+nêu rõ: **new quote không có default sẵn**.
+
+### 13.38.1 `span`/`length`/`height` thành `number | null`
+
+`DEFAULT_SHED` từng mang **12 000 × 24 000 × 4 200** — những con số không có nguồn. Hệ quả đo được:
+một quote mới **có thể báo giá**, và `Go to ShedSafe` **gửi ba số đó** để ShedSafe chứng nhận.
+
+`null` chứ không `0`: `0` là một chiều ai đó gõ, và đúng vì không phân biệt được nên desktop cần hack
+`Text == "0"`. `null` chỉ có thể nghĩa "chưa nêu", nên mọi cổng là `=== null`.
+
+**`DimensionedShed`** (`types.ts`) = `ShedConfig` + ba chiều là `number`, với `isDimensioned()` và
+`withDimensions()`. Mọi hàm cần số nhận kiểu này, nên câu hỏi "nhà này đã được mô tả chưa?" do
+**compiler** hỏi ở mỗi cửa vào, thay vì rải `?? 0` khắp nơi.
+
+**`TEST_SHED`** là nhà 12 × 24 m cho test và cho bản vẽ mẫu — tên nói đúng nó là gì (một toà nhà để
+test), không giả làm default.
+
+### 13.38.2 Panel và Shed group là **một** record
+
+Trước: panel giữ bản sao riêng, chỉ gửi ShedSafe. Đó chính là lỗi `pinnedFor` dự án đã sửa một lần —
+pin nhà 10 m cho báo giá 12 m, màn hình hiện cả hai và không con số nào sai một mình.
+
+Desktop làm bằng **một store**: `UcShowBuildingParameterss.SyncToStructureData()` ghi vào
+`BlocStructureData`, cùng chỗ Shed group đọc.
+
+Nay panel đọc `config` và ghi qua `applyPartial`. Đo trong trình duyệt: gõ span trong panel → Shed group
+đổi theo; gõ span trong Shed group → panel đổi theo; và **Average height** hai nơi bằng nhau vì cùng
+một phép tính.
+
+**Lỗi tự gây ra và đã sửa:** `setParams` đầu tiên nhận cả 5 giá trị và ghi cùng lúc
+(`setParams({...params, span})`). `params` dẫn xuất từ store, nên giữa hai lần gõ ở hai ô khác nhau,
+lần thứ hai đọc snapshot **cũ** và ghi ô thứ nhất về giá trị cũ. Đo được: gõ span → height → length chỉ
+còn length. Sửa thành `setParam(key, value)` — một ô một lần ghi.
+
+Nút **"Copy from the quote" bị bỏ**: panel và quote đã là một, nên nút đó chỉ chép số lên chính nó.
+
+### 13.38.3 Bốn nơi phải quyết định "chưa có số thì hiện gì"
+
+| Nơi | Hành vi |
+|---|---|
+| `validation.ts` | ba chiều là **required**, mỗi cái một câu nói vì sao ("giá được dựng từ kích thước") |
+| `Render2D` | khung rỗng + "Nothing to draw yet" + liệt kê cái nào chưa nhập |
+| `Render3D` | như trên ("the model is built from those three numbers") |
+| `evaluateQuote` | trả **`null`** — không có giá giả; API **422** kèm path từng field; tài liệu khách ném `RevisionHasNoBuilding` |
+| Store actions | `addOpening`/`addOption`/`addMezzanine`/… từ chối kèm câu trong `notices`: một cánh cửa được đặt **lên** một toà nhà |
+| `calculate` (client) | không gọi API khi thiếu số — không round trip, không 422 cho điều form đã nói |
+
+**Auto-price khi đủ số** (mới): auto-price cũ chỉ chạy một lần lúc mount, khi config còn trống — nên
+nó rơi vào cổng và không làm gì, và step 2/3 **khoá vĩnh viễn**. Nay có thêm một effect bắn đúng lúc
+ba chiều vừa đủ.
+
+### 13.38.4 Một lỗi React thật, tìm ra trong trình duyệt
+
+`Render2D` early-return trạng thái rỗng **trước** các `useShedStore` → React từ chối render:
+*"Rendered more hooks than during the previous render"*, trang trắng. Sửa bằng cách tách
+`Render2DCanvas` (nhận `DimensionedShed`, giữ hook vô điều kiện) và một wrapper chọn nhánh. Đây là
+loại lỗi 1 456 unit test không thấy.
+
+### Kiểm chứng
+
+**0 lỗi typecheck** (12 package), **1 456 unit test**, **41/41 e2e** chạy hai lần liên tiếp. Hai e2e mới:
+quote mới trống + lý do; panel và Shed group một record **hai chiều** kèm Average height khớp.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -3692,7 +3764,7 @@ Sửa bằng `expect.poll(...).toBe('12000')` — assert giá trị đã ổn đ
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | **39 passed + 1 skipped** on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, **panel Building parameters mở trống + số dưới 100 bị từ chối + Copy from the quote**, **gate mở khi panel đủ (tài khoản salesman thật — skip trên E2ESHEDS)**, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | **41 passed + 1 skipped** on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, **panel Building parameters mở trống + số dưới 100 bị từ chối + Copy from the quote**, **gate mở khi panel đủ (tài khoản salesman thật — skip trên E2ESHEDS)**, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

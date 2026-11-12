@@ -9,7 +9,7 @@ import {
 import { DEFAULT_BOM_RULES } from '@/lib/bom/rules';
 import { readActiveBookHash, openPublishedBook } from '@/lib/pricing/publish';
 import { createLookup } from '@/lib/pricing/lookup';
-import { normaliseShedConfig } from '@/domain/schema';
+import { normaliseDimensionedShed } from '@/domain/schema';
 import { buildBomWithEvidence } from '@/lib/bom/build';
 
 /**
@@ -68,7 +68,7 @@ describe('each profile changes the bill of materials', () => {
   const hash = readActiveBookHash(root);
 
   /** The building every profile is compared on. */
-  const shed = normaliseShedConfig({
+  const shed = normaliseDimensionedShed({
     structureType: 'gable',
     span: 9000,
     length: 24000,
@@ -95,7 +95,7 @@ describe('each profile changes the bill of materials', () => {
     options: [],
     openings: [],
     charges: [],
-  } as never);
+  } as never)!;
 
   const totalFor = (profileIndex: number): number | null => {
     if (hash === null) return null;
@@ -123,7 +123,7 @@ describe('each profile changes the bill of materials', () => {
       const total = totalFor(index);
       expect(total, FACTORY_PROFILES[index].id).not.toBe(base);
     }
-  });
+  })!;
 
   it('moves in the direction its summary claims', () => {
     const base = totalFor(0);
@@ -135,5 +135,5 @@ describe('each profile changes the bill of materials', () => {
     const heavy = totalFor(2);
     expect(light!).toBeLessThan(base);
     expect(heavy!).toBeGreaterThan(base);
-  });
+  })!;
 });

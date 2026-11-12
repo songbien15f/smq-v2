@@ -31,7 +31,7 @@
  * Pure TypeScript: no DB, no HTTP, no React.
  */
 
-import type { Opening, ShedConfig } from '@/domain/types';
+import type { Opening, ShedConfig, DimensionedShed } from '@/domain/types';
 
 /** One run of material a sliding door adds. */
 export interface SlidingDoorMember {
@@ -79,7 +79,7 @@ export function splitRun(lengthMm: number, stockLengthMm = STOCK_LENGTH_MM): {
  * beam spans the width — the track's own length is `trackWidth` on the opening, and the
  * beam has to carry it.
  */
-export function slidingDoorMembers(shed: ShedConfig, opening: Opening): SlidingDoorMember[] {
+export function slidingDoorMembers(shed: DimensionedShed, opening: Opening): SlidingDoorMember[] {
   if (opening.type !== 'sliding_door') return [];
 
   // A door with no track is a hole with a leaf in it: the beam still carries the wall
@@ -121,6 +121,6 @@ export function headFlashingType(opening: Opening): 'SLD_SINGLE_HEAD_FLASHING' |
 }
 
 /** Every sliding door's members on a building. */
-export function buildingSlidingDoors(shed: ShedConfig): SlidingDoorMember[] {
+export function buildingSlidingDoors(shed: DimensionedShed): SlidingDoorMember[] {
   return shed.openings.flatMap((opening) => slidingDoorMembers(shed, opening));
 }

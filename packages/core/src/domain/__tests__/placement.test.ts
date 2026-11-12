@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { resolveOpeningPlacement, wallLength, placementToPlanRect, planPointToWallU, constrainOpeningU, openingAtPlanPoint, moveOpeningTo, displacementToDu, wallDisplacement, nearestWall, dragGuide, pointInFootprint, openingGrabRect, optionAtPlanPoint, constrainOptionDrag, moveOptionTo } from '../placement';
 import { buildPlanGeometry } from '../plan';
 import { resolveOption } from '../options';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import type { Opening, ShedOption } from '../types';
 
 const base: Opening = {
@@ -12,78 +12,78 @@ const base: Opening = {
 
 describe('wallLength', () => {
   it('uses span for front/back and length for left/right', () => {
-    expect(wallLength(DEFAULT_SHED, 'front')).toBe(12000);
-    expect(wallLength(DEFAULT_SHED, 'back')).toBe(12000);
-    expect(wallLength(DEFAULT_SHED, 'left')).toBe(24000);
-    expect(wallLength(DEFAULT_SHED, 'right')).toBe(24000);
+    expect(wallLength(TEST_SHED, 'front')).toBe(12000);
+    expect(wallLength(TEST_SHED, 'back')).toBe(12000);
+    expect(wallLength(TEST_SHED, 'left')).toBe(24000);
+    expect(wallLength(TEST_SHED, 'right')).toBe(24000);
   });
 });
 
 describe('resolveOpeningPlacement', () => {
   it('centres the opening', () => {
-    const p = resolveOpeningPlacement({ ...base, width: 4200, align: 'center' }, DEFAULT_SHED);
+    const p = resolveOpeningPlacement({ ...base, width: 4200, align: 'center' }, TEST_SHED);
     expect(p.u).toBe(3900);
     expect(p.valid).toBe(true);
   });
   it('aligns left and right', () => {
-    expect(resolveOpeningPlacement({ ...base, align: 'left' }, DEFAULT_SHED).u).toBe(0);
-    expect(resolveOpeningPlacement({ ...base, align: 'right' }, DEFAULT_SHED).u).toBe(11100);
+    expect(resolveOpeningPlacement({ ...base, align: 'left' }, TEST_SHED).u).toBe(0);
+    expect(resolveOpeningPlacement({ ...base, align: 'right' }, TEST_SHED).u).toBe(11100);
   });
   it('uses the explicit offset for custom alignment', () => {
-    const p = resolveOpeningPlacement({ ...base, align: 'custom', offset: 500 }, DEFAULT_SHED);
+    const p = resolveOpeningPlacement({ ...base, align: 'custom', offset: 500 }, TEST_SHED);
     expect(p.u).toBe(500);
     expect(p.valid).toBe(true);
   });
   it('treats a null custom offset as zero', () => {
-    expect(resolveOpeningPlacement({ ...base, align: 'custom', offset: null }, DEFAULT_SHED).u).toBe(0);
+    expect(resolveOpeningPlacement({ ...base, align: 'custom', offset: null }, TEST_SHED).u).toBe(0);
   });
   it('flags an opening wider than its wall instead of dropping it', () => {
-    const p = resolveOpeningPlacement({ ...base, width: 13000, align: 'center' }, DEFAULT_SHED);
+    const p = resolveOpeningPlacement({ ...base, width: 13000, align: 'center' }, TEST_SHED);
     expect(p.valid).toBe(false);
     expect(p.reason).toBeTruthy();
   });
   it('flags an opening taller than the wall', () => {
-    const p = resolveOpeningPlacement({ ...base, height: 5000 }, DEFAULT_SHED);
+    const p = resolveOpeningPlacement({ ...base, height: 5000 }, TEST_SHED);
     expect(p.valid).toBe(false);
   });
   it('flags a custom offset that pushes the opening past the wall end', () => {
-    const p = resolveOpeningPlacement({ ...base, align: 'custom', offset: 11500 }, DEFAULT_SHED);
+    const p = resolveOpeningPlacement({ ...base, align: 'custom', offset: 11500 }, TEST_SHED);
     expect(p.valid).toBe(false);
   });
 });
 
 describe('placementToPlanRect', () => {
   it('places a centred front opening on the y=0 edge', () => {
-    const r = placementToPlanRect({ ...base, width: 4200, align: 'center' }, DEFAULT_SHED);
+    const r = placementToPlanRect({ ...base, width: 4200, align: 'center' }, TEST_SHED);
     expect(r).toEqual({ x: 3900, y: 0, width: 4200, height: 0 });
   });
   it('mirrors the offset on the back wall (outside view)', () => {
-    const r = placementToPlanRect({ ...base, wall: 'back', align: 'custom', offset: 500 }, DEFAULT_SHED);
+    const r = placementToPlanRect({ ...base, wall: 'back', align: 'custom', offset: 500 }, TEST_SHED);
     expect(r.x).toBe(12000 - 500 - 900);
     expect(r.y).toBe(24000);
   });
   it('mirrors the offset on the left wall (outside view)', () => {
-    const r = placementToPlanRect({ ...base, wall: 'left', align: 'custom', offset: 500 }, DEFAULT_SHED);
+    const r = placementToPlanRect({ ...base, wall: 'left', align: 'custom', offset: 500 }, TEST_SHED);
     expect(r.y).toBe(24000 - 500 - 900);
     expect(r.x).toBe(0);
   });
   it('places a right-wall opening from the front corner', () => {
-    const r = placementToPlanRect({ ...base, wall: 'right', align: 'custom', offset: 500 }, DEFAULT_SHED);
+    const r = placementToPlanRect({ ...base, wall: 'right', align: 'custom', offset: 500 }, TEST_SHED);
     expect(r.y).toBe(500);
     expect(r.x).toBe(12000);
   });
   it('puts a front/back opening extent in width and a side-wall extent in height', () => {
-    const front = placementToPlanRect({ ...base, width: 4200, align: 'center' }, DEFAULT_SHED);
+    const front = placementToPlanRect({ ...base, width: 4200, align: 'center' }, TEST_SHED);
     expect(front.width).toBe(4200);
     expect(front.height).toBe(0);
-    const left = placementToPlanRect({ ...base, wall: 'left', width: 900, align: 'custom', offset: 500 }, DEFAULT_SHED);
+    const left = placementToPlanRect({ ...base, wall: 'left', width: 900, align: 'custom', offset: 500 }, TEST_SHED);
     expect(left.width).toBe(0);
     expect(left.height).toBe(900);
   });
 });
 
 describe('planPointToWallU is the inverse of placementToPlanRect', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000 };
   const walls = ['front', 'back', 'left', 'right'] as const;
 
   it('round-trips for all four walls', () => {
@@ -107,7 +107,7 @@ describe('planPointToWallU is the inverse of placementToPlanRect', () => {
 });
 
 describe('constrainOpeningU', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000 };
   const door: Opening = { id: 'd', type: 'pa_door', width: 900, height: 2100, sill: 0,
     wall: 'front', align: 'custom', offset: 0, swing: null, track: null };
 
@@ -125,7 +125,7 @@ describe('constrainOpeningU', () => {
 });
 
 describe('openingAtPlanPoint', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000, openings: [
+  const shed = { ...TEST_SHED, span: 12000, length: 24000, openings: [
     { id: 'd1', type: 'roller_door' as const, width: 4200, height: 3600, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
     { id: 'd2', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
@@ -154,7 +154,7 @@ describe('openingAtPlanPoint', () => {
   });
 
   it('hits a back-wall opening', () => {
-    const s = { ...DEFAULT_SHED, span: 12000, length: 24000, openings: [
+    const s = { ...TEST_SHED, span: 12000, length: 24000, openings: [
       { id: 'b1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'back' as const, align: 'center' as const, offset: null, swing: null, track: null },
     ]};
@@ -164,7 +164,7 @@ describe('openingAtPlanPoint', () => {
   });
 
   it('hits a right-wall opening', () => {
-    const s = { ...DEFAULT_SHED, span: 12000, length: 24000, openings: [
+    const s = { ...TEST_SHED, span: 12000, length: 24000, openings: [
       { id: 'r1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'right' as const, align: 'custom' as const, offset: 1000, swing: null, track: null },
     ]};
@@ -176,14 +176,14 @@ describe('openingAtPlanPoint', () => {
   it('gives the later opening priority when two overlap', () => {
     const door = (id: string) => ({ id, type: 'pa_door' as const, width: 2000, height: 2100, sill: 0,
       wall: 'front' as const, align: 'custom' as const, offset: 500, swing: null, track: null });
-    const g = buildPlanGeometry({ ...DEFAULT_SHED, openings: [door('first'), door('second')] });
+    const g = buildPlanGeometry({ ...TEST_SHED, openings: [door('first'), door('second')] });
     // Both sit at the same offset and overlap entirely; the last drawn wins.
     expect(openingAtPlanPoint(g, { x: 1500, y: 0 })!.id).toBe('second');
   });
 });
 
 describe('pointInFootprint', () => {
-  const g = buildPlanGeometry(DEFAULT_SHED); // span 12000, length 24000, origin front-left
+  const g = buildPlanGeometry(TEST_SHED); // span 12000, length 24000, origin front-left
 
   it('is true inside the footprint', () => {
     expect(pointInFootprint(g, { x: 6000, y: 12000 })).toBe(true);
@@ -234,7 +234,7 @@ describe('openingGrabRect', () => {
     const grab = openingGrabRect(rect);
     const inside = (p: { x: number; y: number }) =>
       p.x >= grab.x && p.x <= grab.x + grab.width && p.y >= grab.y && p.y <= grab.y + grab.height;
-    const shed = { ...DEFAULT_SHED, openings: [
+    const shed = { ...TEST_SHED, openings: [
       { id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
     ]};
@@ -246,7 +246,7 @@ describe('openingGrabRect', () => {
 });
 
 describe('moveOpeningTo', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000, openings: [
+  const shed = { ...TEST_SHED, span: 12000, length: 24000, openings: [
     { id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
   ]};
@@ -263,7 +263,7 @@ describe('moveOpeningTo', () => {
 });
 
 describe('wall displacement helpers (spec R4)', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000 };
   const walls = ['front', 'back', 'left', 'right'] as const;
 
   it('round-trips displacement to a u change for all four walls', () => {
@@ -307,7 +307,7 @@ describe('wall displacement helpers (spec R4)', () => {
 });
 
 describe('nearestWall', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000 };
 
   it('picks the front wall for a point near y = 0', () => {
     expect(nearestWall(shed, { x: 6000, y: 500 })).toBe('front');
@@ -325,7 +325,7 @@ describe('nearestWall', () => {
   it('measures each wall against the shed it is given, not a fixed size', () => {
     // A narrow, long shed: x = 1000 is nearer the left edge (1000) than the
     // right (span − x = 3000), while the front/back lines are 10000 mm away.
-    const narrow = { ...DEFAULT_SHED, span: 4000, length: 20000 };
+    const narrow = { ...TEST_SHED, span: 4000, length: 20000 };
     expect(nearestWall(narrow, { x: 1000, y: 10000 })).toBe('left');
     expect(nearestWall(narrow, { x: 3000, y: 10000 })).toBe('right');
   });
@@ -337,7 +337,7 @@ describe('nearestWall', () => {
 });
 
 describe('dragGuide', () => {
-  const shed = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+  const shed = { ...TEST_SHED, span: 12000, length: 24000 };
   const door: Opening = { id: 'd', type: 'pa_door', width: 900, height: 2100, sill: 0,
     wall: 'front', align: 'custom', offset: 0, swing: null, track: null };
 
@@ -395,7 +395,7 @@ describe('dragGuide', () => {
 
 describe('option hit-testing and dragging', () => {
   const withOptions = {
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     openings: [
       { id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
@@ -436,19 +436,19 @@ describe('option hit-testing and dragging', () => {
     const option: ShedOption = {
       id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900,
     };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: -5000, y: -5000 });
-    const resolved = resolveOption(moved, DEFAULT_SHED);
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: -5000, y: -5000 });
+    const resolved = resolveOption(moved, TEST_SHED);
     expect(resolved.rect.x).toBeGreaterThanOrEqual(0);
     expect(resolved.rect.y).toBeGreaterThanOrEqual(0);
-    expect(resolved.rect.x + resolved.rect.width).toBeLessThanOrEqual(DEFAULT_SHED.span);
+    expect(resolved.rect.x + resolved.rect.width).toBeLessThanOrEqual(TEST_SHED.span);
   });
 
   it('moves a skylight to the bay under the pointer', () => {
     const option: ShedOption = {
       id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900,
     };
-    // DEFAULT_SHED is 24000 long with 4 bays of 6000; y = 15000 is bay 2.
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6000, y: 15000 });
+    // TEST_SHED is 24000 long with 4 bays of 6000; y = 15000 is bay 2.
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6000, y: 15000 });
     expect(moved).toMatchObject({ kind: 'skylight', bay: 2 });
   });
 
@@ -456,7 +456,7 @@ describe('option hit-testing and dragging', () => {
     const option: ShedOption = {
       id: 'og-1', kind: 'outrigger', wall: 'front', bay: 0, length: 1900,
     };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6100, y: 0 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6100, y: 0 });
     expect(moved).toMatchObject({ kind: 'outrigger', bay: 1 });
   });
 
@@ -465,12 +465,12 @@ describe('option hit-testing and dragging', () => {
       id: 'aw-1', kind: 'awning', wall: 'front', align: 'center', offset: null,
       width: 3000, depth: 1000,
     };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 1000, y: 0 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 1000, y: 0 });
     expect(moved).toMatchObject({ kind: 'awning', align: 'custom' });
   });
 
   it('returns a patch that moves the option, or null for an unknown id', () => {
-    const config = { ...DEFAULT_SHED, options: [
+    const config = { ...TEST_SHED, options: [
       { id: 'sk-1', kind: 'skylight' as const, bay: 0, alongBay: 0.5, width: 900, height: 900 },
     ]};
     const moved = moveOptionTo(config, 'sk-1', { x: 6000, y: 15000 });
@@ -480,14 +480,14 @@ describe('option hit-testing and dragging', () => {
 
   it('leaves a gable infill where it is when dragged', () => {
     const option: ShedOption = { id: 'gi-1', kind: 'gable_infill', end: 'front' };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 100, y: 100 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 100, y: 100 });
     expect(moved).toEqual(option);
   });
 });
 
 describe('option drag stability (review I6, I7)', () => {
   it('keeps an awning on its wall when dragged inward past the mid-line', () => {
-    const config = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+    const config = { ...TEST_SHED, span: 12000, length: 24000 };
     const option: ShedOption = {
       id: 'aw-1', kind: 'awning', wall: 'front', align: 'center', offset: null,
       width: 3000, depth: 1000,
@@ -497,14 +497,14 @@ describe('option drag stability (review I6, I7)', () => {
   });
 
   it('keeps an outrigger on its wall when dragged inward', () => {
-    const config = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+    const config = { ...TEST_SHED, span: 12000, length: 24000 };
     const option: ShedOption = { id: 'og-1', kind: 'outrigger', wall: 'front', bay: 0, length: 1900 };
     const moved = constrainOptionDrag(config, option, { x: 6000, y: 12000 });
     expect(moved).toMatchObject({ kind: 'outrigger', wall: 'front' });
   });
 
   it('resolves an awning dragged to where it already is to the same anchor', () => {
-    const config = { ...DEFAULT_SHED, span: 12000, length: 24000 };
+    const config = { ...TEST_SHED, span: 12000, length: 24000 };
     const option: ShedOption = {
       id: 'aw-1', kind: 'awning', wall: 'front', align: 'center', offset: null,
       width: 3000, depth: 1000,
@@ -527,31 +527,31 @@ describe('dragging the remaining kinds', () => {
       width: 3000, depth: 2400, height: 2400,
       panels: { left: true, right: true, front: true, back: true },
     };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 1000, y: 0 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 1000, y: 0 });
     expect(moved).toMatchObject({ kind: 'stable', wall: 'front', align: 'custom' });
   });
 
   it('moves a carry beam between bays', () => {
     const option: ShedOption = { id: 'cb-1', kind: 'carry_beam', wall: 'front', beginBay: 0, openingId: null };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6000, y: 15000 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6000, y: 15000 });
     expect(moved).toMatchObject({ kind: 'carry_beam', beginBay: 2 });
   });
 
   it('moves a cantilever between bays', () => {
     const option: ShedOption = { id: 'cl-1', kind: 'cantilever', wall: 'front', bay: 0, length: 1200 };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6000, y: 15000 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6000, y: 15000 });
     expect(moved).toMatchObject({ kind: 'cantilever', bay: 2 });
   });
 
   it('slides a cladding band without changing its heights', () => {
     const option: ShedOption = { id: 'hc-1', kind: 'horizontal_cladding', wall: 'front', from: 500, to: 3000 };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6000, y: 12000 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6000, y: 12000 });
     expect(moved).toMatchObject({ kind: 'horizontal_cladding', from: 500, to: 3000 });
   });
 
   it('leaves an overhang depth alone while dragging', () => {
     const option: ShedOption = { id: 'oh-1', kind: 'overhang', wall: 'front', depth: 600 };
-    const moved = constrainOptionDrag(DEFAULT_SHED, option, { x: 6000, y: 12000 });
+    const moved = constrainOptionDrag(TEST_SHED, option, { x: 6000, y: 12000 });
     expect(moved).toMatchObject({ kind: 'overhang', depth: 600 });
   });
 });

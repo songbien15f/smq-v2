@@ -23,7 +23,7 @@
  * or `Object.keys` of a hash.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { optimise } from './optimise';
 import {
@@ -150,7 +150,7 @@ export interface BomWithEvidence {
  * still *indicative*: a reader who sees a firm number and no caveat has been
  * told something untrue about the frame.
  */
-function standingAssumptions(shed: ShedConfig, frame: OptimisedFrame): EstimateIssue[] {
+function standingAssumptions(shed: DimensionedShed, frame: OptimisedFrame): EstimateIssue[] {
   const issues: EstimateIssue[] = [];
 
   // The frame assumption is only true when the book has no structure-to-section
@@ -207,7 +207,7 @@ function standingAssumptions(shed: ShedConfig, frame: OptimisedFrame): EstimateI
 
 /** The whole bill of materials for a shed. */
 export function buildBom(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
 ): BomResult {
@@ -222,7 +222,7 @@ export function buildBom(
  * carries a unit constant of its own.
  */
 export function buildBomWithEvidence(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   lookup: PriceLookup,
   contracts: Record<string, MaterialUnitContract> = DEFAULT_CONTRACTS,
   rules: BomRules = DEFAULT_BOM_RULES,

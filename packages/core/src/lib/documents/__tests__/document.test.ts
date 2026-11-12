@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import { normaliseShedConfig } from '@/domain/schema';
+import { TEST_SHED } from '@/domain/defaults';
+import {  normaliseShedConfig, normaliseDimensionedShed } from '@/domain/schema';
 import { toCustomerDocument } from '../projection';
 import { renderQuoteHtml } from '../html';
 import type { FrozenRevision } from '../types';
@@ -26,8 +26,8 @@ function revision(patch: Partial<FrozenRevision> = {}): FrozenRevision {
     revision: 3,
     createdAt: '2026-11-01T02:03:04.000Z',
     validUntil: '2026-12-01',
-    config: normaliseShedConfig({
-      ...DEFAULT_SHED,
+    config: normaliseDimensionedShed({
+      ...TEST_SHED,
       structureType: 'gable',
       span: 9000,
       length: 18000,
@@ -40,7 +40,7 @@ function revision(patch: Partial<FrozenRevision> = {}): FrozenRevision {
         { id: 'o1', type: 'roller_door', wall: 'front', u: 4500, width: 3000, height: 2400 },
         { id: 'o2', type: 'window', wall: 'left', u: 3000, width: 1200, height: 900 },
       ],
-    }),
+    })!,
     price: {
       contractCents: 2_750_000,
       gstCents: 250_000,
@@ -174,10 +174,10 @@ describe('the projection', () => {
     const base = revision();
     const document = toCustomerDocument({
       ...base,
-      config: normaliseShedConfig({
+      config: normaliseDimensionedShed({
         ...base.config,
         options: [{ id: 'dw-1', kind: 'dividing_wall', axis: 'x', at: 4000, height: 3000 }],
-      }),
+      })!,
     });
 
     expect(document.building.colourRows.map((entry) => entry.label)).toContain('Dividing wall');
@@ -277,8 +277,8 @@ describe('the HTML', () => {
 
 describe('catalogue accessories', () => {
   it('names the accessory and its quantity, not its kind', () => {
-    const config = normaliseShedConfig({
-      ...DEFAULT_SHED,
+    const config = normaliseDimensionedShed({
+      ...TEST_SHED,
       options: [
         {
           kind: 'misc_option',
@@ -288,7 +288,7 @@ describe('catalogue accessories', () => {
           unit: 'roll',
         },
       ],
-    });
+    })!;
 
     const document = toCustomerDocument(revision({ config }));
     expect(document.inclusions).toContain('Insulation - Foil 1200w × 2');

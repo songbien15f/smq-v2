@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
+import { TEST_SHED } from '@/domain/defaults';
 import type { MiscOption } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { miscOptionLines } from '../groups/misc';
@@ -30,7 +30,7 @@ const misc = (patch: Partial<MiscOption> = {}): MiscOption => ({
 
 describe('miscOptionLines', () => {
   it('prices one line from the catalogue, quantity × unit price', () => {
-    const shed = { ...DEFAULT_SHED, options: [misc({ quantity: 3 })] };
+    const shed = { ...TEST_SHED, options: [misc({ quantity: 3 })] };
     const { lines, unknown } = miscOptionLines(
       shed,
       lookupFor({ Insulation: { code: 'INS', unitCost: 1250, massKg: 2 } }),
@@ -51,7 +51,7 @@ describe('miscOptionLines', () => {
   });
 
   it('reports a name the book does not price instead of inventing a line', () => {
-    const shed = { ...DEFAULT_SHED, options: [misc({ name: 'Unobtainium' })] };
+    const shed = { ...TEST_SHED, options: [misc({ name: 'Unobtainium' })] };
     const { lines, unknown } = miscOptionLines(shed, lookupFor({}));
     expect(lines).toEqual([]);
     expect(unknown).toEqual(['Unobtainium']);
@@ -59,7 +59,7 @@ describe('miscOptionLines', () => {
 
   it('skips a blank name and falls back to `ea` for an unknown unit', () => {
     const shed = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [misc({ name: '  ' }), misc({ id: 'mo-2', unit: 'furlong' })],
     };
     const { lines, unknown } = miscOptionLines(

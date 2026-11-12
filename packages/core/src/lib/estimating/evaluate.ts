@@ -20,7 +20,8 @@
  * may see a price is not necessarily a role that may set its own.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { DimensionedShed, ShedConfig } from '@/domain/types';
+import { withDimensions } from '@/domain/types';
 import { normaliseShedConfig } from '@/domain/schema';
 import { buildBomWithEvidence } from '@/lib/bom/build';
 import { DEFAULT_CONTRACTS } from '@/lib/pricing/catalogueManifest';
@@ -40,8 +41,22 @@ export function evaluateQuote(
   config: ShedConfig,
   input: Omit<PriceInput, 'margin'>,
   book: PricingContext,
-): Evaluation {
+): Evaluation | null {
   const normalised = normaliseShedConfig(config);
+  /*
+   * **No dimensions, no price.**
+   *
+   * A shed without span, height and length is one nobody has described: there is no frame to size,
+   * no sheets to count and no building to ask ShedSafe to rate. The old code priced it anyway from
+   * `DEFAULT_SHED`, which is how a quote could carry 12 000 × 24 000 × 4 200 for a shed the customer
+   * had never stated.
+   *
+   * `null` rather than a zero-priced evaluation: a `$0` quote is a quotable answer, and this is not
+   * one. The caller decides what to show — the editor says which fields are missing, and the API
+   * answers 422 — but nothing downstream can mistake the absence for a price.
+   */
+  const dimensions = withDimensions(normalised);
+  if (dimensions === null) return null;
   // The book prices some building families apart — a gable carport carries a
   // higher multiplier than a gable shed of the same size — so the margin is a
   // question about *this* config, not a constant on the context.
@@ -52,7 +67,7 @@ export function evaluateQuote(
   // how many purlin rows a roof needs, and a quote has to use the one its company
   // buys from.
   const built = buildBomWithEvidence(
-    normalised,
+    dimensions,
     book.lookup,
     DEFAULT_CONTRACTS,
     book.policy.bom?.rules,

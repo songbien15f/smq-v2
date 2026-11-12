@@ -25,7 +25,7 @@
  * - **Bolts**: four per column, which is the pinned-footing case.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PackRow, PriceLookup } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -89,7 +89,7 @@ function packLine(
 }
 
 /** Flashing metres, which the flashing screw count needs. */
-function flashingMetres(shed: ShedConfig): number {
+function flashingMetres(shed: DimensionedShed): number {
   const fallsAlongLength =
     shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
   const barge = (shed.span / 1000) * (fallsAlongLength ? 1 : 2);
@@ -101,7 +101,7 @@ function flashingMetres(shed: ShedConfig): number {
 
 /** The bolt and screw lines. */
 export function fixingLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,

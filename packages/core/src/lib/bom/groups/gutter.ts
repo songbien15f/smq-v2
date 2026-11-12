@@ -12,7 +12,7 @@
  * a gutter line can never appear under Flashing.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -32,7 +32,7 @@ const DEFAULT_GUTTER_SIZE = '115 Quad';
 const DEFAULT_DOWNPIPE_KIND = 'PVC';
 
 /** How many brackets hold the gutter up, which the fixing group also needs. */
-export function gutterBracketCount(shed: ShedConfig, rules: BomRules = DEFAULT_BOM_RULES): number {
+export function gutterBracketCount(shed: DimensionedShed, rules: BomRules = DEFAULT_BOM_RULES): number {
   const fallsAlongLength =
     shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
   const eaves = fallsAlongLength ? 1 : 2;
@@ -40,7 +40,7 @@ export function gutterBracketCount(shed: ShedConfig, rules: BomRules = DEFAULT_B
 }
 
 /** Metres of gutter along one eave. */
-function eaveMetres(shed: ShedConfig): number {
+function eaveMetres(shed: DimensionedShed): number {
   return shed.length / 1000;
 }
 
@@ -95,7 +95,7 @@ function eachLine(
 
 /** The gutter, bracket and downpipe lines. */
 export function gutterLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
@@ -158,7 +158,7 @@ export function gutterLines(
 
 /** The flashing lines: barge, fascia and corners. */
 export function flashingLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   // Flashing runs are measured from the roof's geometry and priced by profile and

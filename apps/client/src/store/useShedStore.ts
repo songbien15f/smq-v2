@@ -14,7 +14,7 @@
 import { create } from 'zustand';
 import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from '@sq/core/domain';
 import { newCharge } from '@sq/core/domain';
-import { defaultOptionsFor, normaliseOption, refusePlacement } from '@sq/core/domain';
+import { defaultOptionsFor, normaliseOption, refusePlacement, withDimensions } from '@sq/core/domain';
 import { clampNotices, normaliseShedConfig, placeOpening } from '@sq/core/domain';
 import { skylightOnSheet, snapSkylightToSheet } from '@sq/core/domain';
 import type { Selection } from '@sq/core/domain';
@@ -288,6 +288,20 @@ const INITIAL_STATE = {
   notices: [] as string[],
 };
 
+/**
+ * True when the building lacks the three dimensions every placement rule needs.
+ *
+ * A door, a skylight or a mezzanine is placed **on a building**. Before the operator states a span
+ * there is no wall, no roof plane and no corner, so the rules that position it have nothing to
+ * measure — and the desktop's panel is empty at that moment too.
+ *
+ * Every action that reaches those rules returns early and says so, rather than letting `null`
+ * arithmetic produce a placement at mm 0 that looks deliberate.
+ */
+function needsBuilding(config: ShedConfig): boolean {
+  return config.span === null || config.length === null || config.height === null;
+}
+
 export const useShedStore = create<ShedState>()((set, get) => ({
   ...INITIAL_STATE,
 
@@ -349,6 +363,10 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   patchOpening(id, patch) {
+    if (needsBuilding(get().config)) {
+      set({ notices: ['Enter the building’s span, length and wall height before placing anything on the plan.'] });
+      return;
+    }
     // One `applyPartial`, therefore exactly one history entry, normalised.
     get().applyPartial({
       openings: get().config.openings.map((opening) =>
@@ -358,6 +376,10 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addOpening(opening) {
+    if (needsBuilding(get().config)) {
+      set({ notices: ['Enter the building’s span, length and wall height before adding a door or window.'] });
+      return;
+    }
     const id = opening?.id ?? newOpeningId();
     const next: Opening = { ...defaultOpening(id), ...opening, id };
 
@@ -367,7 +389,9 @@ export const useShedStore = create<ShedState>()((set, get) => ({
      * same "GO WITH …" the desktop showed) or is refused with a sentence, so the
      * operator never finds a door on a wall the factory would not build.
      */
-    const placement = placeOpening(next, get().config);
+    const building = withDimensions(get().config);
+    if (building === null) return;
+    const placement = placeOpening(next, building);
     if (!placement.ok) {
       if ('reason' in placement) {
         set((state) => ({ notices: [...state.notices, placement.reason] }));
@@ -400,7 +424,12 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addOption(kind) {
-    const { config } = get();
+    const building = withDimensions(get().config);
+    if (building === null) {
+      set({ notices: ['Enter the building’s span, length and wall height before adding an option.'] });
+      return;
+    }
+    const config = building;
 
     /*
      * Ask the rules first, and say why when they refuse.
@@ -438,7 +467,8 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   patchOption(id, patch) {
-    const { config } = get();
+    const config = withDimensions(get().config);
+    if (config === null) return;
     const index = config.options.findIndex((option) => option.id === id);
     // A patch for an id that is no longer present is a no-op rather than a
     // history entry: the config did not change.
@@ -453,16 +483,25 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addMiscOption(input) {
+    const config = withDimensions(get().config);
+    if (config === null) {
+      set({ notices: ['Enter the building’s span, length and wall height first.'] });
+      return;
+    }
     const option = normaliseOption(
       { id: freshOptionId('misc_option'), kind: 'misc_option', ...input },
-      get().config,
+      config,
     );
-    get().applyPartial({ options: [...get().config.options, option] });
+    get().applyPartial({ options: [...config.options, option] });
     get().select({ kind: 'option', id: option.id });
   },
 
   addMezzanine(floorLoad) {
-    const { config } = get();
+    const config = withDimensions(get().config);
+    if (config === null) {
+      set({ notices: ['Enter the building’s span, length and wall height first.'] });
+      return;
+    }
     const refusal = refusePlacement('mezzanine', config);
     if (refusal !== null) {
       set({ notices: [refusal.reason] });
@@ -476,7 +515,11 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addSkylight(skylightType, coverMm) {
-    const { config } = get();
+    const config = withDimensions(get().config);
+    if (config === null) {
+      set({ notices: ['Enter the building’s span, length and wall height first.'] });
+      return;
+    }
     const refusal = refusePlacement('skylight', config);
     if (refusal !== null) {
       set({ notices: [refusal.reason] });
@@ -523,7 +566,11 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addOutrigger(height) {
-    const { config } = get();
+    const config = withDimensions(get().config);
+    if (config === null) {
+      set({ notices: ['Enter the building’s span, length and wall height first.'] });
+      return;
+    }
     const base = defaultOptionsFor('outrigger', config)[0];
     if (base === undefined) return;
     const option = normaliseOption({ ...base, height } as ShedOption, config);
@@ -532,7 +579,11 @@ export const useShedStore = create<ShedState>()((set, get) => ({
   },
 
   addAwning(scope, pitchDeg) {
-    const { config } = get();
+    const config = withDimensions(get().config);
+    if (config === null) {
+      set({ notices: ['Enter the building’s span, length and wall height first.'] });
+      return;
+    }
     const walls =
       scope === 'both' ? (['front', 'back'] as const) : scope === 'rear' ? (['back'] as const) : (['front'] as const);
     const created = walls.flatMap((wall) =>

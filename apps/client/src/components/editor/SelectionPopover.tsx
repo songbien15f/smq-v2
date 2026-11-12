@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { describeSelection, popoverPosition, type FieldSpec } from '@sq/core/domain';
+import { describeSelection, withDimensions, popoverPosition, type FieldSpec } from '@sq/core/domain';
 import { formatDimension, parseDimension, toDisplayUnit } from '@sq/core/domain';
 import type { DisplayUnit, Opening, ShedConfig, ShedOption } from '@sq/core/domain';
 import { useShedStore } from '@/store/useShedStore';
@@ -180,7 +180,10 @@ export function SelectionFields({ onDone, hideTitle = false }: SelectionFieldsPr
   const patchOption = useShedStore((s) => s.patchOption);
   const applyPartial = useShedStore((s) => s.applyPartial);
 
-  const description = describeSelection(config, selection);
+  const building = withDimensions(config);
+  const description = building === null
+    ? { title: '', kind: 'none' as const, fields: [] as never[] }
+    : describeSelection(building, selection);
   if (description.fields.length === 0) return null;
 
   /**
@@ -279,7 +282,10 @@ export function SelectionPopover({ anchor }: SelectionPopoverProps) {
   const selection = useShedStore((s) => s.selection);
   const setEditorOpen = useShedStore((s) => s.setEditorOpen);
 
-  const description = describeSelection(config, selection);
+  const building = withDimensions(config);
+  const description = building === null
+    ? { title: '', kind: 'none' as const, fields: [] as never[] }
+    : describeSelection(building, selection);
   const open = description.fields.length > 0;
 
   // Escape closes the popover while it is open, keeping the selection so the

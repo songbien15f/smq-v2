@@ -24,7 +24,7 @@
  * Pure TypeScript: no DB, no HTTP, no framework.
  */
 
-import type { ShedConfig, SkylightOption } from '@/domain/types';
+import type { ShedConfig, SkylightOption, DimensionedShed } from '@/domain/types';
 
 /** A roof sheet as it lies on the roof, in plan millimetres along the building. */
 export interface RoofSheet {
@@ -44,7 +44,7 @@ export interface RoofSheet {
  * *nominal* cover would hang off the end of the roof on the last sheet. So the final
  * entry carries the real remaining width, not the nominal one.
  */
-export function roofSheets(shed: ShedConfig, coverMm: number): RoofSheet[] {
+export function roofSheets(shed: DimensionedShed, coverMm: number): RoofSheet[] {
   if (!(coverMm > 0) || !(shed.length > 0)) return [];
   const count = Math.ceil(shed.length / coverMm);
   const sheets: RoofSheet[] = [];
@@ -88,7 +88,7 @@ export interface SkylightSnap {
  * overhang. So does this.
  */
 export function snapSkylightToSheet(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   option: SkylightOption,
   coverMm: number,
 ): SkylightSnap {
@@ -147,7 +147,7 @@ export function snapSkylightToSheet(
  * trip without drifting.
  */
 export function skylightOnSheet(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   option: SkylightOption,
   coverMm: number,
 ): SkylightOption {
@@ -170,7 +170,7 @@ export function skylightOnSheet(
 }
 
 /** True when two skylights overlap in plan. R12's refusal half. */
-export function skylightsOverlap(a: SkylightOption, b: SkylightOption, shed: ShedConfig): boolean {
+export function skylightsOverlap(a: SkylightOption, b: SkylightOption, shed: DimensionedShed): boolean {
   if (a.id === b.id) return false;
   const ra = skylightRect(a, shed);
   const rb = skylightRect(b, shed);
@@ -189,7 +189,7 @@ export function skylightsOverlap(a: SkylightOption, b: SkylightOption, shed: She
  * means.
  */
 export function skylightCollision(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   candidate: SkylightOption,
 ): SkylightOption | null {
   for (const option of shed.options) {
@@ -200,7 +200,7 @@ export function skylightCollision(
 }
 
 /** A skylight's footprint in plan millimetres. */
-function skylightRect(option: SkylightOption, shed: ShedConfig) {
+function skylightRect(option: SkylightOption, shed: DimensionedShed) {
   const { start, end } = bayIntervalOf(shed, option.bay);
   const centreY = start + (end - start) * option.alongBay;
   const y = Math.min(Math.max(centreY - option.height / 2, 0), shed.length - option.height);
@@ -215,7 +215,7 @@ function skylightRect(option: SkylightOption, shed: ShedConfig) {
  * from a store action, neither of which should have to build a full plan to place a
  * skylight.
  */
-function bayIntervalOf(shed: ShedConfig, bay: number): { start: number; end: number } {
+function bayIntervalOf(shed: DimensionedShed, bay: number): { start: number; end: number } {
   const count = Math.max(1, shed.bays);
   const width = shed.length / count;
   const index = Math.min(Math.max(bay, 0), count - 1);

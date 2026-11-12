@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, DimensionedShed } from '@/domain/types';
 import type { BomResult } from '@/lib/bom/types';
 import { priceQuote, type PriceInput } from '@/lib/pricing/price';
 import { sellingChargesCents, validatePriceInput } from '@/lib/estimating/validate';
@@ -25,7 +25,7 @@ const input = (patch: Partial<PriceInput> = {}): PriceInput => ({
   ...patch,
 });
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 describe('validatePriceInput', () => {
   it('accepts the defaults', () => {

@@ -1,27 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import type { Charge, ShedOption } from '../types';
 
-describe('DEFAULT_SHED', () => {
+describe('TEST_SHED', () => {
   it('is a gable shed with no openings and metre input units', () => {
-    expect(DEFAULT_SHED.structureType).toBe('gable');
-    expect(DEFAULT_SHED.span).toBe(12000);
-    expect(DEFAULT_SHED.length).toBe(24000);
-    expect(DEFAULT_SHED.height).toBe(4200);
-    expect(DEFAULT_SHED.bays).toBe(4);
-    expect(DEFAULT_SHED.openings).toEqual([]);
+    expect(TEST_SHED.structureType).toBe('gable');
+    expect(TEST_SHED.span).toBe(12000);
+    expect(TEST_SHED.length).toBe(24000);
+    expect(TEST_SHED.height).toBe(4200);
+    expect(TEST_SHED.bays).toBe(4);
+    expect(TEST_SHED.openings).toEqual([]);
     // Stored values are millimetres, but the form enters and shows metres, so a
     // user types "12" for 12 m and "1.5" for 1500 mm.
-    expect(DEFAULT_SHED.displayUnit).toBe('m');
+    expect(TEST_SHED.displayUnit).toBe('m');
   });
 
   it('defaults to an empty options array', () => {
-    expect(DEFAULT_SHED.options).toEqual([]);
+    expect(TEST_SHED.options).toEqual([]);
   });
 
   it('defaults to no charges and a closed internal pressure', () => {
-    expect(DEFAULT_SHED.charges).toEqual([]);
-    expect(DEFAULT_SHED.internalPressure).toBe('closed');
+    expect(TEST_SHED.charges).toEqual([]);
+    expect(TEST_SHED.internalPressure).toBe('closed');
   });
 });
 

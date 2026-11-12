@@ -23,6 +23,7 @@ import { Render2D } from './Render2D';
 import type { Render2DHandle } from './Render2D';
 import { Render3D } from './Render3D';
 import { ControlSheet } from './ControlSheet';
+import { withDimensions } from '@sq/core/domain';
 import { useShedStore } from '@/store/useShedStore';
 
 export interface PlanViewProps {
@@ -58,7 +59,13 @@ export function PlanView({ interactive = true }: PlanViewProps) {
   };
 
   const selectedLabel = useMemo(() => {
-    const description = describeSelection(config, selection);
+    /*
+     * Nothing can be selected on a building that does not exist yet, so the empty answer is the
+     * closed sheet's own label rather than a call that needs dimensions.
+     */
+    const building = withDimensions(config);
+    if (building === null) return 'nothing';
+    const description = describeSelection(building, selection);
     return description.title === '' ? 'nothing' : description.title;
   }, [selection, config]);
 

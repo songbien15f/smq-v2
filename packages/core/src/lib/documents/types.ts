@@ -17,7 +17,7 @@
  * decision into every renderer.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 
 /** The money, as frozen in the revision. GST is inside the contract, never added to it. */
 export interface FrozenPrice {
@@ -98,7 +98,7 @@ export interface FrozenRevision {
   createdAt: string;
   /** ISO date the quote stops being an offer. */
   validUntil: string;
-  config: ShedConfig;
+  config: DimensionedShed;
   price: FrozenPrice;
   issues: FrozenIssue[];
   company: FrozenCompany;

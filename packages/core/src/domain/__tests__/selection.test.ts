@@ -10,10 +10,10 @@ import {
 } from '../selection';
 import { defaultOptionsFor } from '../options';
 import { buildPlanGeometry } from '../plan';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 
 const shed = {
-  ...DEFAULT_SHED,
+  ...TEST_SHED,
   span: 12000, length: 24000, height: 4200, roofPitchDeg: 10, bays: 4,
   openings: [
     { id: 'r1', type: 'roller_door' as const, width: 4200, height: 3600, sill: 0,
@@ -267,7 +267,7 @@ describe('popoverPosition', () => {
 
 describe('option selections', () => {
   const withSkylight = {
-    ...DEFAULT_SHED,
+    ...TEST_SHED,
     options: [
       { id: 'sk-1', kind: 'skylight' as const, bay: 1, alongBay: 0.5, width: 900, height: 900 },
     ],
@@ -282,7 +282,7 @@ describe('option selections', () => {
 
   it('describes a gable infill as a choice of end', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'gi-1', kind: 'gable_infill' as const, end: 'front' as const }],
     };
     const description = describeSelection(config, { kind: 'option', id: 'gi-1' });
@@ -302,14 +302,14 @@ describe('option selections', () => {
   });
 
   it('collapses a dangling option selection to none', () => {
-    expect(describeSelection(DEFAULT_SHED, { kind: 'option', id: 'sk-9' }).kind).toBe('none');
+    expect(describeSelection(TEST_SHED, { kind: 'option', id: 'sk-9' }).kind).toBe('none');
   });
 });
 
 describe('fields for the remaining kinds', () => {
   it('describes a stable with its panel toggles', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'st-1', kind: 'stable' as const, wall: 'left' as const, align: 'center' as const,
         offset: null, width: 3000, depth: 2400, height: 2400,
         panels: { left: true, right: true, front: true, back: true } }],
@@ -324,7 +324,7 @@ describe('fields for the remaining kinds', () => {
 
   it('describes a carry beam with its bay', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'cb-1', kind: 'carry_beam' as const, wall: 'front' as const, beginBay: 1, openingId: null }],
     };
     const description = describeSelection(config, { kind: 'option', id: 'cb-1' });
@@ -334,7 +334,7 @@ describe('fields for the remaining kinds', () => {
 
   it('describes cladding with its height band', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'hc-1', kind: 'horizontal_cladding' as const, wall: 'front' as const, from: 0, to: 4200 }],
     };
     const description = describeSelection(config, { kind: 'option', id: 'hc-1' });
@@ -344,7 +344,7 @@ describe('fields for the remaining kinds', () => {
 
   it('describes an overhang and a cantilever', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'oh-1', kind: 'overhang' as const, wall: 'front' as const, depth: 600 },
         { id: 'cl-1', kind: 'cantilever' as const, wall: 'left' as const, bay: 0, length: 1200 },
@@ -358,7 +358,7 @@ describe('fields for the remaining kinds', () => {
 describe('track field on a sliding door', () => {
   it('offers a track field only on a sliding door', () => {
     const withSliding = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'sliding_door' as const, width: 3000, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const,
         track: 'none' as const }],
@@ -367,7 +367,7 @@ describe('track field on a sliding door', () => {
       .map((field) => field.key)).toContain('track');
 
     const withPa = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd2', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null }],
     };
@@ -379,7 +379,7 @@ describe('track field on a sliding door', () => {
 describe('track field order (deferred minor)', () => {
   it('places the track field after swing', () => {
     const config = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'sliding_door' as const, width: 3000, height: 2100, sill: 0,
         wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const,
         track: 'none' as const }],

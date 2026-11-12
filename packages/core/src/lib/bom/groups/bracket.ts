@@ -15,7 +15,7 @@
  * an undersized one cannot be fitted at all.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -82,7 +82,7 @@ function webDepth(frame: OptimisedFrame, lookup: PriceLookup): number {
 }
 
 /** Carry beams on the two long walls, each of which removes an eave bracket. */
-function carryBeamCount(shed: ShedConfig): number {
+function carryBeamCount(shed: DimensionedShed): number {
   return shed.options.filter(
     (option) => option.kind === 'carry_beam' && (option.wall === 'front' || option.wall === 'back'),
   ).length;
@@ -96,7 +96,7 @@ function carryBeamCount(shed: ShedConfig): number {
  * frame's two knees.
  */
 export function bracketLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   // Brackets are counted per member and sized from the purlin's web; no factory
@@ -159,7 +159,7 @@ export function fliesForColumn(girtRows: number): number {
  * a different section.
  */
 export function flatFlyLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   _rules?: BomRules,

@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { newId, now } from '@sq/db';
 import type { Db } from '@sq/db';
-import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
+import { DEFAULT_SHED, normaliseShedConfig, TEST_SHED } from '@sq/core/domain';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
 
 let ctx: TestApp;
@@ -41,7 +41,7 @@ const REV = 1;
 async function insertQuote(db: Db, input: { tenantId: string; number: string; contractCents: number }): Promise<string> {
   const quoteId = newId();
   const at = now();
-  const config = normaliseShedConfig(DEFAULT_SHED);
+  const config = normaliseShedConfig(TEST_SHED);
 
   await db.run(
     `INSERT INTO quotes (id, tenant_id, number, status, current_revision, contract_cents, incomplete, site_json, created_at, updated_at)

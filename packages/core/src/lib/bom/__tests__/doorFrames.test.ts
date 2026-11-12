@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { Opening, ShedConfig } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  Opening, ShedConfig, DimensionedShed } from '@/domain/types';
 import {
   buildDoorFrameMembers,
   doorFrameSetback,
@@ -10,7 +10,7 @@ import {
   type DoorFrameGeometry,
 } from '../doorFrames';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 const roller = (patch: Partial<Opening> = {}): Opening => ({
   id: 'rd-1',

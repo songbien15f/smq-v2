@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
-import type { ShedConfig } from '../types';
+import { TEST_SHED } from '../defaults';
+import type {  ShedConfig, DimensionedShed } from '../types';
 import { defaultOptionsFor } from '../options';
 import { optionsThatNoLongerFit, placementRefusals, refusePlacement } from '../optionRules';
 
@@ -13,8 +13,8 @@ import { optionsThatNoLongerFit, placementRefusals, refusePlacement } from '../o
  */
 
 /** A shed with the given overrides, normalised enough for the rules. */
-function shed(overrides: Partial<ShedConfig> = {}): ShedConfig {
-  return { ...DEFAULT_SHED, ...overrides };
+function shed(overrides: Partial<DimensionedShed> = {}): DimensionedShed {
+  return { ...TEST_SHED, ...overrides };
 }
 
 describe('refusePlacement', () => {

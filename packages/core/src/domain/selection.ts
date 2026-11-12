@@ -12,16 +12,14 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import type {
-  AlignMode,
+import type { AlignMode,
   DisplayUnit,
   Opening,
   OpeningType,
   OptionKind,
   ShedConfig,
   ShedOption,
-  WallSide,
-} from './types';
+  WallSide, DimensionedShed } from './types';
 import type { PlanGeometry } from './plan';
 
 /** What the user has selected on the plan. */
@@ -121,7 +119,7 @@ function hasSwing(type: OpeningType): boolean {
 }
 
 /** The five building fields, in the order the form presents them. */
-function buildingFields(shed: ShedConfig): FieldSpec[] {
+function buildingFields(shed: DimensionedShed): FieldSpec[] {
   // Dimension fields carry `unit` so the popover shows them in the same unit the
   // form does; `roofPitchDeg`/`bays` are plain numbers and are shown verbatim.
   const unit = shed.displayUnit;
@@ -262,7 +260,7 @@ const END_OPTIONS: { value: string; label: string }[] = [
  * The editable fields for one option. Only the anchors and sizes the kind
  * actually has appear — a gable infill is a choice of end and nothing else.
  */
-function optionFields(option: ShedOption, shed: ShedConfig): FieldSpec[] {
+function optionFields(option: ShedOption, shed: DimensionedShed): FieldSpec[] {
   const unit = shed.displayUnit;
   switch (option.kind) {
     case 'skylight':
@@ -382,7 +380,7 @@ function optionFields(option: ShedOption, shed: ShedConfig): FieldSpec[] {
  * Describe `selection` against `shed`. An unknown opening or option id, or a
  * `none` selection, yields an empty description with `kind: 'none'`.
  */
-export function describeSelection(shed: ShedConfig, selection: Selection): SelectionDescription {
+export function describeSelection(shed: DimensionedShed, selection: Selection): SelectionDescription {
   if (selection.kind === 'none') {
     return { title: '', kind: 'none', fields: [] };
   }

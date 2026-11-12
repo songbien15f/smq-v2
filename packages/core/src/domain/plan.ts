@@ -15,7 +15,7 @@
  * Pure TypeScript: no React, Next.js, Zustand, Konva, or three.
  */
 
-import type { Opening, OpeningType, OptionKind, ShedConfig, SwingDirection, WallSide } from './types';
+import type { Opening, OpeningType, OptionKind, ShedConfig, SwingDirection, WallSide, DimensionedShed } from './types';
 import { bayWidthsFor, positionsFromWidths } from './bays';
 import { resolveOptions, type ResolvedOption } from './options';
 import { placementToPlanRect, resolveOpeningPlacement } from './placement';
@@ -125,7 +125,7 @@ function midpoint(a: { x: number; y: number }, b: { x: number; y: number }): { x
 }
 
 /** Roof types whose fall runs along the length rather than across the span. */
-function fallsAlongLength(shed: ShedConfig): boolean {
+function fallsAlongLength(shed: DimensionedShed): boolean {
   return shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
 }
 
@@ -307,7 +307,7 @@ function buildOpeningSymbol(
  * orientation. Any opening that does not fit its wall is still placed (at its
  * resolved offset) and contributes a warning.
  */
-export function buildPlanGeometry(shed: ShedConfig): PlanGeometry {
+export function buildPlanGeometry(shed: DimensionedShed): PlanGeometry {
   const { span, length } = shed;
   const bayWidths = bayWidthsFor(shed);
   const bayPositions = positionsFromWidths(bayWidths);
@@ -441,7 +441,7 @@ const OPTION_ROLE: Record<OptionKind, { role: OptionRole; dashed: boolean }> = {
  * triangle that closes the end above wall height, drawn across the full span
  * with its apex at the ridge.
  */
-function buildPlacedOptions(shed: ShedConfig): PlacedOption[] {
+function buildPlacedOptions(shed: DimensionedShed): PlacedOption[] {
   return resolveOptions(shed).map((option: ResolvedOption) => {
     const style = OPTION_ROLE[option.kind];
     const { rect } = option;

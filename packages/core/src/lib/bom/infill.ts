@@ -34,7 +34,7 @@
  * Pure TypeScript: no DB, no HTTP, no framework.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 
 /** One infill column, in plan millimetres along the gable end. */
 export interface InfillColumn {
@@ -124,7 +124,7 @@ export function infillPositions(span: number, count: number, decrement: number):
  * shorter. The `35` is the desktop's own allowance for the roof frame it meets.
  */
 export function infillLength(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   positionMm: number,
   geometry: Pick<InfillGeometry, 'kneeEdgeCode' | 'footingAllowanceMm' | 'postInGround'>,
   decrement: number,
@@ -294,7 +294,7 @@ export interface InfillColumns {
  * or is where the design put it, and the desktop's re-spacing branch only looks at
  * roller doors.
  */
-export function buildInfillColumns(shed: ShedConfig, geometry: InfillGeometry): InfillColumns {
+export function buildInfillColumns(shed: DimensionedShed, geometry: InfillGeometry): InfillColumns {
   if (geometry.count === null || geometry.section === null || geometry.count <= 0) {
     return { columns: [], designPositionsMm: [], respacedEnds: [], withheld: null };
   }
@@ -368,7 +368,7 @@ export function buildInfillColumns(shed: ShedConfig, geometry: InfillGeometry): 
  * draws with, restated here because this module must not import the geometry layer
  * (it is called from the BOM, which runs without a plan).
  */
-function openingPosition(shed: ShedConfig, opening: { align: string; offset: number | null; width: number }): number {
+function openingPosition(shed: DimensionedShed, opening: { align: string; offset: number | null; width: number }): number {
   const run = shed.span;
   const max = Math.max(0, run - opening.width);
   switch (opening.align) {

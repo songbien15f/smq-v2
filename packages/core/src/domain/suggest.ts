@@ -77,7 +77,16 @@ export function suggestedValues(
   config: Pick<ShedConfig, 'span' | 'height' | 'nomBaySpacing' | 'roofPitchDeg'>,
   dimensions: BookDimensions,
 ): SuggestedValue[] {
-  const candidates: Array<{ field: SuggestedValue['field']; value: number | null; current: number }> = [
+  /*
+   * A dimension the operator has not entered (`null`) is suggested against **nothing**, not against
+   * a default: the comparison below drops it when `current` is null, because "12 000 → 6 000" would
+   * be an offer to change a number nobody typed.
+   */
+  const candidates: Array<{
+    field: SuggestedValue['field'];
+    value: number | null;
+    current: number | null;
+  }> = [
     { field: 'span', value: dimensions.span.defaultValue, current: config.span },
     { field: 'height', value: dimensions.height.defaultValue, current: config.height },
     { field: 'nomBaySpacing', value: dimensions.baySpacing.defaultValue, current: config.nomBaySpacing },
@@ -87,7 +96,7 @@ export function suggestedValues(
   return candidates
     .filter(
       (entry): entry is { field: SuggestedValue['field']; value: number; current: number } =>
-        entry.value !== null && entry.value !== entry.current,
+        entry.value !== null && entry.current !== null && entry.value !== entry.current,
     )
     .map((entry) => ({ field: entry.field, value: entry.value, current: entry.current }));
 }

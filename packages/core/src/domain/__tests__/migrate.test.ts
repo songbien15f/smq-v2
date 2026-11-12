@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import { migrateShedConfig } from '../schema';
 
 describe('migrateShedConfig', () => {
@@ -33,13 +33,19 @@ describe('migrateShedConfig', () => {
 
   it('điền trường mới cho revision cũ thiếu', () => {
     const c = migrateShedConfig({ span: 9000, length: 18000, bays: 3 });
-    expect(c.wallProfile).toBe(DEFAULT_SHED.wallProfile);
+    expect(c.wallProfile).toBe(TEST_SHED.wallProfile);
     expect(c.nomBaySpacing).toBe(6000);
     expect(c.sideOpening).toEqual({ front: false, back: false });
   });
 
   it('không throw với đầu vào rác', () => {
-    expect(migrateShedConfig('not a config').span).toBe(DEFAULT_SHED.span);
-    expect(migrateShedConfig(null).bays).toBe(DEFAULT_SHED.bays);
+    /*
+     * Rác **không** sinh ra một toà nhà: các chiều là `null`.
+     *
+     * Dòng đầu từng so với `TEST_SHED.span` (12 000) — nghĩa là đọc một file hỏng lại cho ra một nhà
+     * 12 m có thể báo giá được. Đó đúng là lỗi đợt này sửa: không mô tả thì không có số.
+     */
+    expect(migrateShedConfig('not a config').span).toBeNull();
+    expect(migrateShedConfig(null).bays).toBe(TEST_SHED.bays);
   });
 });

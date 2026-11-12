@@ -25,7 +25,7 @@
  * book rather than written into the code.
  */
 
-import type { ShedConfig, StructureType } from '@/domain/types';
+import type { ShedConfig, StructureType, DimensionedShed } from '@/domain/types';
 import type { FrameScheduleQuery } from './types';
 
 /**
@@ -75,7 +75,7 @@ function nearestOf(value: number, steps: readonly number[]): number {
  * state this build was in.
  */
 export function frameScheduleQuery(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   bayStandard: number,
   structureCode: number,
 ): FrameScheduleQuery {

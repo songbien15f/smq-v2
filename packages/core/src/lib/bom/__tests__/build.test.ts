@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig, ShedOption } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, ShedOption, DimensionedShed } from '@/domain/types';
 import type { OptimisedFrame } from '@/lib/bom/types';
 import { buildBom, mergeLines } from '@/lib/bom/build';
 import { sellingChargesCents } from '@/lib/estimating/validate';
 import { optionLines } from '@/lib/bom/options';
 import { bomLine, type BomLine } from '@/lib/bom/types';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 const frame = (patch: Partial<OptimisedFrame> = {}): OptimisedFrame => ({
   purlinMaterial: 'Z15019',

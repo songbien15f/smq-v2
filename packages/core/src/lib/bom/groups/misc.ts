@@ -11,7 +11,7 @@
  * would look like a free accessory and quietly remove it from the quote.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { bomLine, type BomLine, type BomUnit } from '../types';
 
@@ -31,7 +31,7 @@ export interface MiscOptionLines {
  * yet; it produces nothing and is not reported, because it is visibly incomplete in
  * the editor rather than a wrong price.
  */
-export function miscOptionLines(shed: ShedConfig, lookup: PriceLookup): MiscOptionLines {
+export function miscOptionLines(shed: DimensionedShed, lookup: PriceLookup): MiscOptionLines {
   const lines: BomLine[] = [];
   const unknown: string[] = [];
 

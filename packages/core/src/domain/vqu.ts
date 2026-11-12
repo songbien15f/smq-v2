@@ -128,7 +128,7 @@ export function buildVqu(input: VquInput): string {
   const endDoors = (side: 'left' | 'right'): number =>
     config.openings
       .filter((opening) => opening.type === 'sliding_door' && opening.wall === side)
-      .reduce((total, opening) => total + Math.max(1, Math.round(config.length / opening.width)), 0);
+      .reduce((total, opening) => total + Math.max(1, Math.round((config.length ?? 0) / opening.width)), 0);
   lines.push(`SLDoorEndCount_1=${endDoors('left')}`);
   lines.push(`SLDoorEndCount_2=${endDoors('right')}`);
   lines.push('');

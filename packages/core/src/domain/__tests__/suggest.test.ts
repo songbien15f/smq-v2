@@ -16,7 +16,7 @@ const BOOK: BookDimensions = {
 
 describe('suggestedValues — an offer, never a silent rewrite', () => {
   it('reports the three dimensions the hard-coded defaults disagreed with', () => {
-    // `DEFAULT_SHED` used 12 000 / 4 200 / 6 000 / 10°, none of them from the book.
+    // `TEST_SHED` used 12 000 / 4 200 / 6 000 / 10°, none of them from the book.
     const out = suggestedValues(
       { span: 12000, height: 4200, nomBaySpacing: 6000, roofPitchDeg: 10 },
       BOOK,

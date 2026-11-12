@@ -16,7 +16,7 @@
  * material: the line's quantity is metres, so `quantity = length_mm / 1000`.
  */
 
-import type { Opening, ShedConfig, ShedOption, WallSide } from '@/domain/types';
+import type { Opening, ShedConfig, ShedOption, WallSide, DimensionedShed } from '@/domain/types';
 import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
@@ -80,12 +80,12 @@ const FALLBACK_SIZE = '100 x 100 x 2.0 SHS';
 const SIDES: WallSide[] = ['front', 'back', 'left', 'right'];
 
 /** Openings on one wall. */
-function openingsOn(shed: ShedConfig, wall: WallSide): Opening[] {
+function openingsOn(shed: DimensionedShed, wall: WallSide): Opening[] {
   return shed.openings.filter((opening) => opening.wall === wall);
 }
 
 /** Carry beams on one wall. */
-function carryBeamsOn(shed: ShedConfig, wall: WallSide): ShedOption[] {
+function carryBeamsOn(shed: DimensionedShed, wall: WallSide): ShedOption[] {
   return shed.options.filter(
     (option): option is Extract<ShedOption, { kind: 'carry_beam' }> =>
       option.kind === 'carry_beam' && option.wall === wall,
@@ -99,7 +99,7 @@ function carryBeamsOn(shed: ShedConfig, wall: WallSide): ShedOption[] {
  * for every carry beam that has taken a column's place, plus a jamb pair for each
  * side wall that has an opening.
  */
-function mainMemberCount(shed: ShedConfig): number {
+function mainMemberCount(shed: DimensionedShed): number {
   const beams = carryBeamsOn(shed, 'front').length + carryBeamsOn(shed, 'back').length;
   const leftJamb = openingsOn(shed, 'left').length > 0 ? 2 : 0;
   const rightJamb = openingsOn(shed, 'right').length > 0 ? 2 : 0;
@@ -113,7 +113,7 @@ function mainMemberCount(shed: ShedConfig): number {
  * Each end normally takes two members. A side wall with an opening already has a
  * jamb column at that corner, so the end loses one.
  */
-function endMemberCount(shed: ShedConfig): number {
+function endMemberCount(shed: DimensionedShed): number {
   const leftOpen = openingsOn(shed, 'left').length > 0 ? 1 : 0;
   const rightOpen = openingsOn(shed, 'right').length > 0 ? 1 : 0;
   const perEnd = Math.max(0, 2 - leftOpen - rightOpen);
@@ -141,7 +141,7 @@ function endMemberCount(shed: ShedConfig): number {
  * pair falls back to the design's embedment, and then to the flat allowance.
  */
 function columnLength(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   embedment: number | null,
   footingParameters: number | null,
   rules: BomRules,
@@ -164,7 +164,7 @@ function columnLength(
  *
  * One helper because both frame call sites need the same answer, and two lookups could drift.
  */
-function footingFor(shed: ShedConfig, lookup: PriceLookup): number | null {
+function footingFor(shed: DimensionedShed, lookup: PriceLookup): number | null {
   if (shed.footingType.trim() === '' || shed.footingSubType.trim() === '') return null;
   return safeCall(() => lookup.footingParameters(shed.footingType, shed.footingSubType)) ?? null;
 }
@@ -182,7 +182,7 @@ function footingFor(shed: ShedConfig, lookup: PriceLookup): number | null {
  * `kneeEdge.Apex + kneeEdge.Haunch` — 70 mm at a 10° pitch — and carries the
  * brace as its own member, which this group already does.
  */
-function rafterLength(shed: ShedConfig, rules: BomRules): number {
+function rafterLength(shed: DimensionedShed, rules: BomRules): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   // A gable sheds to both long walls, so its rafter runs over half the width; a
   // skillion falls the whole way to one side and its rafter is the full width. The
@@ -248,7 +248,7 @@ function memberLine(
  * reads from a different table.
  */
 export function frameLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
@@ -341,7 +341,7 @@ export function frameLines(
  * commented out too (`SLDQuote.cs:781`). Charging for track here would invent a line the
  * original never had.
  */
-function slidingDoorHeaderLines(shed: ShedConfig, lookup: PriceLookup): BomLine[] {
+function slidingDoorHeaderLines(shed: DimensionedShed, lookup: PriceLookup): BomLine[] {
   const headers = (safeCall(() => buildingSlidingDoors(shed)) ?? []).filter(
     (member) => member.item === 'sld_header',
   );
@@ -364,7 +364,7 @@ function slidingDoorHeaderLines(shed: ShedConfig, lookup: PriceLookup): BomLine[
 
 /** One priced line per kind of door-frame member the building has. */
 function doorFrameLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules,
@@ -407,7 +407,7 @@ function doorFrameLines(
  * keeps the two answers consistent.
  */
 function scheduleFor(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
 ): FrameSchedule | undefined {
@@ -468,7 +468,7 @@ export interface FrameMember {
  * makes the two agree on the section as well as the count.
  */
 export function frameMemberSchedule(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
@@ -653,7 +653,7 @@ export function frameMemberSchedule(
  * case is withheld rather than guessed).
  */
 export function buildingInfillColumns(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
@@ -695,7 +695,7 @@ export function buildingInfillColumns(
  * for this design.
  */
 export function buildingDoorFrames(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
@@ -747,7 +747,7 @@ export function buildingDoorFrames(
  * columns" and "how many end-wall columns", so the rule that answers that must
  * exist once. Recomputing it in three modules is how the groups drift apart.
  */
-export function frameCounts(shed: ShedConfig): { main: number; end: number } {
+export function frameCounts(shed: DimensionedShed): { main: number; end: number } {
   return { main: mainMemberCount(shed), end: endMemberCount(shed) };
 }
 

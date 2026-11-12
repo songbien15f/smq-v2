@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, DimensionedShed } from '@/domain/types';
 import { girtRows, optimise, purlinRows, standardBayLength } from '@/lib/bom/optimise';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 describe('standardBayLength', () => {
   it('rounds up to the next standard bay', () => {

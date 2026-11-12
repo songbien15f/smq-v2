@@ -27,6 +27,24 @@ import { expect, test } from '@playwright/test';
  * that disagrees with this file should be re-taken in this harness before the code is suspected.
  */
 
+/**
+ * State the building's three dimensions, so there is a price to lay out.
+ *
+ * A new quote has none — that is deliberate — and with no building there is no contract price, so the
+ * layout questions this file asks cannot be asked. Writing the dimensions the way a person does keeps
+ * each test about the layout rather than about the form.
+ */
+async function stateBuilding(page: import('@playwright/test').Page): Promise<void> {
+  const shedGroup = page.locator('h3 > button').filter({ hasText: /^Shed(?!Safe)/ }).first();
+  if ((await shedGroup.getAttribute('aria-expanded')) === 'false') await shedGroup.click();
+  await page.locator('#shed-span').fill('12000');
+  await page.locator('#shed-span').blur();
+  await page.locator('#shed-height').fill('4200');
+  await page.locator('#shed-height').blur();
+  await page.locator('#shed-length').fill('24000');
+  await page.locator('#shed-length').blur();
+}
+
 /** True when nothing pushes the page wider than the viewport (WCAG 1.4.10 reflow). */
 async function overflowX(page: import('@playwright/test').Page): Promise<number> {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -41,6 +59,8 @@ test('the price is visible without scrolling at every width', async ({ page }) =
   for (const width of [1440, 1279, 768, 390]) {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 800 });
     await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+    await stateBuilding(page);
     await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
     await page.waitForTimeout(1500);
 
@@ -69,6 +89,8 @@ test('the pinned price strip stays put while the form scrolls', async ({ page })
   // 49 px — the dimensions along the top edge. The strip is measured against the plan, not assumed.
   await page.setViewportSize({ width: 1279, height: 800 });
   await page.goto('/quotes/new');
+  await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+  await stateBuilding(page);
   await expect(page.getByRole('heading', { name: 'Contract price' }).first()).toBeVisible({ timeout: 40_000 });
   await page.waitForTimeout(1500);
 

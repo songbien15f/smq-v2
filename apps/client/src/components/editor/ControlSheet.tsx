@@ -47,7 +47,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { describeSelection } from '@sq/core/domain';
+import { describeSelection, withDimensions } from '@sq/core/domain';
 import { useMediaQuery, DESKTOP_QUERY } from '@/hooks/useMediaQuery';
 import { useShedStore } from '@/store/useShedStore';
 import { SelectionFields } from './SelectionPopover';
@@ -73,7 +73,14 @@ export function ControlSheet() {
   const objectDragging = useShedStore((state) => state.objectDragging);
   const setSheetOpen = useShedStore((state) => state.setSheetOpen);
 
-  const description = describeSelection(config, selection);
+  /*
+   * A sheet with no building behind it has no fields: a door, an option and the building itself all
+   * describe themselves against dimensions this quote may not have yet.
+   */
+  const building = withDimensions(config);
+  const description = building === null
+    ? { title: '', kind: 'none' as const, fields: [] as never[] }
+    : describeSelection(building, selection);
   const hasFields = description.fields.length > 0;
 
   /*

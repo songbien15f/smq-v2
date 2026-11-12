@@ -285,6 +285,23 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
    */
   const calculate = useCallback(async () => {
     const currentConfig = useShedStore.getState().config;
+    /*
+     * **No building, no request.**
+     *
+     * The API would answer 422 with the same sentence, but calling it means a round trip on every
+     * keystroke of an empty form, and a 422 in the panel for something the form already says. The
+     * check is here so the editor simply has **no price** until the building is described — which is
+     * the tree state, not an error state.
+     */
+    if (
+      currentConfig.span === null ||
+      currentConfig.length === null ||
+      currentConfig.height === null
+    ) {
+      setEvaluation(null);
+      setPriceError(null);
+      return;
+    }
     const currentPricing = useDraftStore.getState().pricing;
     const currentBuilding = JSON.stringify(currentConfig);
     const currentMoney = JSON.stringify(currentPricing);
@@ -337,6 +354,25 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     autoPriced.current = true;
     void calculate();
   }, [calculate, draftReady]);
+
+  /**
+   * Price it again the first time the building becomes describable.
+   *
+   * A new quote starts with **no dimensions**, so the effect above runs `calculate()` into the gate
+   * and nothing happens — `evaluation` stays `null` and steps 2 and 3 stay locked. Waiting for the
+   * operator to press "Calculate again" on a quote they have just finished describing is a step that
+   * exists only because of the gate.
+   *
+   * Keyed on whether the dimensions are stated, so it fires on the transition and not on every
+   * keystroke afterwards: after that, `calculate` is driven by the dirty/stale machinery as before.
+   */
+  const purchasable = config.span !== null && config.length !== null && config.height !== null;
+  const pricedFirstBuilding = useRef(false);
+  useEffect(() => {
+    if (!purchasable || pricedFirstBuilding.current) return;
+    pricedFirstBuilding.current = true;
+    void calculate();
+  }, [purchasable, calculate]);
 
   const dirty = useDraftStore((state) => state.isDirty());
   const pricedStale = useDraftStore((state) => state.priceIsStale(priceInputs));
@@ -789,18 +825,11 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                        * reference the panel compares against. It does not seed the panel: the four
                        * numbers ShedSafe rates are typed by a person (see `SiteCheckPanel`).
                        */
-                      shed={{
-                        spanMm: config.span,
-                        heightMm: config.height,
-                        lengthMm: config.length,
-                        importanceLevel: config.importanceLevel,
-                        roofPitchDeg: config.roofPitchDeg,
-                        structureType: config.structureType,
-                      }}
-                      roofPitchHints={roofPitchHintsForSpan(
-                        catalogue?.roofPitchGroups ?? [],
-                        config.span,
-                      )}
+                      roofPitchHints={
+                        config.span === null
+                          ? []
+                          : roofPitchHintsForSpan(catalogue?.roofPitchGroups ?? [], config.span)
+                      }
                       /*
                        * The **email**, because that is the ShedSafe salesman key.
                        *

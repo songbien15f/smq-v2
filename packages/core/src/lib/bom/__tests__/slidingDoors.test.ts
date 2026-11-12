@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
+import { TEST_SHED } from '@/domain/defaults';
 import type { Opening } from '@/domain/types';
 import {
   buildingSlidingDoors,
@@ -58,7 +58,7 @@ describe('headFlashingType', () => {
 
 describe('slidingDoorMembers', () => {
   it('gives a door a head beam and a head flashing', () => {
-    const members = slidingDoorMembers(DEFAULT_SHED, sliding());
+    const members = slidingDoorMembers(TEST_SHED, sliding());
     expect(members.map((member) => member.item)).toEqual(['sld_header', 'sld_head_flashing']);
     expect(members[0]?.lengthMm).toBe(3000);
     expect(members[0]?.quantity).toBe(1);
@@ -67,7 +67,7 @@ describe('slidingDoorMembers', () => {
   it('laps the flashing 200 mm past the beam it covers', () => {
     // A flashing exactly as long as the beam has nothing to turn down at either end, and
     // the rain goes behind it.
-    const members = slidingDoorMembers(DEFAULT_SHED, sliding());
+    const members = slidingDoorMembers(TEST_SHED, sliding());
     const header = members.find((member) => member.item === 'sld_header')!;
     const flashing = members.find((member) => member.item === 'sld_head_flashing')!;
     expect(flashing.lengthMm - header.lengthMm).toBe(200);
@@ -75,7 +75,7 @@ describe('slidingDoorMembers', () => {
 
   it('splits a wide door into equal pieces', () => {
     const wide = sliding({ width: 7000 });
-    const header = slidingDoorMembers(DEFAULT_SHED, wide).find(
+    const header = slidingDoorMembers(TEST_SHED, wide).find(
       (member) => member.item === 'sld_header',
     );
     expect(header?.quantity).toBe(2);
@@ -83,14 +83,14 @@ describe('slidingDoorMembers', () => {
   });
 
   it('gives nothing for a door that is not a sliding door', () => {
-    expect(slidingDoorMembers(DEFAULT_SHED, sliding({ type: 'pa_door' }))).toEqual([]);
+    expect(slidingDoorMembers(TEST_SHED, sliding({ type: 'pa_door' }))).toEqual([]);
   });
 });
 
 describe('buildingSlidingDoors', () => {
   it('covers every sliding door and no other opening', () => {
     const shed = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [
         sliding({ id: 'a' }),
         sliding({ id: 'b', width: 4000 }),
@@ -105,6 +105,6 @@ describe('buildingSlidingDoors', () => {
   });
 
   it('gives nothing on a building with no sliding door', () => {
-    expect(buildingSlidingDoors(DEFAULT_SHED)).toEqual([]);
+    expect(buildingSlidingDoors(TEST_SHED)).toEqual([]);
   });
 });

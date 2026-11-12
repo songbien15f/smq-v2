@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../../../domain/defaults';
-import { normaliseShedConfig } from '../../../domain/schema';
-import type { ShedConfig } from '../../../domain/types';
+import { TEST_SHED } from '../../../domain/defaults';
+import { normaliseDimensionedShed } from '../../../domain/schema';
+import type { DimensionedShed, ShedConfig } from '../../../domain/types';
 import { parseSheeting, sheetingSpec } from '../../../domain/sheeting';
 import { buildBom } from '../build';
 import type { PriceLookup, PriceRow } from '../../pricing/types';
@@ -98,9 +98,9 @@ function fixtureLookup(): PriceLookup {
   } as unknown as PriceLookup;
 }
 
-function shed(overrides: Record<string, unknown> = {}): ShedConfig {
-  return normaliseShedConfig({
-    ...DEFAULT_SHED,
+function shed(overrides: Record<string, unknown> = {}): DimensionedShed {
+  return normaliseDimensionedShed({
+    ...TEST_SHED,
     structureType: 'gable',
     span: 12000,
     length: 24000,
@@ -111,7 +111,7 @@ function shed(overrides: Record<string, unknown> = {}): ShedConfig {
     terrainCategory: 2.5,
     stateCode: 'QLD',
     ...overrides,
-  });
+  })!;
 }
 
 const total = (overrides: Record<string, unknown>): number =>
@@ -192,7 +192,7 @@ describe('the downpipe is the chosen material in the chosen colour', () => {
      * the standard finish is $8.44 — 5% high on every quote, with nothing on the line saying why.
      */
     const galvanised = buildBom(
-      shed({ colors: { ...DEFAULT_SHED.colors, downpipe: '#b6b8b4' } }),
+      shed({ colors: { ...TEST_SHED.colors, downpipe: '#b6b8b4' } }),
       fixtureLookup(),
     )
       .groups.flatMap((group) => group.lines)
@@ -200,7 +200,7 @@ describe('the downpipe is the chosen material in the chosen colour', () => {
     expect(galvanised?.unitCost).toBe(886);
 
     const standard = buildBom(
-      shed({ colors: { ...DEFAULT_SHED.colors, downpipe: '#bdbfba' } }),
+      shed({ colors: { ...TEST_SHED.colors, downpipe: '#bdbfba' } }),
       fixtureLookup(),
     )
       .groups.flatMap((group) => group.lines)

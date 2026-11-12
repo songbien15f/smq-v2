@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig, ShedOption } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, ShedOption, DimensionedShed } from '@/domain/types';
 import type { OptimisedFrame } from '@/lib/bom/types';
 import { sheetingGroup, sheetingLines } from '@/lib/bom/groups/sheeting';
 import { DEFAULT_CONTRACTS } from '@/lib/pricing/catalogueManifest';
 
 const CONTRACT = DEFAULT_CONTRACTS.sheeting;
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 const frame = (patch: Partial<OptimisedFrame> = {}): OptimisedFrame => ({
   purlinMaterial: 'TH64075',

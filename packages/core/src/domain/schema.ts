@@ -28,7 +28,9 @@ import { normaliseCharge } from './charges';
 import { normaliseOption } from './options';
 import { internalPressureFor } from './internalPressure';
 import { nearestTerrainCategory, windRegionLetter } from './wind';
-import type { Charge, Opening, OptionKind, ShedConfig, ShedOption } from './types';
+import type { Charge, Opening, OptionKind, ShedConfig, ShedOption, DimensionedShed } from './types';
+// A value, not a type: the guard narrows, so it has to survive into the emitted code.
+import { withDimensions } from './types';
 
 /** The structural families the model may choose from. */
 const STRUCTURE_TYPES = [
@@ -531,20 +533,27 @@ export function parseExtraction(parsed: unknown, base: ShedConfig = DEFAULT_SHED
   // rule the LLM path uses, applied before the clamps rather than after.
   const rawOptions = isPlainObject(parsed) ? (parsed as { options?: unknown }).options : undefined;
   if (Array.isArray(rawOptions)) {
-    const shedForClamping: ShedConfig = {
+    /*
+     * An option can only be clamped against a building whose dimensions are known.
+     *
+     * A shed without span/height/length has no bounds to clamp into — there is no wall to hang an
+     * awning on and no span for a mezzanine to fit inside. Dropping the options is the truthful
+     * answer; clamping them against a default would place objects on a building nobody described.
+     */
+    const shedForClamping = withDimensions({
       ...base,
       ...out,
       openings: out.openings ?? base.openings,
       options: [],
-    };
-    const options = rawOptions
+    } as ShedConfig);
+    const options = (shedForClamping === null ? [] : rawOptions
       .map((entry) => {
         // Rescale the raw entry first, then clamp: `parseOptionEntry` clamps
         // into the shed's bounds, and a metre value clamped first would already
         // be at the minimum and no longer look like metres.
         const rescaled = rescaleOptionEntry(entry);
         return parseOptionEntry(rescaled, shedForClamping);
-      })
+      }))
       .filter((option): option is ShedOption => option !== undefined);
     if (options.length > 0) out.options = options;
     else if (rawOptions.length === 0) out.options = [];
@@ -651,9 +660,17 @@ export const shedConfigSchema = z.object({
  */
 const tolerantShedConfigSchema = z.object({
   structureType: structureTypeSchema.catch(DEFAULT_SHED.structureType),
-  span: positiveDimensionSchema.catch(DEFAULT_SHED.span),
-  length: positiveDimensionSchema.catch(DEFAULT_SHED.length),
-  height: positiveDimensionSchema.catch(DEFAULT_SHED.height),
+  /*
+   * A dimension that is absent or unusable becomes **`null`, not a default**.
+   *
+   * The old `.catch(DEFAULT_SHED.span)` is what gave every new quote 12 000 mm: a field nobody
+   * stated came back as a number, and nothing downstream could tell it from one somebody typed. The
+   * desktop's Building Parameters panel starts empty and the engine refuses to price until it is
+   * filled, so the absence is the truth here too.
+   */
+  span: positiveDimensionSchema.nullable().optional().catch(undefined),
+  length: positiveDimensionSchema.nullable().optional().catch(undefined),
+  height: positiveDimensionSchema.nullable().optional().catch(undefined),
   roofPitchDeg: pitchSchema.catch(DEFAULT_SHED.roofPitchDeg),
   bays: bayCountSchema.catch(DEFAULT_SHED.bays),
   nomBaySpacing: z.coerce.number().finite().catch(DEFAULT_SHED.nomBaySpacing),
@@ -961,7 +978,7 @@ function rescaleOptionEntry(entry: unknown): unknown {
  * Callers pass the config the option will live in, so the clamps see final
  * values rather than raw ones.
  */
-export function parseOptionEntry(entry: unknown, shed: ShedConfig): ShedOption | undefined {
+export function parseOptionEntry(entry: unknown, shed: DimensionedShed): ShedOption | undefined {
   if (!isPlainObject(entry)) return undefined;
   const result = tolerantOptionSchema.safeParse(entry);
   if (!result.success) return undefined;
@@ -1075,21 +1092,35 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
   // been clamped above, so a skylight in bay 40 of a 500-bay request lands in
   // the last real bay rather than in a bay that no longer exists.
   const finalBays = clampBays(parsed.bays);
-  const finalLength = Math.round(parsed.length);
+  /*
+   * The three dimensions stay `null` when they were not stated, and are rounded when they were.
+   *
+   * No `?? DEFAULT` here: a dimension the operator has not entered must read as absent all the way
+   * through, or the Building Parameters gate and the price would disagree about whether a building
+   * exists.
+   */
+  const roundOrNull = (value: number | null | undefined): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null;
+  const finalSpan = roundOrNull(parsed.span);
+  const finalLength = roundOrNull(parsed.length);
+  const finalHeight = roundOrNull(parsed.height);
   const finalShed: ShedConfig = {
     ...DEFAULT_SHED,
     ...parsed,
-    span: Math.round(parsed.span),
+    span: finalSpan,
     length: finalLength,
-    height: Math.round(parsed.height),
+    height: finalHeight,
     roofPitchDeg: Math.min(45, Math.max(0, parsed.roofPitchDeg)),
     bays: finalBays,
     // Derived when the stored spacing is absent or unusable, so every config has
-    // a spacing that divides its own length into its own bays.
+    // a spacing that divides its own length into its own bays. With no length yet the spacing is
+    // the book's default figure, which is a display value the operator will replace.
     nomBaySpacing:
       Number.isFinite(parsed.nomBaySpacing) && parsed.nomBaySpacing > 0
         ? Math.round(parsed.nomBaySpacing)
-        : Math.floor(finalLength / finalBays),
+        : finalLength === null
+          ? DEFAULT_SHED.nomBaySpacing
+          : Math.floor(finalLength / finalBays),
     /*
      * Kept only when the array actually describes this building: the right count, positive widths, and
      * a total equal to the length. An array that fails any of those is dropped, and `bayWidthsFor`
@@ -1097,16 +1128,20 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
      * (`ResetBayUnitsToNomBay`), and a kept-but-wrong array would price a frame from a bay that is not
      * in the building.
      */
-    ...(usableBayWidths(parsed.bayWidths, finalBays, finalLength) ?? {}),
+    ...(finalLength === null ? {} : (usableBayWidths(parsed.bayWidths, finalBays, finalLength) ?? {})),
     openings,
     options: [],
   };
 
   const rawOptionEntries = Array.isArray(rawOptions) ? rawOptions : [];
   const parsedOptions: ShedOption[] = [];
-  for (const entry of rawOptionEntries) {
-    const option = parseOptionEntry(entry, finalShed);
-    if (option !== undefined) parsedOptions.push(option);
+  // Same rule as above: no dimensions, no bounds, no options.
+  const dimensionedFinal = withDimensions(finalShed);
+  if (dimensionedFinal !== null) {
+    for (const entry of rawOptionEntries) {
+      const option = parseOptionEntry(entry, dimensionedFinal);
+      if (option !== undefined) parsedOptions.push(option);
+    }
   }
 
   const seenOptions = new Set<string>();
@@ -1247,15 +1282,29 @@ export function clampNotices(input: unknown): string[] {
  * millimetre config (including a small but plausible 3000 mm shed) passes
  * through unchanged.
  */
+/**
+ * `normaliseShedConfig`, narrowed to a building that has its dimensions.
+ *
+ * For the places where a building **must** exist: a frozen revision, a rendered document, a BOM
+ * fixture. Returns `null` rather than a config with nulls, so the caller states what it does about a
+ * revision from before dimensions were required.
+ */
+export function normaliseDimensionedShed(input: unknown): DimensionedShed | null {
+  return withDimensions(normaliseShedConfig(input));
+}
+
 export function coerceToMillimetres(config: ShedConfig): ShedConfig {
   const scale = (value: number, threshold: number): number =>
     value > 0 && value < threshold ? Math.round(value * 1000) : value;
+  /** A dimension that is not stated stays not stated — `null` is not a small number. */
+  const scaleOrNull = (value: number | null, threshold: number): number | null =>
+    value === null ? null : scale(value, threshold);
 
   return {
     ...config,
-    span: scale(config.span, SHED_METRE_THRESHOLD),
-    length: scale(config.length, SHED_METRE_THRESHOLD),
-    height: scale(config.height, SHED_METRE_THRESHOLD),
+    span: scaleOrNull(config.span, SHED_METRE_THRESHOLD),
+    length: scaleOrNull(config.length, SHED_METRE_THRESHOLD),
+    height: scaleOrNull(config.height, SHED_METRE_THRESHOLD),
     openings: config.openings.map((opening) => ({
       ...opening,
       width: scale(opening.width, OPENING_METRE_THRESHOLD),

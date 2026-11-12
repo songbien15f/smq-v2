@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { normaliseShedConfig, coerceToMillimetres, extractionSchema, clampNotices, parseExtraction, parseModelJson, parseOptionEntry, shedConfigSchema } from '../schema';
-import { DEFAULT_OPENING_SIZE, DEFAULT_SHED } from '../defaults';
+import { DEFAULT_OPENING_SIZE, TEST_SHED } from '../defaults';
 
 describe('extractionSchema', () => {
   it('excludes the UI-only fields the model must not invent', () => {
@@ -82,23 +82,23 @@ describe('parseExtraction (partial answers are fine)', () => {
 
 describe('normaliseShedConfig', () => {
   it('accepts a complete valid config unchanged', () => {
-    expect(normaliseShedConfig(DEFAULT_SHED)).toEqual(DEFAULT_SHED);
+    expect(normaliseShedConfig(TEST_SHED)).toEqual(TEST_SHED);
   });
   it('clamps an out-of-range bay count', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, bays: 500 }).bays).toBe(30);
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, bays: 1 }).bays).toBe(2);
+    expect(normaliseShedConfig({ ...TEST_SHED, bays: 500 }).bays).toBe(30);
+    expect(normaliseShedConfig({ ...TEST_SHED, bays: 1 }).bays).toBe(2);
   });
   it('fills missing optional fields from the default', () => {
     const out = normaliseShedConfig({ span: 12000, length: 24000, height: 4200, bays: 4 });
-    expect(out.structureType).toBe(DEFAULT_SHED.structureType);
+    expect(out.structureType).toBe(TEST_SHED.structureType);
     expect(out.displayUnit).toBe('m');
     expect(out.openings).toEqual([]);
   });
   it('rejects an unknown structure type by falling back to gable', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, structureType: 'nonsense' }).structureType).toBe('gable');
+    expect(normaliseShedConfig({ ...TEST_SHED, structureType: 'nonsense' }).structureType).toBe('gable');
   });
   it('drops openings that are not objects rather than throwing', () => {
-    const out = normaliseShedConfig({ ...DEFAULT_SHED, openings: [null, 'x', { id: 'ok', type: 'pa_door', width: 900, height: 2100, sill: 0, wall: 'front', align: 'center', offset: null, swing: null, track: null }] });
+    const out = normaliseShedConfig({ ...TEST_SHED, openings: [null, 'x', { id: 'ok', type: 'pa_door', width: 900, height: 2100, sill: 0, wall: 'front', align: 'center', offset: null, swing: null, track: null }] });
     expect(out.openings).toHaveLength(1);
   });
   it('falls back to opening-plausible dimensions, not whole-shed ones', () => {
@@ -107,7 +107,7 @@ describe('normaliseShedConfig', () => {
     // span/height. (Reachable through the untrusted `current` the route
     // normalises; the gated LLM path never emits these.)
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ type: 'pa_door', width: 'abc', height: null, sill: 0, wall: 'front', align: 'center', offset: null, swing: null, track: null }],
     });
     expect(out.openings).toHaveLength(1);
@@ -119,7 +119,7 @@ describe('normaliseShedConfig', () => {
 describe('options at the config boundary', () => {
   it('keeps good options when one entry is malformed', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900 },
         { id: 'bad', kind: 'not_a_kind' },
@@ -131,24 +131,24 @@ describe('options at the config boundary', () => {
 
   it('repairs a blank option id with a kind-specific prefix', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: '', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900 }],
     });
     expect(out.options[0].id).toMatch(/^sk-/);
   });
 
   it('drops an option whose kind is unknown', () => {
-    expect(parseOptionEntry({ id: 'x', kind: 'turret' }, DEFAULT_SHED)).toBeUndefined();
+    expect(parseOptionEntry({ id: 'x', kind: 'turret' }, TEST_SHED)).toBeUndefined();
   });
 
   it('drops an option that is not an object', () => {
-    expect(parseOptionEntry('skylight', DEFAULT_SHED)).toBeUndefined();
-    expect(parseOptionEntry(null, DEFAULT_SHED)).toBeUndefined();
+    expect(parseOptionEntry('skylight', TEST_SHED)).toBeUndefined();
+    expect(parseOptionEntry(null, TEST_SHED)).toBeUndefined();
   });
 
   it('rounds option dimensions to integer millimetres', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 899.6, height: 900.4 }],
     });
     expect(out.options[0]).toMatchObject({ width: 900, height: 900 });
@@ -158,7 +158,7 @@ describe('options at the config boundary', () => {
     // `bays` is clamped to [2, 30] before options are parsed, so a skylight in
     // bay 9 of a 500-bay request lands in bay 29, not bay 9.
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       bays: 500,
       options: [{ id: 'sk-1', kind: 'skylight', bay: 40, alongBay: 0.5, width: 900, height: 900 }],
     });
@@ -172,16 +172,16 @@ describe('options at the config boundary', () => {
 
 describe('clampNotices', () => {
   it('notes an out-of-range bay count, naming both values', () => {
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 500 }).join(' ')).toMatch(/bays clamped to 30/i);
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 500 }).join(' ')).toMatch(/500/);
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 1 }).join(' ')).toMatch(/bays clamped to 2/i);
+    expect(clampNotices({ ...TEST_SHED, bays: 500 }).join(' ')).toMatch(/bays clamped to 30/i);
+    expect(clampNotices({ ...TEST_SHED, bays: 500 }).join(' ')).toMatch(/500/);
+    expect(clampNotices({ ...TEST_SHED, bays: 1 }).join(' ')).toMatch(/bays clamped to 2/i);
   });
   it('notes nothing for an in-range bay count', () => {
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 4 })).toEqual([]);
+    expect(clampNotices({ ...TEST_SHED, bays: 4 })).toEqual([]);
   });
   it('does not treat an in-range rounding as a clamp', () => {
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 3.7 })).toEqual([]);
-    expect(clampNotices({ ...DEFAULT_SHED, bays: 2.4 })).toEqual([]);
+    expect(clampNotices({ ...TEST_SHED, bays: 3.7 })).toEqual([]);
+    expect(clampNotices({ ...TEST_SHED, bays: 2.4 })).toEqual([]);
   });
   it('notes nothing when bays is absent or unreadable', () => {
     expect(clampNotices({ span: 12000 })).toEqual([]);
@@ -197,7 +197,7 @@ describe('clampNotices', () => {
 
 describe('coerceToMillimetres', () => {
   it('converts a whole config that the model returned in metres', () => {
-    const inMetres = { ...DEFAULT_SHED, span: 12, length: 24, height: 4.2, openings: [
+    const inMetres = { ...TEST_SHED, span: 12, length: 24, height: 4.2, openings: [
       { id: 'd1', type: 'pa_door' as const, width: 0.9, height: 2.1, sill: 0, wall: 'front' as const, align: 'custom' as const, offset: 0.5, swing: null, track: null },
     ]};
     const out = coerceToMillimetres(inMetres);
@@ -208,14 +208,14 @@ describe('coerceToMillimetres', () => {
     expect(out.openings[0].offset).toBe(500);
   });
   it('leaves a genuine millimetre config untouched', () => {
-    expect(coerceToMillimetres(DEFAULT_SHED)).toEqual(DEFAULT_SHED);
+    expect(coerceToMillimetres(TEST_SHED)).toEqual(TEST_SHED);
   });
   it('does not rescale a small but plausible shed', () => {
-    const small = { ...DEFAULT_SHED, span: 3000, length: 4000, height: 2400 };
+    const small = { ...TEST_SHED, span: 3000, length: 4000, height: 2400 };
     expect(coerceToMillimetres(small).span).toBe(3000);
   });
   it('decides the unit per field, so a mixed-unit response cannot corrupt the others', () => {
-    const mixed = coerceToMillimetres({ ...DEFAULT_SHED, span: 12, length: 24000 });
+    const mixed = coerceToMillimetres({ ...TEST_SHED, span: 12, length: 24000 });
     expect(mixed.span).toBe(12000);
     expect(mixed.length).toBe(24000);   // NOT 24,000,000
     expect(mixed.height).toBe(4200);    // NOT 4,200,000
@@ -228,23 +228,30 @@ describe('coerceToMillimetres', () => {
     // `coerceToMillimetres`, which only the LLM path calls (extract.ts).
     const out = normaliseShedConfig({ span: 12 });
     expect(out.span).toBe(12);
-    expect(out.length).toBe(24000);
-    expect(out.height).toBe(4200);
+    /*
+     * The two dimensions that were **not** supplied are `null`, not defaults.
+     *
+     * This assertion used to read `24000` and `4200` — `DEFAULT_SHED` filling in a building nobody
+     * described. That is the defect this change removes: a quote could be priced, and ShedSafe asked
+     * to rate, a shed whose length and height came from a constant.
+     */
+    expect(out.length).toBeNull();
+    expect(out.height).toBeNull();
   });
   it('leaves a small offset and opening dimension as typed', () => {
-    const out = normaliseShedConfig({ ...DEFAULT_SHED, openings: [
+    const out = normaliseShedConfig({ ...TEST_SHED, openings: [
       { id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0, wall: 'front' as const, align: 'custom' as const, offset: 5, swing: null, track: null },
     ]});
     expect(out.openings[0].offset).toBe(5);
   });
   it('never scales a zero dimension', () => {
-    const zeroSill = coerceToMillimetres({ ...DEFAULT_SHED, span: 12, openings: [
+    const zeroSill = coerceToMillimetres({ ...TEST_SHED, span: 12, openings: [
       { id: 'd1', type: 'pa_door' as const, width: 0.9, height: 2.1, sill: 0, wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
     ]});
     expect(zeroSill.openings[0].sill).toBe(0);
   });
   it('mints ids that never collide with an id already kept', () => {
-    const out = normaliseShedConfig({ ...DEFAULT_SHED, openings: [
+    const out = normaliseShedConfig({ ...TEST_SHED, openings: [
       { id: 'op-2', type: 'pa_door', width: 900, height: 2100, sill: 0, wall: 'front', align: 'center', offset: null, swing: null, track: null },
       { type: 'window', width: 900, height: 600, sill: 1200, wall: 'left', align: 'center', offset: null, swing: null, track: null },
     ]});
@@ -258,7 +265,7 @@ describe('coerceToMillimetres', () => {
 describe('coerceToMillimetres and options (I2)', () => {
   it('rescales option dimensions expressed in metres', () => {
     const out = coerceToMillimetres({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       span: 20,
       length: 30,
       height: 4.2,
@@ -272,7 +279,7 @@ describe('coerceToMillimetres and options (I2)', () => {
 
   it('rescales skylight, awning, outrigger and dividing-wall dimensions', () => {
     const out = coerceToMillimetres({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       span: 12,
       length: 24,
       options: [
@@ -290,7 +297,7 @@ describe('coerceToMillimetres and options (I2)', () => {
 
   it('leaves an already-millimetre option untouched', () => {
     const out = coerceToMillimetres({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900 },
       ],
@@ -300,7 +307,7 @@ describe('coerceToMillimetres and options (I2)', () => {
 
   it('never scales a bay index or a 0..1 fraction', () => {
     const out = coerceToMillimetres({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'sk-1', kind: 'skylight', bay: 1, alongBay: 0.5, width: 900, height: 900 },
       ],
@@ -312,7 +319,7 @@ describe('coerceToMillimetres and options (I2)', () => {
 describe('the five remaining kinds at the config boundary', () => {
   it('round-trips every new kind', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [
         { id: 'st-1', kind: 'stable', wall: 'left', align: 'center', offset: null,
           width: 3000, depth: 2400, height: 2400,
@@ -330,7 +337,7 @@ describe('the five remaining kinds at the config boundary', () => {
 
   it('clears a carry beam reference to an opening on another wall', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'pa_door', width: 900, height: 2100, sill: 0,
         wall: 'back', align: 'center', offset: null, swing: null, track: null }],
       options: [{ id: 'cb-1', kind: 'carry_beam', wall: 'front', beginBay: 0, openingId: 'd1' }],
@@ -340,7 +347,7 @@ describe('the five remaining kinds at the config boundary', () => {
 
   it('clears a carry beam reference to a missing opening', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'cb-1', kind: 'carry_beam', wall: 'front', beginBay: 0, openingId: 'gone' }],
     });
     expect(out.options[0]).toMatchObject({ openingId: null });
@@ -348,7 +355,7 @@ describe('the five remaining kinds at the config boundary', () => {
 
   it('keeps a carry beam reference to an opening on its own wall', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'roller_door', width: 3000, height: 2400, sill: 0,
         wall: 'front', align: 'center', offset: null, swing: null, track: null }],
       options: [{ id: 'cb-1', kind: 'carry_beam', wall: 'front', beginBay: 0, openingId: 'd1' }],
@@ -360,7 +367,7 @@ describe('the five remaining kinds at the config boundary', () => {
 describe('track on openings', () => {
   it('keeps a track on a sliding door', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
         wall: 'front', align: 'center', offset: null, swing: 'outward', track: 'double' }],
     });
@@ -369,7 +376,7 @@ describe('track on openings', () => {
 
   it('clears a track on a type that has no track', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'pa_door', width: 900, height: 2100, sill: 0,
         wall: 'front', align: 'center', offset: null, swing: null, track: 'double' }],
     });
@@ -378,7 +385,7 @@ describe('track on openings', () => {
 
   it('defaults a sliding door track to none', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
         wall: 'front', align: 'center', offset: null, swing: 'outward' }],
     });
@@ -388,7 +395,7 @@ describe('track on openings', () => {
 
 describe('internal pressure and charges', () => {
   it('falls back to closed for an unknown pressure', () => {
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, internalPressure: 'sideways' }).internalPressure)
+    expect(normaliseShedConfig({ ...TEST_SHED, internalPressure: 'sideways' }).internalPressure)
       .toBe('closed');
   });
 
@@ -403,13 +410,13 @@ describe('internal pressure and charges', () => {
    */
   it('ignores a stored pressure and derives it from the walls', () => {
     // No wall open → closed, whatever the input says.
-    expect(normaliseShedConfig({ ...DEFAULT_SHED, internalPressure: 'open' }).internalPressure).toBe(
+    expect(normaliseShedConfig({ ...TEST_SHED, internalPressure: 'open' }).internalPressure).toBe(
       'closed',
     );
     // One wall open → open, even if the input said closed.
     expect(
       normaliseShedConfig({
-        ...DEFAULT_SHED,
+        ...TEST_SHED,
         internalPressure: 'closed',
         endOpening: { left: true, right: false },
       }).internalPressure,
@@ -424,7 +431,7 @@ describe('internal pressure and charges', () => {
      * behaviour the company has been quoting under, so it is reproduced rather than corrected.
      */
     const allOpen = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       endOpening: { left: true, right: true },
       sideOpening: { front: true, back: true },
     });
@@ -433,7 +440,7 @@ describe('internal pressure and charges', () => {
 
   it('keeps good charges when one entry is malformed', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       charges: [
         { id: 'ch-1', label: 'Engineering', quantity: 1, unit: 'ea', unitPriceCents: 45000 },
         'nonsense',
@@ -445,7 +452,7 @@ describe('internal pressure and charges', () => {
 
   it('repairs a duplicate charge id', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       charges: [
         { id: 'ch-1', label: 'A', quantity: 1, unit: 'ea', unitPriceCents: 100 },
         { id: 'ch-1', label: 'B', quantity: 1, unit: 'ea', unitPriceCents: 200 },
@@ -462,7 +469,7 @@ describe('internal pressure and charges', () => {
 describe('stable panels from untrusted input (review minor)', () => {
   it('reads the string "false" as false, not true', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'st-1', kind: 'stable', wall: 'front', width: 3000, depth: 2400, height: 2400,
         panels: { left: 'false', right: 'true', front: false, back: true } }],
     });
@@ -473,7 +480,7 @@ describe('stable panels from untrusted input (review minor)', () => {
 
   it('defaults a missing panel to on', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       options: [{ id: 'st-1', kind: 'stable', wall: 'front', width: 3000, depth: 2400, height: 2400,
         panels: { left: false } }],
     });
@@ -486,7 +493,7 @@ describe('stable panels from untrusted input (review minor)', () => {
 describe('shedConfigSchema is the complete config (review minor)', () => {
   it('accepts a full config including options, charges, track, and pressure', () => {
     const result = shedConfigSchema.safeParse({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
         wall: 'front', align: 'center', offset: null, swing: 'outward', track: 'double' }],
       options: [{ id: 'sk-1', kind: 'skylight', bay: 0, alongBay: 0.5, width: 900, height: 900 }],
@@ -497,7 +504,7 @@ describe('shedConfigSchema is the complete config (review minor)', () => {
   });
 
   it('rejects a config with no options array, so it cannot silently strip them', () => {
-    const { options: _options, ...withoutOptions } = DEFAULT_SHED;
+    const { options: _options, ...withoutOptions } = TEST_SHED;
     expect(shedConfigSchema.safeParse(withoutOptions).success).toBe(false);
   });
 });
@@ -546,7 +553,7 @@ describe('site conditions survive a round trip', () => {
     // These are on the config because the span table is indexed by them. A schema
     // that drops them re-prices the shed for a different site on the next edit.
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       windRegion: 'C',
       terrainCategory: 3,
       shieldingFactor: 0.8,
@@ -564,13 +571,13 @@ describe('site conditions survive a round trip', () => {
 
   it('falls back to the default for an unreadable site field', () => {
     const out = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       windRegion: 'Z' as never,
       terrainCategory: 9 as never,
       stateCode: 'XX' as never,
     });
-    expect(out.windRegion).toBe(DEFAULT_SHED.windRegion);
-    expect(out.terrainCategory).toBe(DEFAULT_SHED.terrainCategory);
-    expect(out.stateCode).toBe(DEFAULT_SHED.stateCode);
+    expect(out.windRegion).toBe(TEST_SHED.windRegion);
+    expect(out.terrainCategory).toBe(TEST_SHED.terrainCategory);
+    expect(out.stateCode).toBe(TEST_SHED.stateCode);
   });
 });

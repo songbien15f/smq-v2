@@ -45,7 +45,7 @@
  * Pure TypeScript: no DB, no HTTP, no React.
  */
 
-import type { Opening, ShedConfig } from '@/domain/types';
+import type { Opening, ShedConfig, DimensionedShed } from '@/domain/types';
 
 /** Which of the frame members this describes. */
 export type DoorFrameItem = 'door_header' | 'door_column' | 'door_dropper';
@@ -142,7 +142,7 @@ export function doorFrameSetback(geometry: DoorFrameGeometry): number {
  * port; see `mullionCount` below for what happens instead.
  */
 export function rollerDoorColumnCount(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   opening: Opening,
   infillPositionsMm: readonly number[],
 ): number {
@@ -187,7 +187,7 @@ export function rollerDoorColumnCount(
  * instead, and so does this.
  */
 export function headerLengthMm(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   opening: Opening,
   infillPositionsMm: readonly number[],
 ): number {
@@ -223,7 +223,7 @@ export function headerLengthMm(
  *   stops at the header, which the header's own length then bridges.
  */
 export function mullionLengthMm(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   opening: Opening,
   geometry: DoorFrameGeometry,
   infillPositionsMm: readonly number[],
@@ -240,7 +240,7 @@ export interface MullionSummary {
 }
 
 function mullionSummary(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   opening: Opening,
   geometry: DoorFrameGeometry,
   infillPositionsMm: readonly number[],
@@ -289,7 +289,7 @@ function mullionSummary(
  * frame cannot be described, and inventing a section would price steel nobody sells.
  */
 export function buildDoorFrameMembers(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   geometry: DoorFrameGeometry,
   infillPositionsMm: readonly number[],
 ): DoorFrameMember[] {
@@ -351,7 +351,7 @@ export function buildDoorFrameMembers(
  * Restated here for the same reason `infill.ts` restates it: this module is called from the
  * BOM, which runs without a plan.
  */
-function openingOffset(shed: ShedConfig, opening: Opening): number {
+function openingOffset(shed: DimensionedShed, opening: Opening): number {
   const run = shed.span;
   const max = Math.max(0, run - opening.width);
   switch (opening.align) {

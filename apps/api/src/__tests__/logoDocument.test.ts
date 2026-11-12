@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { newId, now } from '@sq/db';
 import type { Db } from '@sq/db';
-import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
+import { DEFAULT_SHED, normaliseShedConfig, TEST_SHED } from '@sq/core/domain';
 import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
 import { revisionDocumentKey } from '../lib/documents';
 import { loadFrozenRevision, renderFrozenDocument } from '../lib/documents';
@@ -43,7 +43,7 @@ let ctx: TestApp;
 async function seedQuoteWithLogo(db: Db, tenantId: string, logoHash: string | null): Promise<string> {
   const quoteId = newId();
   const at = now();
-  const config = normaliseShedConfig(DEFAULT_SHED);
+  const config = normaliseShedConfig(TEST_SHED);
 
   await db.run(
     `INSERT INTO quotes (id, tenant_id, number, status, current_revision, contract_cents, incomplete, site_json, created_at, updated_at)

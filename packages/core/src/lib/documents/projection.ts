@@ -19,7 +19,7 @@
  */
 
 import { buildPlanGeometry } from '@/domain/plan';
-import type { ShedColors, ShedConfig, StructureType } from '@/domain/types';
+import type { ShedColors, ShedConfig, StructureType, DimensionedShed } from '@/domain/types';
 import { COLOUR_ROLES } from '@/domain/colors';
 import { assumptionsFor, type AssumptionNote } from './assumptions';
 import { colourLabel } from './colours';
@@ -53,7 +53,7 @@ const COLOUR_LABEL: Record<keyof ShedColors, string> = {
  * door still read "Roller door: Monument" — a line about a door nobody is buying, in a document a
  * customer reads as the list of what they get.
  */
-function colourRows(config: ShedConfig): { label: string; colour: string }[] {
+function colourRows(config: DimensionedShed): { label: string; colour: string }[] {
   const openings = new Set(config.openings.map((opening) => opening.type));
   const used: Record<keyof ShedColors, boolean> = {
     wall: true,
@@ -85,7 +85,7 @@ export interface CustomerDocument {
    * geometry — walls, opening positions, sills — and re-deriving that from labels is how a drawing
    * drifts from the quote.
    */
-  config: ShedConfig;
+  config: DimensionedShed;
   issuedAt: string;
   validUntil: string;
   company: {
@@ -195,7 +195,7 @@ const OPENING_LABEL: Record<string, string> = {
 };
 
 /** What the customer is getting, in their words. */
-function inclusions(config: ShedConfig): string[] {
+function inclusions(config: DimensionedShed): string[] {
   const items = [
     `Steel frame, ${metres(config.span)} span × ${metres(config.length)} long`,
     `Wall height ${metres(config.height)}`,
@@ -277,7 +277,7 @@ function planOutline(spanMm: number, lengthMm: number): string {
  * A geometry failure must not take down the document: a quote without a plan is worse than one with
  * a plan that omits a door, but a quote that will not render is worse than both.
  */
-function planOpenings(config: ShedConfig): CustomerDocument['plan']['openings'] {
+function planOpenings(config: DimensionedShed): CustomerDocument['plan']['openings'] {
   try {
     const geometry = buildPlanGeometry(config);
     return geometry.openings.map((opening) => ({

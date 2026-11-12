@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
-import type { ShedConfig, SkylightOption } from '../types';
+import { TEST_SHED } from '../defaults';
+import type { ShedConfig, SkylightOption, DimensionedShed } from '../types';
 import {
   roofSheets,
   skylightCollision,
@@ -9,7 +9,7 @@ import {
   snapSkylightToSheet,
 } from '../skylightSnap';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 const skylight = (patch: Partial<SkylightOption> = {}): SkylightOption => ({
   id: 'sk-1',
@@ -179,7 +179,7 @@ describe('skylightsOverlap', () => {
     const a = skylight({ id: 'a', bay: 2, alongBay: 0.45 });
     const b = skylight({ id: 'b', bay: 2, alongBay: 0.48 });
     expect(skylightCollision(building, b)).toBeNull(); // no options yet
-    const withA: ShedConfig = { ...building, options: [a] };
+    const withA: DimensionedShed = { ...building, options: [a] };
     expect(skylightCollision(withA, b)?.id).toBe('a');
   });
 });

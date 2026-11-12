@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig, ShedOption } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, ShedOption, DimensionedShed } from '@/domain/types';
 import {
   canDuplicate,
   carryBeamSpan,
@@ -10,7 +10,7 @@ import {
   resolveOptions,
 } from '@/domain/options';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 type Skylight = Extract<ShedOption, { kind: 'skylight' }>;
 type Mezzanine = Extract<ShedOption, { kind: 'mezzanine' }>;

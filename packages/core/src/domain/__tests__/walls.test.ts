@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { buildWallGeometries } from '../walls';
 import { placementToPlanRect } from '../placement';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 
 const shed = {
-  ...DEFAULT_SHED,
+  ...TEST_SHED,
   openings: [
     { id: 'd1', type: 'roller_door' as const, width: 4200, height: 3600, sill: 0,
       wall: 'front' as const, align: 'center' as const, offset: null, swing: null, track: null },
@@ -35,7 +35,7 @@ describe('buildWallGeometries', () => {
     expect(front.holes[0]).toEqual({ u: 3900, sill: 0, width: 4200, height: 3600 });
   });
   it('keeps holes inside the wall bounds', () => {
-    const bad = { ...DEFAULT_SHED, openings: [{ ...shed.openings[0], width: 13000 }] };
+    const bad = { ...TEST_SHED, openings: [{ ...shed.openings[0], width: 13000 }] };
     const front = buildWallGeometries(bad).find((x) => x.side === 'front')!;
     for (const h of front.holes) {
       expect(h.u).toBeGreaterThanOrEqual(0);
@@ -47,7 +47,7 @@ describe('buildWallGeometries', () => {
     // leaves the counter-clockwise outline and ExtrudeGeometry has no defined
     // result. `sill + height` must never exceed the wall height.
     const lowWall = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       height: 2400,
       openings: [{ ...shed.openings[0], height: 3600, sill: 0 }],
     };
@@ -62,7 +62,7 @@ describe('buildWallGeometries', () => {
   });
   it('clamps a sill that is already at or above the wall height', () => {
     const lowWall = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       height: 2400,
       openings: [{ ...shed.openings[0], sill: 3000, height: 900 }],
     };
@@ -101,7 +101,7 @@ describe('buildWallGeometries', () => {
   });
   it('lands each wall opening where the 2D plan draws it', () => {
     const cross = {
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [
         { id: 'b1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
           wall: 'back' as const, align: 'custom' as const, offset: 500, swing: 'outward' as const, track: null },

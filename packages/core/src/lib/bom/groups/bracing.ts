@@ -20,7 +20,7 @@
  */
 
 import { bayWidthsFor } from '@/domain/bays';
-import type { Opening, ShedConfig, WallSide } from '@/domain/types';
+import type { Opening, ShedConfig, WallSide, DimensionedShed } from '@/domain/types';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -46,7 +46,7 @@ function diagonal(horizontalMm: number, verticalMm: number): number {
  * door in a side wall) it removed every diagonal on that wall, under-bracing the
  * building.
  */
-function braceableBays(shed: ShedConfig, wall: WallSide): number {
+function braceableBays(shed: DimensionedShed, wall: WallSide): number {
   const doors = shed.openings.filter(
     (opening: Opening) =>
       opening.wall === wall && (opening.type === 'roller_door' || opening.type === 'sliding_door'),
@@ -65,7 +65,7 @@ function braceableBays(shed: ShedConfig, wall: WallSide): number {
  * The bay width used for a side-wall diagonal, mm — the largest, since a diagonal across a short bay
  * would under-order the brace on a long one.
  */
-function bayWidth(shed: ShedConfig): number {
+function bayWidth(shed: DimensionedShed): number {
   return Math.max(...bayWidthsFor(shed));
 }
 
@@ -79,7 +79,7 @@ function bayWidth(shed: ShedConfig): number {
  * - **Roof plane**: two diagonals in the first bay, and two more in the last bay
  *   when the shed is long enough for that bay to be a separate plane.
  */
-export function bracingMetres(shed: ShedConfig, frame: OptimisedFrame): number {
+export function bracingMetres(shed: DimensionedShed, frame: OptimisedFrame): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const rise = (shed.span / 2) * Math.tan(pitch);
   const bay = bayWidth(shed);
@@ -114,7 +114,7 @@ export function bracingMetres(shed: ShedConfig, frame: OptimisedFrame): number {
 
 /** The bracing line. */
 export function bracingLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   // Bracing is measured from the geometry of the walls and roof; the roll length

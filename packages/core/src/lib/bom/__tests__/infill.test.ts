@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, DimensionedShed } from '@/domain/types';
 import {
   buildInfillColumns,
   infillLength,
@@ -10,7 +10,7 @@ import {
   type InfillGeometry,
 } from '../infill';
 
-const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({ ...DEFAULT_SHED, ...patch });
+const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({ ...TEST_SHED, ...patch });
 
 /** The default shed's frame: C15012 end columns (depth 152), TH64075 purlins (64). */
 const geometry = (patch: Partial<InfillGeometry> = {}): InfillGeometry => ({

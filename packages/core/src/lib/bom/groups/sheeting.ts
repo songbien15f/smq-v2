@@ -22,7 +22,7 @@
  * into 0; this build uses the millimetres the book states.
  */
 
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import type { PriceLookup, SheetingRow } from '@/lib/pricing/types';
 import type { MaterialUnitContract } from '@/lib/pricing/catalogueManifest';
 import { bomLine, mockedLine, type BomLine } from '../types';
@@ -50,13 +50,13 @@ export const FALLBACK_PROFILE = 'Corro';
 export const FALLBACK_BMT = 0.42;
 
 /** The roof sheet this shed is clad in, profile and thickness. */
-export function roofSheetingOf(shed: ShedConfig): { profile: string; bmtMm: number } {
+export function roofSheetingOf(shed: DimensionedShed): { profile: string; bmtMm: number } {
   const parsed = parseSheeting(shed.roofProfile ?? '', shed.roofBmt);
   return { profile: parsed.profile === '' ? FALLBACK_PROFILE : parsed.profile, bmtMm: parsed.bmtMm };
 }
 
 /** The wall sheet this shed is clad in, profile and thickness. */
-export function wallSheetingOf(shed: ShedConfig): { profile: string; bmtMm: number } {
+export function wallSheetingOf(shed: DimensionedShed): { profile: string; bmtMm: number } {
   const parsed = parseSheeting(shed.wallProfile ?? '', shed.wallBmt);
   return { profile: parsed.profile === '' ? FALLBACK_PROFILE : parsed.profile, bmtMm: parsed.bmtMm };
 }
@@ -76,12 +76,12 @@ export interface GroupResult {
  * an enclosed garage of the same size, which is a quote for a building the
  * customer did not ask for.
  */
-export function isOpenStructure(shed: ShedConfig): boolean {
+export function isOpenStructure(shed: DimensionedShed): boolean {
   return shed.structureType === 'gable_carport' || shed.structureType === 'skillion_carport';
 }
 
 /** True when the roof falls along the length, so it has one slope. */
-function fallsAlongLength(shed: ShedConfig): boolean {
+function fallsAlongLength(shed: DimensionedShed): boolean {
   return shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
 }
 
@@ -106,19 +106,19 @@ function sheetCount(runMm: number, coverMm: number): number {
  * length instead of half the span, which on a long narrow skillion is several
  * times the steel.
  */
-function roofSheetLength(shed: ShedConfig, rules: BomRules): number {
+function roofSheetLength(shed: DimensionedShed, rules: BomRules): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const run = fallsAlongLength(shed) ? shed.length : shed.span / 2;
   return Math.round(run / Math.cos(pitch) + rules.roofEndAllowance);
 }
 
 /** A wall sheet's length: the wall height plus the end allowance. */
-function wallSheetLength(shed: ShedConfig, rules: BomRules): number {
+function wallSheetLength(shed: DimensionedShed, rules: BomRules): number {
   return shed.height + rules.wallEndAllowance;
 }
 
 /** How many skylights sit on the roof, each replacing a sheet. */
-function skylightCount(shed: ShedConfig): number {
+function skylightCount(shed: DimensionedShed): number {
   return shed.options.filter((option) => option.kind === 'skylight').length;
 }
 
@@ -130,7 +130,7 @@ function skylightCount(shed: ShedConfig): number {
  * place that emits the sheets.
  */
 export function sheetCounts(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   lookup: PriceLookup,
 ): { roof: number; side: number; end: number; coverMm: number; wallCoverMm: number } {
   /*
@@ -260,7 +260,7 @@ function sheetLine(
 
 /** The sheeting lines, with the issues and evidence they produced. */
 export function sheetingGroup(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   contract: MaterialUnitContract,
@@ -323,7 +323,7 @@ export function sheetingGroup(
 
 /** The sheeting lines. Kept for callers that only need the materials. */
 export function sheetingLines(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
   contract: MaterialUnitContract,

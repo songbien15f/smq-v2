@@ -5,7 +5,7 @@ import { baySpacingMismatch, optionsThatNoLongerFit } from '@sq/core/domain';
 // From `domain`, not `pricing`: the pricing barrel re-exports `publish.ts`, whose `node:fs`
 // import breaks the browser bundle (`Module not found: Can't resolve 'fs'`, measured 2026-11-11).
 import { isNonStandardStructure } from '@sq/core/domain';
-import type { ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
+import type { DimensionedShed, ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
 
 /**
  * Validation for the quote draft.
@@ -40,9 +40,16 @@ export interface DraftIssue {
 export interface DraftForValidation {
   config: {
     structureType: string;
-    span: number;
-    length: number;
-    height: number;
+    /**
+     * The three dimensions, **`null` until stated**.
+     *
+     * A new quote has no building. Validation is where that becomes visible to the operator: an
+     * absent span is a field to fill in, not a `0` to silently accept, so this module reports it like
+     * any other missing required value.
+     */
+    span: number | null;
+    length: number | null;
+    height: number | null;
     roofPitchDeg: number;
     bays: number;
     /**
@@ -179,30 +186,58 @@ export function validateDraft(
   }
 
   // ---------------------------------------------------------------- 3. Design & 4. Shed
-  //
-  // The one cross-field rule the desktop enforces, and it is a structural one: a wide portal with
-  // low walls has no room for the knee of the frame. The desktop shows both fields in error; so
-  // does this, because either could move.
-  if (config.span >= 12000 && config.height < 3000) {
+  /*
+   * ## The three dimensions are required, and their absence is the first thing said
+   *
+   * A quote is a price for a building. Before the operator states a span, a length and a wall height
+   * there is no building: no frame to size, no sheets to count, nothing ShedSafe could rate. The old
+   * `DEFAULT_SHED` filled these in, so a quote could be saved and sent against a shed nobody had
+   * described — the reported defect.
+   *
+   * The messages name the field and say why it cannot be skipped, because "required" on its own
+   * teaches people to type 1 into a box to make the button go green.
+   */
+  for (const [field, label, path] of [
+    ['span', 'span (the clear width inside the columns)', 'shed-span'],
+    ['length', 'overall length', 'shed-length'],
+    ['height', 'wall height', 'shed-height'],
+  ] as const) {
+    if (config[field] === null) {
+      issues.push({
+        path,
+        message: `Enter the ${label}. The price is built from the building’s dimensions, so there is nothing to quote until it is stated.`,
+      });
+    }
+  }
+
+  /*
+   * The one cross-field rule the desktop enforces, and it is a structural one: a wide portal with
+   * low walls has no room for the knee of the frame. The desktop shows both fields in error; so
+   * does this, because either could move.
+   *
+   * Only when both are stated — a null is already reported above, and repeating it here would put
+   * two messages on one field.
+   */
+  if (config.span !== null && config.height !== null && config.span >= 12000 && config.height < 3000) {
     const message =
       'A span of 12 m or more needs walls of at least 3 m. Raise the wall height or reduce the span.';
     issues.push({ path: 'shed-span', message });
     issues.push({ path: 'shed-height', message });
   }
 
-  if (config.span < LIMITS.span.min || config.span > LIMITS.span.max) {
+  if (config.span !== null && (config.span < LIMITS.span.min || config.span > LIMITS.span.max)) {
     issues.push({
       path: 'shed-span',
       message: `Span must be between ${LIMITS.span.min} mm and ${LIMITS.span.max} mm. This is the clear width, measured inside the columns.`,
     });
   }
-  if (config.length < LIMITS.length.min || config.length > LIMITS.length.max) {
+  if (config.length !== null && (config.length < LIMITS.length.min || config.length > LIMITS.length.max)) {
     issues.push({
       path: 'shed-length',
       message: `Overall length must be between ${LIMITS.length.min} mm and ${LIMITS.length.max} mm.`,
     });
   }
-  if (config.height < LIMITS.height.min || config.height > LIMITS.height.max) {
+  if (config.height !== null && (config.height < LIMITS.height.min || config.height > LIMITS.height.max)) {
     issues.push({
       path: 'shed-height',
       message: `Wall height must be between ${LIMITS.height.min} mm and ${LIMITS.height.max} mm.`,
@@ -235,7 +270,8 @@ export function validateDraft(
    * moves the purlin run and the frame row — and that is worth saying.
    */
   const hasUnevenBays = Array.isArray(config.bayWidths) && config.bayWidths.length === config.bays;
-  if (!hasUnevenBays && config.bays > 0) {
+  // A building with no length yet has nothing to divide; the missing-length message is above.
+  if (!hasUnevenBays && config.bays > 0 && config.length !== null) {
     const perBay = config.length / config.bays;
     if (!Number.isInteger(perBay)) {
       issues.push({
@@ -263,7 +299,11 @@ export function validateDraft(
    * leaves `Bay` untouched when a bay is edited (`OnBayUnitsChange`), so a mismatch is the expected
    * state rather than a mistake.
    */
-  if (!hasUnevenBays && baySpacingMismatch(config)) {
+  if (
+    !hasUnevenBays &&
+    config.length !== null &&
+    baySpacingMismatch({ length: config.length, bays: config.bays, nomBaySpacing: config.nomBaySpacing })
+  ) {
     issues.push({
       path: 'shed-nomBaySpacing',
       message:
@@ -284,8 +324,14 @@ export function validateDraft(
    * under a mezzanine, watch the plan redraw, and save a quote for a building that cannot be built.
    * Same class as the R9 rule: refuse rather than warn, because a warning is what a person clicks past.
    */
-  for (const problem of optionsThatNoLongerFit(config as unknown as ShedConfig)) {
-    issues.push({ path: `options-${problem.id}`, message: problem.reason });
+  /*
+   * Options can only "no longer fit" a building that exists. With no dimensions there is no bound to
+   * have fallen outside of, and the missing-dimension messages above already say what to do.
+   */
+  if (config.span !== null && config.length !== null && config.height !== null) {
+    for (const problem of optionsThatNoLongerFit(config as unknown as DimensionedShed)) {
+      issues.push({ path: `options-${problem.id}`, message: problem.reason });
+    }
   }
 
   /*

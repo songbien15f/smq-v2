@@ -50,7 +50,7 @@ import {
   resolveOpeningPlacement,
   wallDisplacement,
 } from '@sq/core/domain';
-import { canDuplicate, resolveOption } from '@sq/core/domain';
+import { canDuplicate, resolveOption, withDimensions } from '@sq/core/domain';
 import {
   OPENING_TYPE_OPTIONS,
   OPTION_KIND_OPTIONS,
@@ -59,7 +59,7 @@ import {
   selectionAnchor,
 } from '@sq/core/domain';
 import { DEFAULT_OPENING_BY_TYPE } from '@sq/core/domain';
-import type { Opening, OpeningType, OptionKind, ShedConfig, ShedOption } from '@sq/core/domain';
+import type {  Opening, OpeningType, OptionKind, ShedConfig, ShedOption, DimensionedShed } from '@sq/core/domain';
 import { DESKTOP_QUERY, useMediaQuery } from '@/hooks/useMediaQuery';
 import { PlanCanvas, type DoorGhost } from './PlanCanvas';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
@@ -176,7 +176,7 @@ function clamp(value: number, min: number, max: number): number {
  * sees, so it is the honest test — and it is rounded to whole millimetres, which
  * is the canonical unit.
  */
-function sameAnchor(shed: ShedConfig, a: ShedOption, b: ShedOption): boolean {
+function sameAnchor(shed: DimensionedShed, a: ShedOption, b: ShedOption): boolean {
   const before = resolveOption(a, shed).rect;
   const after = resolveOption(b, shed).rect;
   return (
@@ -193,8 +193,39 @@ function sameAnchor(shed: ShedConfig, a: ShedOption, b: ShedOption): boolean {
  */
 export type Render2DProps = Record<never, never>;
 
-export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Render2D(_props, ref) {
-  const config = useShedStore((s) => s.config);
+/**
+ * The empty state: a frame with a sentence, not a blank panel.
+ *
+ * A canvas that renders nothing is indistinguishable from one that failed, and this build has already
+ * shipped that confusion once (the site-check table that only rendered when certified).
+ */
+function PlanEmptyState({ config }: { config: ShedConfig }) {
+  return (
+    <div className="flex h-full min-h-[280px] w-full flex-col items-center justify-center gap-sq-2 rounded-lg border border-dashed border-sq-line bg-sq-surface p-sq-4 text-center">
+      <p className="text-sq-body font-medium text-sq-ink">Nothing to draw yet</p>
+      <p className="max-w-sm text-sq-micro text-sq-ink-muted">
+        Enter the span, the overall length and the wall height in Quote details — the plan is drawn
+        from those three numbers.
+      </p>
+      <ul className="sq-numeric flex flex-wrap justify-center gap-x-sq-3 gap-y-sq-1 text-sq-micro text-sq-ink-muted">
+        <li>Span: {config.span === null ? 'not entered' : `${config.span} mm`}</li>
+        <li>Length: {config.length === null ? 'not entered' : `${config.length} mm`}</li>
+        <li>Wall height: {config.height === null ? 'not entered' : `${config.height} mm`}</li>
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The plan, when there is a building to draw.
+ *
+ * Split from `Render2D` because a hook may not sit behind a conditional return: the first version
+ * returned the empty state before its `useShedStore` calls and React refused to render ("Rendered
+ * more hooks than during the previous render", measured in the browser on 2026-11-12).
+ */
+const Render2DCanvas = forwardRef<Render2DHandle, Render2DProps & { config: DimensionedShed }>(
+  function Render2DCanvas(_props, ref) {
+  const config = _props.config;
   const selection = useShedStore((s) => s.selection);
   const editorOpen = useShedStore((s) => s.editorOpen);
   const select = useShedStore((s) => s.select);
@@ -1240,3 +1271,16 @@ export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Rende
     </div>
   );
 });
+/**
+ * The plan view: a drawing when the building is described, a sentence when it is not.
+ *
+ * A ternary rather than an early return, because the drawing component uses hooks and a hook may not
+ * sit behind a conditional exit — the reason this wrapper exists at all.
+ */
+export const Render2D = forwardRef<Render2DHandle, Render2DProps>(function Render2D(props, ref) {
+  const stored = useShedStore((s) => s.config);
+  const building = withDimensions(stored);
+  if (building === null) return <PlanEmptyState config={stored} />;
+  return <Render2DCanvas {...props} ref={ref} config={building} />;
+});
+

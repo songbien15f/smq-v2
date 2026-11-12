@@ -22,7 +22,7 @@
 
 import { bayWidthsFor } from '@/domain/bays';
 import { roofSheetingOf, wallSheetingOf } from './groups/sheeting';
-import type { ShedConfig } from '@/domain/types';
+import type { ShedConfig, DimensionedShed } from '@/domain/types';
 import { windRegionCode } from '@/domain/wind';
 import type { PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
@@ -89,7 +89,7 @@ export function girtRows(
 }
 
 /** The roof run the purlins span: full for a skillion, half for a gable. */
-function roofSpanFor(shed: ShedConfig): number {
+function roofSpanFor(shed: DimensionedShed): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const slope = shed.span / Math.cos(pitch);
   const fallsAlongLength =
@@ -113,7 +113,7 @@ function roofSpanFor(shed: ShedConfig): number {
  * the building. With editable bays that is an under-sized frame; before them the two answers differed
  * only by the rounding.
  */
-function maxBay(shed: ShedConfig): number {
+function maxBay(shed: DimensionedShed): number {
   return Math.max(...bayWidthsFor(shed));
 }
 
@@ -138,7 +138,7 @@ function maxBay(shed: ShedConfig): number {
  * The book's own codes are passed in so `A` on a book that lists only `A` stays `A`, while the same
  * `A` on a book with `A2` rows becomes `A2`.
  */
-function windCode(shed: ShedConfig, bookCodes?: readonly string[]): string {
+function windCode(shed: DimensionedShed, bookCodes?: readonly string[]): string {
   return windRegionCode(shed.windRegion, shed.terrainCategory ?? 2.5, bookCodes);
 }
 
@@ -151,7 +151,7 @@ function windCode(shed: ShedConfig, bookCodes?: readonly string[]): string {
  * real frame.
  */
 export function optimise(
-  shed: ShedConfig,
+  shed: DimensionedShed,
   lookup: PriceLookup,
   rules: BomRules = DEFAULT_BOM_RULES,
 ): OptimisedFrame {

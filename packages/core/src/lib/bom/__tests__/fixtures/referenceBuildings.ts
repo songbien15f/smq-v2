@@ -12,14 +12,21 @@
  * as an order-of-magnitude difference rather than a rounding argument.
  */
 
-import { DEFAULT_SHED } from '@/domain/defaults';
-import type { ShedConfig, ShedOption } from '@/domain/types';
+import { TEST_SHED } from '@/domain/defaults';
+import type {  ShedConfig, ShedOption, DimensionedShed } from '@/domain/types';
 import type { MaterialUnitContract } from '@/lib/pricing/catalogueManifest';
 import type { PriceLookup } from '@/lib/pricing/types';
 import type { MaterialKind } from '@/lib/bom/materialUnits';
 
-export const shed = (patch: Partial<ShedConfig> = {}): ShedConfig => ({
-  ...DEFAULT_SHED,
+/**
+ * A described building for BOM tests.
+ *
+ * `TEST_SHED` rather than `DEFAULT_SHED`: since dimensions became nullable, `DEFAULT_SHED` has none,
+ * and a BOM test that cannot name a span has nothing to build. The type is `DimensionedShed` so the
+ * compiler knows the fixture is complete.
+ */
+export const shed = (patch: Partial<DimensionedShed> = {}): DimensionedShed => ({
+  ...TEST_SHED,
   ...patch,
 });
 
@@ -176,7 +183,7 @@ export const syntheticLookup = (over: Partial<Record<string, unknown>> = {}): Pr
   }) as never;
 
 /** A building with no openings, so only the geometry under test contributes. */
-export const plainShed = (patch: Partial<ShedConfig> = {}): ShedConfig =>
+export const plainShed = (patch: Partial<DimensionedShed> = {}): DimensionedShed =>
   shed({ span: 6000, length: 10_000, height: 2400, roofPitchDeg: 0, bays: 2, openings: [], ...patch });
 
 export const option = (patch: Partial<ShedOption>): ShedOption => patch as ShedOption;

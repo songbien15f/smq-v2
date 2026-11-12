@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SHED } from '../defaults';
+import { TEST_SHED } from '../defaults';
 import { normaliseShedConfig } from '../schema';
 
 function roller(patch: Record<string, unknown> = {}) {
@@ -20,16 +20,16 @@ function roller(patch: Record<string, unknown> = {}) {
 
 describe('opening details', () => {
   it('turns windlocks on by default in wind regions C and D, and off in A', () => {
-    const c = normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'C', openings: [roller()] });
+    const c = normaliseShedConfig({ ...TEST_SHED, windRegion: 'C', openings: [roller()] });
     expect(c.openings[0]?.windlock).toBe(true);
 
-    const a = normaliseShedConfig({ ...DEFAULT_SHED, windRegion: 'A', openings: [roller()] });
+    const a = normaliseShedConfig({ ...TEST_SHED, windRegion: 'A', openings: [roller()] });
     expect(a.openings[0]?.windlock).toBe(false);
   });
 
   it('keeps an explicit windlock choice', () => {
     const c = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       windRegion: 'D',
       openings: [roller({ windlock: false })],
     });
@@ -38,7 +38,7 @@ describe('opening details', () => {
 
   it('clears series and windlocks from a non-roller opening', () => {
     const c = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [roller({ type: 'window', series: 'B', windlock: true })],
     });
     expect(c.openings[0]?.series).toBeNull();
@@ -47,7 +47,7 @@ describe('opening details', () => {
 
   it('round-trips the catalogue SKU, series and Opening Only flag', () => {
     const c = normaliseShedConfig({
-      ...DEFAULT_SHED,
+      ...TEST_SHED,
       openings: [roller({ sku: 'RD-B-4800', series: 'B', prepOnly: true })],
     });
     expect(c.openings[0]).toMatchObject({ sku: 'RD-B-4800', series: 'B', prepOnly: true });
