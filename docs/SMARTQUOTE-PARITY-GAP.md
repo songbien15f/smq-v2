@@ -23,10 +23,9 @@ kèm bằng chứng từ source và từ đo, để phiên sau không phải h�
 | Step 2 — Options dock | khớp chức năng (12 loại qua context menu); dock chỉ liệt kê 7+3 |
 | Step 3 — Cost | **đã so 2026-11-12** — 6/6 trường đổi giá, không có lỗi (§7) |
 
-**Trạng thái 2026-11-12:** các mục 1–5 của §6 đã xong; Step 3 đã so và không có lỗi (§7); ba điểm
-"chưa kiểm" của §5 đã kiểm xong, cả ba là **quyết định thiết kế**, không phải lỗi. Còn lại chỉ là
-**Show More Parameters** (7 field địa lý desktop có flyout, v2 đọc và lưu nhưng không hiện) và mục 6
-(min bays 1 vs 2).
+**Trạng thái 2026-11-12 (cuối):** Step 3 đã so và không có lỗi (§7); ba điểm "chưa kiểm" của §5 đã
+kiểm xong; và bốn khoảng trống cuối **đã đóng** (§8): Quote Rate có 5 mức, địa chỉ read-only có điều
+kiện, Show More Parameters hiện 7 dòng, min bays = 1. Không còn mục nào chưa làm.
 
 Phát hiện lớn nhất không phải về thứ tự: **ba loại option tồn tại trong domain, được BOM định giá,
 và không có cách nào tạo ra chúng từ giao diện.**
@@ -271,3 +270,21 @@ v2 giữ lại giá engine tính để so, thay vì vứt đi.
 
 Step 3 không có lỗi tương đương Step 1. Bảng paridade giờ **không còn mục "chưa so"** nào; chỉ còn ba
 điểm nhỏ đã ghi ở §5 (Quote Rate, ba ô địa chỉ, top bar), và chúng là câu hỏi về **thiết kế** hơn là lỗi.
+
+---
+
+## 8. Bốn khoảng trống cuối — đã đóng 2026-11-12
+
+| # | Trước | Sau |
+|---|---|---|
+| 1 | Quote Rate chỉ là ô số; desktop có 5 mức đặt tên | select 5 mức (`None` 0 %, `Diamond` 10, `Gold` 12, `Silver` 14, `Bronze` 16) **+** ô số tự do |
+| 2 | Suburb/State/Postcode sửa tự do | `readOnly` **khi Places có cấu hình** — vì desktop ẩn chúng và picker điền |
+| 3 | 7 field địa lý chỉ nằm trong panel ShedSafe | `<details>` "Show more parameters" trong Design, ngay sau Design Wind Speed |
+| 4 | min bays = 2 | min bays = **1** (`DEFAULT_SHED.bays` vẫn 2 — default, không phải giới hạn) |
+
+**Số 2 có một bẫy đáng ghi:** port thẳng `Enable = false` của desktop là **sai** ở đây. Desktop có
+Places như một phần sản phẩm; v2 có key là tuỳ chọn triển khai. Khoá ba ô trên server không có Places
+thì địa chỉ không hoàn chỉnh được, mà gate PIN cần `site.suburb` — **PIN bị chặn vĩnh viễn**. E2E bắt
+được điều này; nay khoá có điều kiện theo `AddressField.onConfiguredChange`.
+
+Chi tiết ở `docs/smartquote-quote-editor-reference.md` §13.40.
