@@ -3810,6 +3810,65 @@ Step 3 **không có** lỗi tương đương Step 1. Bảng paridade không còn
 
 ---
 
+## 13.40 Bốn khoảng trống cuối so với desktop (2026-11-12)
+
+### 13.40.1 Quote Rate — năm mức đặt tên
+
+`MAllSetting.HARD_DEFAULT_SETTING.CustomerRates` (`:27-58`) là **năm mức**: `None` 0 %, `Diamond` 10,
+`Gold` 12, `Silver` 14, `Bronze` 16. Desktop đổ vào dropdown.
+
+Nhưng quote **chỉ lưu con số** (`CustomerData.cs:79,382,430` — `CustomerRateValue`), không lưu
+`RateCode`/`RateName`, và model desktop có `IsCustom` cho mức tự nhập. Nên đây là **lối tắt, không phải
+enum**.
+
+Làm: `domain/quoteRate.ts` (`QUOTE_RATE_TIERS`, `rateTierFor`) — **ở `domain/` chứ không ở
+`lib/pricing`**, vì barrel pricing kéo `node:fs` vào bundle trình duyệt (lỗi đã gặp 2026-11-11). Màn
+hình có select 5 mức **và** ô số; gõ 13 % thì select hiện "Custom — 13 %" và câu dưới nói rõ nó được
+dùng đúng như đã gõ.
+
+### 13.40.2 Suburb / State / Postcode — read-only **khi Places hoạt động**
+
+`MQuoteDetailView.cs:246-320` đặt cả ba `Enable = false` **và** `Visibility = Hidden`: picker điền,
+không ai gõ.
+
+**Nhưng không port thẳng được:** desktop có Places là một phần sản phẩm; ở v2 key là cấu hình triển
+khai. Khoá ba ô trên server **không có** Places thì địa chỉ không bao giờ hoàn chỉnh — và gate PIN cần
+`site.suburb`, nên PIN bị chặn vĩnh viễn. Đó là lỗi tôi tạo ra khi thử khoá vô điều kiện, và e2e bắt
+được.
+
+Nay: `AddressField` báo `onConfiguredChange`, và ba ô `readOnly` **chỉ khi** picker nói nó có cấu hình.
+`readOnly` chứ không `disabled`: trình đọc màn hình bỏ qua `disabled`, và người kiểm tra địa chỉ picker
+trả về cần đọc/copy được.
+
+### 13.40.3 Show more parameters — bảy field địa lý
+
+`XPropertyGridShowMoreParameters.cs`: 7 dòng, tất cả `Enable = false`. v2 đã **đọc và lưu** đủ bảy
+(`check.site`) nhưng chỉ hiện trong `<details>` của panel ShedSafe.
+
+Nay có `<details>` riêng trong **Design group**, ngay sau Design Wind Speed — đúng chỗ desktop đặt nút
+(`trace §5.6`). Bảy dòng: Shielding, Topographic factor, Snow load region, Earthquake hazard factor,
+Elevation, Location (`lat, lng`), Rainfall (`100y/20y mm/h`) — đúng định dạng desktop. `null` in `—`.
+
+### 13.40.4 Min bays 1
+
+`DDesign.MaxNoOfBays` = 30 và field No. of Bays là `min 1, default 2` (`trace §3.6` #50). v2 clamp
+`[2,30]`, nên nhà nhỏ nhất có thể báo giá **dài hơn nhà máy một bay** — một nhà bốn cột một nhịp không
+biểu đạt được.
+
+Nay `clampBays` là `[1,30]`; `2` vẫn là **default** của quote mới (`DEFAULT_SHED.bays`), đúng chỗ của
+"default 2" — một default, không phải một giới hạn.
+
+### Kiểm chứng
+
+4 e2e mới (5 mức + số tự do; địa chỉ read-only **có điều kiện**; 7 dòng read-only; một bay).
+**31/31** trên `stepOne`, 1 072 core, 294 api, 57 client, **0 lỗi typecheck**.
+
+Hai lỗi tự gây ra trong lúc làm: (a) khoá ba ô địa chỉ vô điều kiện làm gate PIN không thể mở trên
+server không có Places; (b) `#shed-span` trống vì `applyDimension` mở confirm và Playwright dismiss —
+helper test thiếu `page.on('dialog')`.
+
+---
+
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |
 |---|---|
@@ -3818,7 +3877,7 @@ Step 3 **không có** lỗi tương đương Step 1. Bảng paridade không còn
 | `@sq/db` | 18 |
 | `@sq/contracts` | 15 |
 | `@sq/client-app` | 50 (form, category dock, `ControlSheet`, unsaved-changes guard, validation rules, editor fragment, `.sqd` import screen) |
-| `e2e` (Playwright) | **41 passed + 1 skipped** on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, **panel Building parameters mở trống + số dưới 100 bị từ chối + Copy from the quote**, **gate mở khi panel đủ (tài khoản salesman thật — skip trên E2ESHEDS)**, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
+| `e2e` (Playwright) | **44 passed + 1 skipped** on the `chrome` project (sign in, create-or-reuse+save, reopen, settings save, send dialog, leave-guard both ways, price visible at every width, strip stays pinned, no sideways scroll, mobile menu, breadcrumb touch target, sign out; 4 legacy `.sqd` import; 3 vendor dashboard; **21 Step 1** — ShedSafe giữa Delivery và Design, 6 giá trị readonly + nhãn nguồn, State vẫn sửa được, **internal pressure suy từ tường**, **11 cấu trúc đều lưu được**, avg/ridge height, **cantilever 1 400 bị chặn và custom thì không**, **downpipe PVC 1 màu / STEEL 29 màu**, **bay khác chiều dài và length = tổng**, **pitch theo span + báo pitch không có trong sách**, **panel Building parameters mở trống + số dưới 100 bị từ chối + Copy from the quote**, **gate mở khi panel đủ (tài khoản salesman thật — skip trên E2ESHEDS)**, đổi scope thì bỏ tick, 2 salesman gate, 3 Save từ mọi step) + setup/teardown — needs `pnpm dev`; **leaves no rows behind** |
 
 Chạy toàn bộ: `npx turbo run test`. Typecheck: `pnpm --filter @sq/<pkg> typecheck`.
 

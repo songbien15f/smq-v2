@@ -53,6 +53,12 @@
 import type { BomResult } from '@/lib/bom/types';
 import { validatePriceInput } from '@/lib/estimating/validate';
 
+/*
+ * The named rate tiers live in `domain/` because a browser component renders them, and this barrel
+ * reaches `node:fs`. Re-exported so a caller that already imports from here is unaffected.
+ */
+export { QUOTE_RATE_TIERS, rateTierFor, type QuoteRateTier } from '@/domain/quoteRate';
+
 /** Australia's GST rate. Law, not configuration. */
 export const GST_RATE = 0.1;
 

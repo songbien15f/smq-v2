@@ -112,7 +112,7 @@ const LIMITS = {
   span: { min: 2000, max: 30000 },
   length: { min: 2000, max: 120000 },
   height: { min: 2000, max: 12000 },
-  bays: { min: 2, max: 30 },
+  bays: { min: 1, max: 30 },
   pitch: { min: 0, max: 45 },
 } as const;
 

@@ -11,6 +11,7 @@ export * from "./jsonSchema";
 export * from "./options";
 export * from "./optionRules";
 export * from "./placement";
+export * from "./quoteRate";
 export * from "./placementRules";
 export * from "./plan";
 export * from "./presets";

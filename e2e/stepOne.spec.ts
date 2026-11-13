@@ -23,6 +23,14 @@ import { expect, test } from '@playwright/test';
  * do not exist in the DOM otherwise.
  */
 async function stateDimensions(page: import('@playwright/test').Page): Promise<void> {
+  /*
+   * Changing a dimension can wipe placed options, and the app asks first
+   * (`applyDimension` → `shouldWipeOptions`). Playwright's default is to **dismiss** a dialog, so the
+   * change would be silently dropped and the field left empty — measured here: span stayed blank while
+   * height and length took, because span was the change that would have wiped an option left by an
+   * earlier test.
+   */
+  page.on('dialog', (dialog) => void dialog.accept());
   const shedGroup = page.locator('h3 > button').filter({ hasText: /^Shed(?!Safe)/ }).first();
   if ((await shedGroup.getAttribute('aria-expanded')) === 'false') await shedGroup.click();
   await page.locator('#shed-span').fill('12000');
@@ -138,6 +146,122 @@ test.describe('Step 1 — quote details', () => {
     const panelAverage = (await page.locator('#sitecheck-params-averageHeight').textContent()) ?? '';
     const shedAverage = (await page.locator('#shed-averageHeight').textContent()) ?? '';
     expect(panelAverage.replace(/[^0-9]/g, '')).toBe(shedAverage.replace(/[^0-9]/g, ''));
+  });
+
+  test('quote rate offers the five named tiers and still accepts a typed figure', async ({ page }) => {
+    /*
+     * The desktop's `CustomerRates` list (`MAllSetting.cs:27-58`): `None` 0 %, `Diamond` 10, `Gold`
+     * 12, `Silver` 14, `Bronze` 16. But a quote stores only the **number** (`CustomerData.cs:430`),
+     * and the desktop's own model carries `IsCustom` — so the tier is a shortcut, not an enum.
+     *
+     * Both halves are asserted: picking a tier writes its percentage, and a figure that is no tier is
+     * kept exactly as typed instead of being snapped back.
+     */
+    const tier = page.locator('#customer-quoteRateTier');
+    const pct = page.locator('#customer-quoteRatePct');
+
+    for (const [code, expected] of [
+      ['None', '0'],
+      ['Diamond', '10'],
+      ['Gold', '12'],
+      ['Silver', '14'],
+      ['Bronze', '16'],
+    ] as const) {
+      await tier.selectOption(code);
+      await expect(pct).toHaveValue(expected);
+    }
+
+    // A rate that is not a tier survives, and the select says so.
+    await pct.fill('13');
+    await expect(pct).toHaveValue('13');
+    await expect(tier).toHaveValue('custom');
+    await expect(page.getByText(/not one of the named tiers/i)).toBeVisible();
+  });
+
+  test('the address parts are read-only, and say where they come from', async ({ page }) => {
+    /*
+     * `MQuoteDetailView.cs:246-320` hides and disables `SuburbName`/`State`/`Postcode` in all three
+     * address blocks: the picker fills them. The state in particular selects the price table, so a
+     * typed "Queensland" is a pricing bug, and a suburb that disagrees with the street line is an
+     * address nobody can deliver to.
+     *
+     * `readOnly`, not `disabled`: an operator checking what the picker resolved has to be able to
+     * read and copy these.
+     */
+    /*
+     * **Conditional on the picker.** The desktop could lock these outright because Places was part of
+     * the product; here the key is a deployment setting, so locking them on a server with no picker
+     * would leave an address nobody can complete. The fields are read-only **while the picker reports
+     * itself configured**, and editable otherwise.
+     *
+     * The E2E server has no Places key, so this asserts the honest branch — and the earlier version of
+     * this test asserted `readonly` unconditionally, which is the bug it was written to catch.
+     */
+    const note = page.getByText(/Address suggestions are not configured/i).first();
+    const placesOn = (await note.count()) === 0 && (await page.locator('#customer-suburb').getAttribute('readonly')) !== null;
+
+    for (const id of ['#customer-suburb', '#customer-state', '#customer-postcode', '#site-suburb', '#site-state', '#site-postcode']) {
+      const field = page.locator(id);
+      if (placesOn) {
+        await expect(field, `${id} must be read-only while the picker works`).toHaveAttribute('readonly', '');
+      } else {
+        await expect(field, `${id} must stay editable with no picker`).not.toHaveAttribute('readonly', '');
+      }
+    }
+  });
+
+  test('Show more parameters lists the seven geographic readings from the rating', async ({ page }) => {
+    /*
+     * `XPropertyGridShowMoreParameters.cs` — seven rows, all `Enable = false`, filled from the
+     * ShedSafe response. This build read all seven already but showed them only inside the ShedSafe
+     * panel's disclosure; the desktop puts the button beside **Design Wind Speed**, because they are
+     * the rest of the same certificate.
+     */
+    /*
+     * The Design group renders its children only while expanded, so the disclosure does not exist in
+     * the DOM until it is opened — the trap this suite documents more than once.
+     */
+    const designGroup = page.locator('h3 > button').filter({ hasText: /^Design/ }).first();
+    if ((await designGroup.getAttribute('aria-expanded')) === 'false') await designGroup.click();
+
+    /*
+     * Matched as a substring, not anchored: the `<summary>` also carries "N of 7 from the rating", so
+     * `^Show more parameters$` never matches — the same anchoring mistake this suite hit on the
+     * salesman sentence, in the other direction.
+     */
+    const summary = page.locator('summary').filter({ hasText: /Show more parameters/i }).first();
+    await expect(summary).toBeVisible();
+    await summary.click();
+
+    for (const id of [
+      '#design-shielding',
+      '#design-topographicFactor',
+      '#design-snowLoadRegion',
+      '#design-earthquakeHazardFactor',
+      '#design-elevation',
+      '#design-location',
+      '#design-rainfall',
+    ]) {
+      await expect(page.locator(id), `${id} must exist`).toBeVisible();
+    }
+
+    // Nothing is typed here: the readings are ShedSafe's.
+    await expect(page.locator('input#design-shielding')).toHaveCount(0);
+  });
+
+  test('a one-bay shed is allowed, because the desktop allows it', async ({ page }) => {
+    /*
+     * The No. of Bays field is `min 1` in the desktop (`trace §3.6`, #50). This build clamped to 2,
+     * so the smallest shed it could quote was one bay longer than the factory's — a building with four
+     * columns and a single span of roof was unrepresentable.
+     */
+    await stateDimensions(page);
+    const bays = page.locator('#shed-bays');
+    await expect(bays).toHaveAttribute('min', '1');
+
+    await bays.fill('1');
+    await bays.blur();
+    await expect(bays).toHaveValue('1');
   });
 
   test('the site check sits between Delivery and Design, not at the bottom', async ({ page }) => {
@@ -313,8 +437,12 @@ test.describe('Step 1 — quote details', () => {
       Number(((await average.textContent()) ?? '').replace(/[^\d.]/g, ''));
 
     const pitch = page.locator('#shed-roofPitchDeg');
-
-    // A known steepness first, so "before" is a value this test chose.
+    /*
+     * The pitch must start above zero: `averageHeightMm` returns null for a flat roof, so a previous
+     * test leaving pitch at 0 makes the average read `—` and the parse below yield 0. Setting a known
+     * value first is what the comment above already argued for — it just needs to happen _before_ the
+     * measurement rather than after it.
+     */
     await pitch.fill('20');
     await expect.poll(parse).toBeGreaterThan(0);
     const atTwenty = await parse();
@@ -462,8 +590,16 @@ test.describe('Step 1 — quote details', () => {
     if ((await delivery.getAttribute('aria-expanded')) === 'false') await delivery.click();
     await page.locator('#site-deliveryAcknowledged').check();
 
+    /*
+     * Polled rather than awaited once: the rail item only exists as a **button** after a price lands,
+     * and the price follows the dimensions and the contact fields through an API round trip. In a full
+     * suite run the earlier tests leave the store busier, so the button appears later than a single
+     * 30 s wait allowed for — measured as "passes alone, fails in the suite".
+     */
     const optionsStep = page.locator('nav[aria-label="Quote steps"] li button').filter({ hasText: /Options/ }).first();
-    await expect(optionsStep).toBeEnabled({ timeout: 30_000 });
+    await expect
+      .poll(async () => optionsStep.isEnabled().catch(() => false), { timeout: 60_000 })
+      .toBe(true);
     await optionsStep.click();
     await expect(page.getByRole('heading', { name: 'Options on the plan', level: 1 })).toBeVisible({
       timeout: 20_000,
@@ -615,8 +751,13 @@ test.describe('Step 1 — quote details', () => {
     const pitch = page.locator('#shed-roofPitchDeg');
     await expect(pitch).toBeVisible();
 
-    // The reference book's list at every span it covers.
-    await expect(page.getByText(/The book sells 7\.5, 10, 15, 20, 25, 30° at this span/)).toBeVisible();
+    /*
+     * Polled: the list is derived from the span, and `stateDimensions` has just changed it — so the
+     * sentence appears on the render after the store write, not on the one the click left behind.
+     */
+    await expect
+      .poll(async () => page.getByText(/The book sells 7\.5, 10, 15, 20, 25, 30° at this span/).count())
+      .toBeGreaterThan(0);
 
     // A value that is not listed, but within range: reported, and left alone.
     await pitch.fill('12.5');

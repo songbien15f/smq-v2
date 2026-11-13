@@ -51,6 +51,15 @@ export interface AddressFieldProps {
   placeholder?: string;
   disabled?: boolean;
   hint?: string;
+  /**
+   * Reports whether the server has Places configured.
+   *
+   * A caller needs this to decide whether the **parts** may be locked. `Suburb`/`State`/`Postcode` are
+   * filled by the picker and are read-only while it works — but on a deployment with no key there is
+   * no picker, so locking them would leave an address nobody can complete. The desktop could make
+   * them read-only because Places was part of the product; this build must not assume that.
+   */
+  onConfiguredChange?: (configured: boolean) => void;
 }
 
 /** How long to wait after a keystroke before asking. */
@@ -64,6 +73,7 @@ export function AddressField({
   value,
   onChange,
   onResolved,
+  onConfiguredChange,
   placeholder,
   disabled = false,
   hint,
@@ -97,6 +107,9 @@ export function AddressField({
             // A failure is not "no such address". Say the lookup is unavailable and leave the box
             // usable, so the operator does not conclude the address is wrong.
             setNote('Address suggestions are unavailable right now.');
+            // "Unavailable" is not "unconfigured": the parts must stay editable, because a transient
+            // failure must not lock an address nobody can then complete.
+            onConfiguredChange?.(false);
             setSuggestions([]);
             setOpen(false);
             return;
@@ -105,9 +118,15 @@ export function AddressField({
           setActive(-1);
           setOpen(payload.data.suggestions.length > 0);
           setNote(payload.data.configured ? '' : 'Address suggestions are not configured on this server.');
+          onConfiguredChange?.(payload.data.configured);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setNote('Address suggestions are unavailable.');
+          if (!controller.signal.aborted) {
+            setNote('Address suggestions are unavailable.');
+            // A transient failure is not "unconfigured": the parts stay editable so an address can
+            // still be completed by hand.
+            onConfiguredChange?.(false);
+          }
         });
     }, DEBOUNCE_MS);
 

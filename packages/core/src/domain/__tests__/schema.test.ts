@@ -86,7 +86,9 @@ describe('normaliseShedConfig', () => {
   });
   it('clamps an out-of-range bay count', () => {
     expect(normaliseShedConfig({ ...TEST_SHED, bays: 500 }).bays).toBe(30);
-    expect(normaliseShedConfig({ ...TEST_SHED, bays: 1 }).bays).toBe(2);
+    // One bay is a building; the desktop's field is `min 1` (trace §3.6, #50).
+    expect(normaliseShedConfig({ ...TEST_SHED, bays: 1 }).bays).toBe(1);
+    expect(normaliseShedConfig({ ...TEST_SHED, bays: 0 }).bays).toBe(1);
   });
   it('fills missing optional fields from the default', () => {
     const out = normaliseShedConfig({ span: 12000, length: 24000, height: 4200, bays: 4 });
@@ -174,7 +176,7 @@ describe('clampNotices', () => {
   it('notes an out-of-range bay count, naming both values', () => {
     expect(clampNotices({ ...TEST_SHED, bays: 500 }).join(' ')).toMatch(/bays clamped to 30/i);
     expect(clampNotices({ ...TEST_SHED, bays: 500 }).join(' ')).toMatch(/500/);
-    expect(clampNotices({ ...TEST_SHED, bays: 1 }).join(' ')).toMatch(/bays clamped to 2/i);
+    expect(clampNotices({ ...TEST_SHED, bays: 0 }).join(' ')).toMatch(/bays clamped to 1/i);
   });
   it('notes nothing for an in-range bay count', () => {
     expect(clampNotices({ ...TEST_SHED, bays: 4 })).toEqual([]);

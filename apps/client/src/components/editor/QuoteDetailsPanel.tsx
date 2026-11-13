@@ -32,6 +32,8 @@ import {
 import { downpipePalette, reconcileDownpipeColour, withDimensions } from '@sq/core/domain';
 import { defaultOptionsFor } from '@sq/core/domain';
 import {
+  QUOTE_RATE_TIERS,
+  rateTierFor,
   bayWidthsFor,
   computeBayWidths,
   pitchOutsideBookSpan,
@@ -42,7 +44,13 @@ import {
 } from '@sq/core/domain';
 import type { Catalogue } from '@sq/core/pricing';
 import { deliveryForScope, freightScope } from '@sq/core/domain';
-import type { DisplayUnit, ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
+import type {
+  DisplayUnit,
+  QuoteRateTier,
+  ShedColors,
+  ShedConfig,
+  StructureType,
+} from '@sq/core/domain';
 import { Field, StatusPill } from '@sq/ui';
 import { AddressField } from './AddressField';
 import { DimensionField } from './DimensionField';
@@ -168,6 +176,16 @@ export function QuoteDetailsPanel({
   const setSite = useDraftStore((state) => state.setSite);
   const pricing = useDraftStore((state) => state.pricing);
   const setPricing = useDraftStore((state) => state.setPricing);
+  /** The named tier the current figure matches, or `null` for a rate somebody typed. */
+  const rateTier = rateTierFor(pricing.quoteRatePct);
+  /**
+   * Whether the picker can fill the address parts, which decides whether they are read-only.
+   *
+   * Starts `false`: on the first render nothing is known, and locking a field before knowing the picker
+   * works would leave an address that cannot be completed. `AddressField` reports as soon as it has an
+   * answer.
+   */
+  const [placesConfigured, setPlacesConfigured] = useState(false);
   const { catalogue } = useCatalogue();
   const deliveryScopes = catalogue?.deliveryScopes ?? [];
   const { minimumFees } = useCompanyPricing();
@@ -252,21 +270,60 @@ export function QuoteDetailsPanel({
           the cost step. It moves the total on every quote, so it must be visible
           before anyone reaches the price.
         */}
+        {/*
+          Quote rate: the desktop's five **named tiers**, plus a free figure.
+
+          ## Why a select that does not lock the number
+
+          `MAllSetting.cs:27-58` lists `None` 0 %, `Diamond` 10, `Gold` 12, `Silver` 14, `Bronze` 16,
+          and the desktop filled a dropdown from it. But the quote stores only `CustomerRateValue`
+          (`CustomerData.cs:430`) — never the code — and the desktop's own model carries `IsCustom`
+          for a rate somebody typed. So the tier is a **shortcut**, not an enum: choosing one writes
+          its percentage, and any other figure can still be entered.
+
+          A first version of this screen had the bare number box, which meant an operator had to
+          remember that Gold is 12 %. The label below says which tier the current figure is, so a
+          typed 12 reads as "Gold" without being forced back into the list.
+        */}
         <label className="flex flex-col gap-sq-1">
-          <span className="text-sq-micro font-medium text-sq-ink">Quote rate (%)</span>
-          <input
-            id="customer-quoteRatePct"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            max={100}
-            step={0.5}
-            value={pricing.quoteRatePct}
-            onChange={(event) => setPricing({ quoteRatePct: Number(event.target.value) })}
-            className="min-h-[38px] rounded-md border border-sq-line bg-sq-surface px-sq-2 py-sq-1 text-sq-body outline-none"
-          />
-          <span className="text-sq-micro text-sq-ink-muted">
-            An uplift on the whole job; 0 for none.
+          <span className="text-sq-micro font-medium text-sq-ink">Quote rate</span>
+          <div className="flex items-center gap-sq-2">
+            <select
+              id="customer-quoteRateTier"
+              value={rateTier?.code ?? 'custom'}
+              onChange={(event) => {
+                const tier = QUOTE_RATE_TIERS.find((entry: QuoteRateTier) => entry.code === event.target.value);
+                if (tier !== undefined) setPricing({ quoteRatePct: tier.pct });
+              }}
+              aria-describedby="customer-quoteRatePct-hint"
+              className="min-h-[38px] flex-1 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body"
+            >
+              {QUOTE_RATE_TIERS.map((tier: QuoteRateTier) => (
+                <option key={tier.code} value={tier.code}>
+                  {tier.label} — {tier.pct}%
+                </option>
+              ))}
+              {/* Present only when the figure is not a tier, so the select can show what it is. */}
+              {rateTier === null && <option value="custom">Custom — {pricing.quoteRatePct}%</option>}
+            </select>
+            <input
+              id="customer-quoteRatePct"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={100}
+              step={0.5}
+              value={pricing.quoteRatePct}
+              onChange={(event) => setPricing({ quoteRatePct: Number(event.target.value) })}
+              aria-label="Quote rate percent"
+              className="sq-numeric min-h-[38px] w-24 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-right text-sq-body outline-none"
+            />
+          </div>
+          <span id="customer-quoteRatePct-hint" className="text-sq-micro text-sq-ink-muted">
+            An uplift on the whole job; 0 for none.{' '}
+            {rateTier === null
+              ? 'This figure is not one of the named tiers — it is used exactly as typed.'
+              : `${rateTier.label} is the ${rateTier.pct}% tier.`}
           </span>
         </label>
 
@@ -352,15 +409,36 @@ export function QuoteDetailsPanel({
               ...(parts.postcode === '' ? {} : { postcode: parts.postcode }),
             })
           }
-          hint="Start typing and pick the address — the suburb, state and postcode fill in."
+          onConfiguredChange={setPlacesConfigured}
+          hint={
+            placesConfigured
+              ? 'Start typing and pick the address — the suburb, state and postcode fill in.'
+              : 'Type the full address, including the suburb, state and postcode.'
+          }
         />
+        {/*
+          The three parts are **read-only**, filled by Places.
+
+          `MQuoteDetailView.cs:246-320` sets `Enable = false` **and** `Visibility = Hidden` on
+          `SuburbName`, `State` and `Postcode` for all three address blocks: they exist to be written
+          by the address picker, never typed. Two facts make that right rather than fussy — the state
+          selects the price table, so a typed "QLD " or "Queensland" is a pricing bug; and a suburb
+          that disagrees with the street line is an address nobody can deliver to.
+
+          `readOnly` rather than `disabled`, deliberately: a disabled input is skipped by assistive
+          technology and cannot be selected or copied, and an operator checking what the picker
+          resolved needs to read these. The value is still submitted either way.
+        */}
         <div className="grid grid-cols-3 gap-sq-2">
           <Field
             id="customer-suburb"
             label="Suburb"
             autoComplete="address-level2"
             value={customer.suburb}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setCustomer({ suburb: event.target.value })}
+            hint={placesConfigured ? 'From the address' : undefined}
           />
           <Field
             id="customer-state"
@@ -368,7 +446,10 @@ export function QuoteDetailsPanel({
             autoComplete="address-level1"
             maxLength={3}
             value={customer.state}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setCustomer({ state: event.target.value.toUpperCase() })}
+            hint={placesConfigured ? 'Sets the prices' : undefined}
           />
           <Field
             id="customer-postcode"
@@ -377,7 +458,10 @@ export function QuoteDetailsPanel({
             autoComplete="postal-code"
             maxLength={4}
             value={customer.postcode}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setCustomer({ postcode: event.target.value })}
+            hint={placesConfigured ? 'From the address' : undefined}
           />
         </div>
       </Group>
@@ -411,18 +495,26 @@ export function QuoteDetailsPanel({
           error={errorAt('site-address')}
         />
         <div className="grid grid-cols-3 gap-sq-2">
+          {/* Read-only for the same reason as the customer's: the picker fills them, and the state
+              selects the price table. See the note on the customer block. */}
           <Field
             id="site-suburb"
             label="Suburb"
             value={site.suburb}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setSite({ suburb: event.target.value })}
+            hint={placesConfigured ? 'From the address' : undefined}
           />
           <Field
             id="site-state"
             label="State"
             maxLength={3}
             value={site.state}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setSite({ state: event.target.value.toUpperCase() })}
+            hint={placesConfigured ? 'Sets the prices' : undefined}
           />
           <Field
             id="site-postcode"
@@ -430,7 +522,10 @@ export function QuoteDetailsPanel({
             inputMode="numeric"
             maxLength={4}
             value={site.postcode}
+            readOnly={placesConfigured}
+            aria-readonly={placesConfigured ? 'true' : undefined}
             onChange={(event) => setSite({ postcode: event.target.value })}
+            hint={placesConfigured ? 'From the address' : undefined}
           />
         </div>
       </Group>
@@ -642,6 +737,46 @@ function DesignGroup({
   const { check, state: siteState } = useSiteCheck();
 
   /**
+   * The seven geographic readings, in the desktop's own order and formatting.
+   *
+   * `XPropertyGridShowMoreParameters.cs` is the list; `trace §5.6` records it row by row. Every one is
+   * `Enable = false` there, and every one is `null` here until a rating has been imported — which is
+   * why the formatter prints an em dash rather than a zero.
+   */
+  const siteOf = check?.site ?? null;
+  const geoNumber = (value: number | null | undefined, digits = 2): string =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—';
+  const geoText = (value: string | null | undefined): string =>
+    typeof value === 'string' && value.trim() !== '' ? value : '—';
+  const geoRows: [string, string, string][] = [
+    ['Shielding', geoNumber(siteOf?.shielding), 'design-shielding'],
+    ['Topographic factor', geoNumber(siteOf?.topographicFactor), 'design-topographicFactor'],
+    ['Snow load region', geoText(siteOf?.snowLoadRegion), 'design-snowLoadRegion'],
+    [
+      'Earthquake hazard factor',
+      geoNumber(siteOf?.earthquakeHazardFactor),
+      'design-earthquakeHazardFactor',
+    ],
+    ['Elevation', siteOf?.elevation == null ? '—' : `${geoNumber(siteOf.elevation)} m`, 'design-elevation'],
+    [
+      'Location',
+      // The desktop printed "lat, lng" in that order (`XPropertyGridShowMoreParameters.cs`).
+      siteOf?.latitude == null || siteOf?.longitude == null
+        ? '—'
+        : `${siteOf.latitude}, ${siteOf.longitude}`,
+      'design-location',
+    ],
+    [
+      // `100y/20y`, no spaces — the desktop's own format.
+      'Rainfall intensity (100y/20y)',
+      siteOf?.rainfallIntensity100Years == null || siteOf?.rainfallIntensity20Years == null
+        ? '—'
+        : `${siteOf.rainfallIntensity100Years}/${siteOf.rainfallIntensity20Years} mm/h`,
+      'design-rainfall',
+    ],
+  ];
+
+  /**
    * One certified value, resolved into what to print and what it is.
    *
    * The order of trust is the whole point: a certified import, then what ShedSafe currently holds
@@ -792,6 +927,51 @@ function DesignGroup({
           <DesignValue id="design-snowLoad" label="Ground snow load" entry={siteValue('snowLoad')} />
           <DesignValue id="design-windSpeed" label="Design wind speed" entry={siteValue('designWindSpeed')} />
         </div>
+
+            {/*
+              ------------------------------------------------ Show more parameters
+
+              The desktop's `ShowMoreInfo` flyout (`XPropertyGridShowMoreParameters.cs`), inline and
+              collapsed rather than floating: seven readings that describe the **site**, none of which
+              prices anything. `trace §5.6` lists all seven with `Enable = false` and the placeholder
+              *"Autofill from shedsafe."*
+
+              ## Why it is here and not in the ShedSafe panel
+
+              In the desktop the button sits beside **Design Wind Speed**, because that is the last of
+              the six certified values and these seven are the rest of the same certificate. A person
+              reading "design wind speed 41.5 m/s" is the person who wants to know the elevation and the
+              coordinates it came from.
+
+              ## All seven, read-only, and empty says so
+
+              Nothing here is typed: ShedSafe computed each figure. `null` is "not in the rating" — the
+              panel had none of these before a check ran, and `—` is the honest answer rather than a
+              `0` that looks measured. The rainfall pair is printed as `100y/20y` and the coordinates as
+              `lat, lng`, which is how the desktop formatted them.
+            */}
+            <details className="rounded-md border border-sq-line">
+              <summary className="flex min-h-11 cursor-pointer items-center justify-between px-sq-2 text-sq-micro font-medium text-sq-ink">
+                Show more parameters
+                <span className="text-sq-micro font-normal text-sq-ink-muted">
+                  {geoRows.filter((row) => row[1] !== '—').length} of {geoRows.length} from the rating
+                </span>
+              </summary>
+              <dl className="grid gap-sq-2 border-t border-sq-line p-sq-2 sm:grid-cols-2">
+                {geoRows.map(([label, shown, id]) => (
+                  <div key={String(label)} className="flex items-baseline justify-between gap-sq-2">
+                    <dt className="text-sq-micro text-sq-ink-muted">{String(label)}</dt>
+                    <dd id={String(id)} className="sq-numeric text-sq-body text-sq-ink">
+                      {String(shown)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="border-t border-sq-line p-sq-2 text-sq-micro text-sq-ink-muted">
+                These describe the site, not the price. ShedSafe calculates them; they cannot be typed.
+              </p>
+            </details>
+
 
 
         {/*
@@ -1434,7 +1614,7 @@ function ShedGroup({
             id="shed-bays"
             type="number"
             inputMode="numeric"
-            min={2}
+            min={1}
             max={30}
             step={1}
             value={config.bays}

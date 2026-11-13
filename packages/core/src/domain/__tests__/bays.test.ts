@@ -8,10 +8,15 @@ import {
 } from '../bays';
 
 describe('clampBays', () => {
-  it('clamps to the 2..30 range', () => {
-    expect(clampBays(1)).toBe(2);
-    expect(clampBays(0)).toBe(2);
-    expect(clampBays(-5)).toBe(2);
+  it('clamps to the 1..30 range', () => {
+    /*
+     * One bay is a real building — four columns and a single span of roof — and the desktop's No. of
+     * Bays field is `min 1` (`trace §3.6`, #50). This used to clamp to 2, which made the smallest shed
+     * quotable here one bay longer than the factory's.
+     */
+    expect(clampBays(1)).toBe(1);
+    expect(clampBays(0)).toBe(1);
+    expect(clampBays(-5)).toBe(1);
     expect(clampBays(500)).toBe(30);
     expect(clampBays(4)).toBe(4);
   });
@@ -30,7 +35,9 @@ describe('computeBayPositions', () => {
     expect(p).toEqual([0, 3333, 6666, 10000]);   // floor(10000/3) = 3333
   });
   it('clamps the bay count before computing', () => {
-    expect(computeBayPositions(24000, 1)).toHaveLength(3);
+    // `0` clamps up to 1, so one bay gives two grid lines rather than the old three.
+    expect(computeBayPositions(24000, 0)).toHaveLength(2);
+    expect(computeBayPositions(24000, 1)).toHaveLength(2);
   });
 });
 

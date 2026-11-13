@@ -1,7 +1,7 @@
 /**
  * Bay maths: how a shed's length is divided into structural bays.
  *
- * Bay counts are always integers in `[2, 30]`. Nominal bay spacing is
+ * Bay counts are always integers in `[1, 30]` — the desktop's own bounds. Nominal bay spacing is
  * `floor(length / bays)`; the final bay absorbs any remainder so the grid lines
  * always end exactly at `length`. All values are millimetres, integers.
  *
@@ -66,11 +66,21 @@ export function positionsFromWidths(widths: readonly number[]): number[] {
   return positions;
 }
 
-/** Clamp a requested bay count to an integer in `[2, 30]`. */
+/**
+ * Clamp a requested bay count to an integer in `[1, 30]`.
+ *
+ * The lower bound is the desktop's: `DDesign.MaxNoOfBays` is 30 and the No. of Bays field is
+ * `min 1, default 2` (`trace §3.6`, field #50). A one-bay shed is a real building — four columns and
+ * a single span of roof — and refusing it made the smallest shed this product could quote one bay
+ * longer than the factory's.
+ *
+ * `2` remains what a *new* quote starts from (`DEFAULT_SHED.bays`), which is where the desktop's
+ * "default 2" belongs: a default, not a limit.
+ */
 export function clampBays(bays: number): number {
   const n = Math.round(bays);
   if (!Number.isFinite(n)) return 2;
-  return Math.min(30, Math.max(2, n));
+  return Math.min(30, Math.max(1, n));
 }
 
 /**
