@@ -201,6 +201,19 @@ Get a key from the [Google Cloud Console](https://console.cloud.google.com/apis/
 **Places API (New)** enabled. The key is billed per keystroke; set a quota in Cloud Console before
 testing.
 
+**When Google refuses the key**, the API answers `502 upstream_failed` and the message repeats
+Google's own words, e.g.:
+
+```
+Address lookup is unavailable: Places refused with 403 — PERMISSION_DENIED: The caller does not have permission
+```
+
+That is **not** `503 not_configured` — the key is present; the project is the problem. A bare `403`
+covers billing switched off, `Places API (New)` disabled, and key restrictions (IP allow-list —
+a home ISP address changes overnight; or an API list that no longer includes Places). Read the
+message, then check those three in Cloud Console. The editor keeps the four address fields editable
+throughout, so a quote can still be written by hand.
+
 ### ShedSafe SiteCheck
 
 Used to pin a building and read back the certified wind rating. Without it, the wind fields on the

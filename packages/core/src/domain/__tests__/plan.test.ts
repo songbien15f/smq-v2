@@ -148,6 +148,22 @@ describe('door symbols are technical-drawing symbols (user requirement)', () => 
     expect(Math.hypot(dx, dy)).toBeCloseTo(arc.radius, 0);   // tip is ON the circle
   });
 
+  it('moves the hinge to the far jamb when the door is right-hinged', () => {
+    // The plan used to hard-code the near jamb, so a right-hinged door was drawn mirrored — a
+    // fabricator reading it would fit the door the wrong way round.
+    const config = {
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
+        wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const,
+        track: null, hinge: 'right' as const }],
+    };
+    const o = buildPlanGeometry(config).openings[0];
+    const arc = o.symbol.arc!;
+    expect(arc.x).toBeCloseTo(o.rect.x + o.rect.width, 6);
+    const tip = o.symbol.lines.at(-1)!;
+    expect(Math.hypot(tip[2] - arc.x, tip[3] - arc.y)).toBeCloseTo(arc.radius, 0);
+  });
+
   it('orients the symbol along the wall (not sideways) on a side wall', () => {
     const s = { ...TEST_SHED, openings: [
       { id: 'l1', type: 'pa_door' as const, width: 900, height: 2100, sill: 0,
@@ -338,6 +354,18 @@ describe('sliding door track in plan', () => {
     };
     const pa = buildPlanGeometry(config).openings[0].symbol;
     expect(pa.lines.length).toBe(2); // the opening line and the leaf
+  });
+
+  it('marks the meeting joint only on a two-leaf door', () => {
+    const twoLeaf = {
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'sliding_door' as const, width: 3000, height: 2100, sill: 0,
+        wall: 'front' as const, align: 'center' as const, offset: null, swing: 'outward' as const,
+        track: 'double' as const, leaves: 2 as const }],
+    };
+    const joint = buildPlanGeometry(twoLeaf).openings[0].symbol;
+    const without = buildPlanGeometry(sliding('double')).openings[0].symbol;
+    expect(joint.lines.length).toBe(without.lines.length + 1);
   });
 });
 

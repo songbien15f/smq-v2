@@ -62,6 +62,8 @@ function paDoor(id: string, wall: 'front' | 'back' | 'left' | 'right', align: 'c
     offset: null,
     swing: 'outward' as const,
     track: null,
+    // Hinged on the left jamb as seen from outside, which is the desktop's default.
+    hinge: 'left' as const,
   };
 }
 

@@ -18,6 +18,13 @@
  * A missing key is a deployment fact, not a client error. The field then renders as a plain text box
  * — which is what it was before this route existed — and the screen says so rather than showing an
  * empty suggestion list that reads as "no such address".
+ *
+ * ## Why a refusal from Google is 502 `upstream_failed`, not 503 `not_configured`
+ *
+ * On 2026-11-13 the live key began answering `403 PERMISSION_DENIED` (billing, API off, or key
+ * restrictions — the body names which). The route reported "not configured", which sends the reader
+ * to `.env` where the key is present and correct, and the transport had thrown Google's explanation
+ * away. A present-but-refused key is an upstream failure: 502, and the message keeps Google's words.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -68,11 +75,17 @@ export function registerPlaces(app: FastifyInstance): void {
       const suggestions = await withTimeout(places.autocomplete(query), TIMEOUT_MS);
       return sendOk(reply, { configured: true, suggestions });
     } catch (error) {
-      // A Google failure is upstream, not the operator's fault — 502, and the field falls back to a
-      // text box so the quote can still be written.
+      /*
+       * A Google failure is upstream, not the operator's fault — 502 `upstream_failed`, and the field
+       * falls back to a text box so the quote can still be written. It is deliberately **not**
+       * `not_configured`: a key that Google refuses is configured, and answering "not configured"
+       * sends the reader to check `.env` when the key is right there and the problem is on the
+       * project (billing, a disabled API, key restrictions). The message carries Google's own words.
+       */
+      request.log.warn({ err: error }, 'address lookup failed');
       return sendFail(
         reply,
-        'not_configured',
+        'upstream_failed',
         `Address lookup is unavailable: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }
@@ -95,9 +108,10 @@ export function registerPlaces(app: FastifyInstance): void {
       const address = await withTimeout(places.details(placeId), TIMEOUT_MS);
       return sendOk(reply, { configured: true, address });
     } catch (error) {
+      request.log.warn({ err: error }, 'address details failed');
       return sendFail(
         reply,
-        'not_configured',
+        'upstream_failed',
         `Address lookup is unavailable: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }

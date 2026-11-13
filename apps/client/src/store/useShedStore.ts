@@ -65,6 +65,9 @@ function defaultOpening(id: string): Opening {
     offset: null,
     swing: null,
     track: null,
+    // A new PA door is hinged on the left jamb; the normaliser re-derives this per type, so
+    // switching this opening to a sliding door turns it into `null` on the way through.
+    hinge: 'left',
   };
 }
 

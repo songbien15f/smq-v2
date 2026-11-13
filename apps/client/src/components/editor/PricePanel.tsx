@@ -20,6 +20,7 @@
  * being read aloud to somebody.
  */
 
+import type { ReactNode } from 'react';
 import type { EvaluationView } from '@sq/contracts';
 import { money } from '@sq/ui';
 import { StatusPill } from '@sq/ui';
@@ -92,10 +93,7 @@ export function PricePanel({
     );
   }
 
-  const { price, issues, lines } = evaluation;
-  const mocked = lines.filter((line) => line.mocked).length;
-  const assumptions = issues.filter((issue) => issue.severity === 'assumption');
-  const blockers = issues.filter((issue) => issue.severity === 'blocker');
+  const { price } = evaluation;
 
   return (
     <aside aria-label="Price" className="flex flex-col gap-sq-2">
@@ -136,6 +134,26 @@ export function PricePanel({
         )}
       </div>
 
+      <PriceWarnings evaluation={evaluation} />
+    </aside>
+  );
+}
+
+/**
+ * What makes a priced quote unsafe to send: blockers, lines the book could not price, and allowances.
+ *
+ * Split out of `PricePanel` because the Cost step has no price column (`editorLayout`) and these three
+ * notices are the part only the column used to say. Renders nothing when there is nothing to warn about.
+ */
+export function PriceWarnings({ evaluation }: { evaluation: EvaluationView }) {
+  const { issues, lines } = evaluation;
+  const mocked = lines.filter((line) => line.mocked).length;
+  const assumptions = issues.filter((issue) => issue.severity === 'assumption');
+  const blockers = issues.filter((issue) => issue.severity === 'blocker');
+  if (blockers.length === 0 && mocked === 0 && assumptions.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-sq-2">
       {blockers.length > 0 && (
         <div className="rounded-lg border border-sq-danger/30 bg-sq-danger/5 p-sq-3">
           <h3 className="text-sq-body font-semibold text-sq-danger">
@@ -163,14 +181,35 @@ export function PricePanel({
       )}
 
       {assumptions.length > 0 && (
-        <div className="rounded-lg border border-sq-line bg-sq-surface p-sq-3">
-          <h3 className="text-sq-body font-semibold text-sq-ink">
-            {assumptions.length === 1 ? 'One allowance in this price' : `${assumptions.length} allowances in this price`}
-          </h3>
-          <p className="mt-1 text-sq-micro text-sq-ink-muted">
-            A priced quote with an allowance is <em>indicative</em>, not firm. The customer sees these
-            in the quote.
-          </p>
+        /*
+         * Collapsed by default: fifteen two-line entries filled the 300 px column and pushed the price
+         * itself out of view (review 2026-11-13 UI/UX item 4). The heading with its count and the
+         * "indicative, not firm" sentence stay visible; the list is one press away.
+         */
+        <details className="group rounded-lg border border-sq-line bg-sq-surface p-sq-3">
+          <summary className="flex cursor-pointer list-none items-start justify-between gap-sq-2 text-sq-body font-semibold text-sq-ink [&::-webkit-details-marker]:hidden">
+            <span className="flex flex-col gap-1">
+              <span>
+                {assumptions.length === 1 ? 'One allowance in this price' : `${assumptions.length} allowances in this price`}
+              </span>
+              <span className="text-sq-micro font-normal text-sq-ink-muted">
+                A priced quote with an allowance is <em>indicative</em>, not firm. The customer sees these
+                in the quote.
+              </span>
+            </span>
+            <svg
+              aria-hidden="true"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              className="mt-0.5 shrink-0 text-sq-ink-muted transition-transform duration-sq-fast group-open:rotate-180"
+            >
+              <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </summary>
           <ul className="mt-sq-2 flex flex-col gap-2 text-sq-micro text-sq-ink">
             {assumptions.map((issue, index) => (
               <li key={`${issue.code}-${index}`} className="flex flex-col gap-0.5">
@@ -179,9 +218,9 @@ export function PricePanel({
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
-    </aside>
+    </div>
   );
 }
 
@@ -219,12 +258,15 @@ export function PriceSummary({
   stale,
   stages,
   onOpenCost,
+  actions,
 }: {
   evaluation: EvaluationView | null;
   stale: boolean;
   stages: { contractCents: number };
   /** Named rather than a `goTo` import: this component renders, it does not navigate. */
   onOpenCost?: () => void;
+  /** Extra buttons at the right edge (Price details, Assistant), after the Cost step button. */
+  actions?: ReactNode;
 }) {
   return (
     <aside
@@ -247,15 +289,18 @@ export function PriceSummary({
         {stale && <StatusPill tone="attention" label="out of date" />}
       </p>
 
-      {onOpenCost !== undefined && (
-        <button
-          type="button"
-          onClick={onOpenCost}
-          className="min-h-11 shrink-0 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
-        >
-          Cost step
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-sq-1">
+        {onOpenCost !== undefined && (
+          <button
+            type="button"
+            onClick={onOpenCost}
+            className="min-h-11 shrink-0 cursor-pointer rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
+          >
+            Cost step
+          </button>
+        )}
+        {actions}
+      </div>
     </aside>
   );
 }

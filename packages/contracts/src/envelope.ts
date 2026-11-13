@@ -24,6 +24,7 @@ export const ERROR_CODES = [
   'conflict',
   'rate_limited',
   'not_configured',
+  'upstream_failed',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -67,6 +68,7 @@ export const STATUS_FOR: Record<ErrorCode, number> = {
   conflict: 409,
   rate_limited: 429,
   not_configured: 503,
+  upstream_failed: 502,
   internal: 500,
 };
 

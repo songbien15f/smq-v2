@@ -395,6 +395,63 @@ describe('track on openings', () => {
   });
 });
 
+describe('leaf count and hinge side', () => {
+  it('keeps a two-leaf sliding door', () => {
+    const out = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
+        wall: 'front', align: 'center', offset: null, swing: 'outward', track: 'double', leaves: 2 }],
+    });
+    expect(out.openings[0].leaves).toBe(2);
+  });
+
+  it('reads an older sliding door with no leaf count as one leaf', () => {
+    // Every quote saved before the field existed has no `leaves`. One leaf is the desktop's own
+    // default, so an old quote is drawn the way it was drawn when it was sent.
+    const out = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
+        wall: 'front', align: 'center', offset: null, swing: 'outward', track: 'single' }],
+    });
+    expect(out.openings[0].leaves).toBe(1);
+  });
+
+  it('clears a leaf count and a hinge on a type that has neither', () => {
+    const out = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'window', width: 900, height: 900, sill: 1200,
+        wall: 'front', align: 'center', offset: null, swing: null, track: null, leaves: 2, hinge: 'right' }],
+    });
+    expect(out.openings[0].leaves).toBeNull();
+    expect(out.openings[0].hinge).toBeNull();
+  });
+
+  it('keeps a right-hinged PA door and defaults an older one to the left jamb', () => {
+    const right = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'pa_door', width: 900, height: 2100, sill: 0,
+        wall: 'front', align: 'center', offset: null, swing: 'outward', track: null, hinge: 'right' }],
+    });
+    expect(right.openings[0].hinge).toBe('right');
+
+    const older = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'pa_door', width: 900, height: 2100, sill: 0,
+        wall: 'front', align: 'center', offset: null, swing: 'outward', track: null }],
+    });
+    expect(older.openings[0].hinge).toBe('left');
+  });
+
+  it('rejects a leaf count that is not one or two', () => {
+    const out = normaliseShedConfig({
+      ...TEST_SHED,
+      openings: [{ id: 'd1', type: 'sliding_door', width: 3000, height: 2100, sill: 0,
+        wall: 'front', align: 'center', offset: null, swing: 'outward', track: 'double', leaves: 3 }],
+    });
+    expect(out.openings[0].leaves).toBe(1);
+  });
+});
+
 describe('internal pressure and charges', () => {
   it('falls back to closed for an unknown pressure', () => {
     expect(normaliseShedConfig({ ...TEST_SHED, internalPressure: 'sideways' }).internalPressure)

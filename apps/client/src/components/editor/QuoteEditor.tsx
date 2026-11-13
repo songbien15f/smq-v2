@@ -20,6 +20,9 @@
  * payment stages and the allowances stays at the end of the column. It is not merely "at the top":
  * it is sticky, because the form beside it is thousands of pixels tall.
  *
+ * The **Cost step has no price column** at any width: it is the full price, so it gets a 640 px form
+ * and the strip stays visible at `xl` too. All of this is decided in `editorLayout`.
+ *
  * This paragraph described that behaviour before the code had it. Measured on 2026-11-08: at 1279 px
  * the panel's top edge sat at 5 092 px and on a phone at 5 996 px, off screen while the operator was
  * typing the building. A comment here is read as a specification — that is why it is worth keeping
@@ -39,22 +42,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { EvaluationView, PriceView, SessionView } from '@sq/contracts';
-import { StatusPill } from '@sq/ui';
+import { ReceiptIcon, SparkleIcon, StatusPill } from '@sq/ui';
 import { STEP_LABEL } from './steps';
 import type { EditorStep } from './StepRail';
 import { StepRail } from './StepRail';
+import { SectionJump } from './details/SectionJump';
 import { QuoteDetailsPanel } from './QuoteDetailsPanel';
 import { PlanPanel } from './PlanPanel';
 import { PlanView } from './PlanView';
 import { CostPanel } from './CostPanel';
 import { SteelworkPanel } from './SteelworkPanel';
 import { PunchingPanel } from './PunchingPanel';
-import { SiteCheckPanel } from './SiteCheckPanel';
 import { SiteCheckProvider } from './siteCheckState';
-import { PricePanel, PriceSummary } from './PricePanel';
+import { SiteCheckActionsProvider } from './siteCheckActions';
+import { PricePanel, PriceSummary, PriceWarnings } from './PricePanel';
+import { AssistantColumn, AssistantOverlay } from './assistant/AssistantDock';
+import { PriceDetailsDrawer } from './assistant/PriceDetailsDrawer';
+import { useAssistantEnabled } from './assistant/useAssistantEnabled';
+import { editorLayout } from './editorLayout';
 import { ErrorSummary, focusErrorSummary } from './ErrorSummary';
 import { deriveStages } from './stages';
-import { evaluateGate, validateDraft } from './validation';
+import { evaluateGate, isBuildingIssue, validateDraft } from './validation';
 import type { DraftIssue } from './validation';
 import { useShedStore } from '@/store/useShedStore';
 import { useDraftStore, NEW_DRAFT, STARTING_BUILDING } from '@/store/useDraftStore';
@@ -67,6 +75,7 @@ import { navFor } from '@/components/ShellFrame';
 import { WorkspaceMenu } from '@/components/WorkspaceMenu';
 import type { DisplayUnit } from '@sq/core/domain';
 import { normaliseShedConfig } from '@sq/core/domain';
+import { bookBounds } from './bookBounds';
 
 export interface QuoteEditorProps {
   session: SessionView;
@@ -107,6 +116,26 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   const siteCheckId = useDraftStore((state) => state.siteCheckId);
 
   const [step, setStep] = useState<EditorStep>('details');
+  const assistantOn = useAssistantEnabled();
+  // Open/collapsed is per visit, not remembered (spec): the column is open at `xl`, the drawer closed.
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [priceOpen, setPriceOpen] = useState(false);
+  const layout = editorLayout(step, { on: assistantOn, collapsed: railCollapsed });
+  const closeAssistant = useCallback(() => setAssistantOpen(false), []);
+  const closePrice = useCallback(() => setPriceOpen(false), []);
+  // Ctrl+/ toggles the Assistant where it is a drawer or sheet; at `xl` it collapses / opens the column.
+  useEffect(() => {
+    if (!assistantOn) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key !== '/') return;
+      event.preventDefault();
+      if (window.matchMedia('(min-width: 1280px)').matches) setRailCollapsed((value) => !value);
+      else setAssistantOpen((value) => !value);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [assistantOn]);
   const [unit, setUnit] = useState<DisplayUnit>('mm');
   const [evaluation, setEvaluation] = useState<EvaluationView | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
@@ -114,7 +143,14 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveDetails, setSaveDetails] = useState<{ path: string; message: string }[]>([]);
-  const [showIssues, setShowIssues] = useState(false);
+  /**
+   * Show every issue, not only those of touched fields. True from the start for a saved quote that
+   * was opened — a problem there is something to fix now — and false for a new quote or a template,
+   * so an empty form is not a wall of red before anything is typed.
+   */
+  const [showIssues, setShowIssues] = useState(initial !== undefined);
+  /** Ids (issue paths) of the Step 1 fields focus has left. */
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
   const [saved, setSaved] = useState<{ number: string; revision: number } | null>(null);
   const [, startTransition] = useTransition();
 
@@ -220,6 +256,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
    * until the fetch lands, which is why every use of it is guarded.
    */
   const { catalogue } = useCatalogue();
+  const bounds = useMemo(() => bookBounds(catalogue, config.span), [catalogue, config.span]);
 
   const issues = useMemo(
     () =>
@@ -229,16 +266,70 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         // rather than read inside the validator, which must stay free of the catalogue: it is a pure
         // function of the draft plus the facts the caller has.
         catalogue === null ? undefined : { nonStandardStructureCodes: catalogue.nonStandardStructureCodes },
+        // The size limits the fields accept are the ones that block saving (`bookBounds`).
+        bounds,
       ),
     // `config` is replaced wholesale by the store on every change, so identity is the right key.
-    [config, customer, site, catalogue],
+    [config, customer, site, catalogue, bounds],
   );
 
-  const issuesByPath = useMemo(() => {
+  /**
+   * The issues that stop the step change: the building's own (`isBuildingIssue`).
+   *
+   * One rule for the Next button and the step tabs. They used to differ — the tab asked only for a
+   * price while Next asked for **every** field, customer email included, and Next on Options then sent
+   * the operator back to Quote details for an email. A plan and a price are facts about the building;
+   * customer, site and colour fields block Save only.
+   */
+  const buildingIssueCount = useMemo(
+    () => issues.filter((issue) => isBuildingIssue(issue.path)).length,
+    [issues],
+  );
+  const canAdvance = evaluation !== null && buildingIssueCount === 0;
+
+  /**
+   * The issues the Step 1 panel may show: those of fields the person has left, or all of them once
+   * Save / Next has been pressed (or a saved quote was opened).
+   *
+   * One filtered map feeds both the inline errors and the groups' "N to fix" badges, so a header
+   * cannot say "3 to fix" while no field under it is red. The error summary keeps the full list.
+   */
+  const visibleIssuesByPath = useMemo(() => {
     const map = new Map<string, DraftIssue>();
-    for (const issue of issues) if (!map.has(issue.path)) map.set(issue.path, issue);
+    for (const issue of issues) {
+      if (!showIssues && !touched.has(issue.path)) continue;
+      if (!map.has(issue.path)) map.set(issue.path, issue);
+    }
     return map;
-  }, [issues]);
+  }, [issues, showIssues, touched]);
+
+  /**
+   * Mark the field focus just left as touched.
+   *
+   * An issue's `path` is its field's element id, so the id is enough — except for controls whose
+   * focusable element has another id (the cantilever inputs, a colour row, the popover's dimension
+   * fields), which name their issue path in `data-issue-path`.
+   */
+  const markTouched = useCallback((event: React.FocusEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    const path = target.closest<HTMLElement>('[data-issue-path]')?.dataset.issuePath ?? target.id;
+    if (path === '') return;
+    setTouched((previous) => (previous.has(path) ? previous : new Set(previous).add(path)));
+  }, []);
+
+  /**
+   * A Save / Next press while fields are missing: show every problem and take focus to the list.
+   *
+   * From Options or Cost the press first returns to Quote details when a Step 1 field is at fault: a
+   * summary shown on another step would list links whose fields are not on the page. (`options-*`
+   * issues have no Step 1 field, so they alone do not move the step.) A plain `setStep`, not a
+   * transition, so the step has committed by the next frame, when focus moves.
+   */
+  const revealIssues = (): void => {
+    setShowIssues(true);
+    if (step !== 'details' && issues.some((issue) => !issue.path.startsWith('options-'))) setStep('details');
+    requestAnimationFrame(() => focusErrorSummary());
+  };
 
   /**
    * The inputs a price is a fact about: the building and the money.
@@ -261,6 +352,16 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
 
   /** What the last successful evaluation was priced from, so a change can be classified. */
   const pricedInputs = useRef({ building: '', money: '' });
+  /**
+   * The building the last `evaluate` was **sent** for, successful or not.
+   *
+   * The automatic re-price after a building change keys on this rather than on `pricedInputs`, so a
+   * request the server refuses is not re-sent on every render: the same building is tried once, and
+   * the Calculate button is the retry.
+   */
+  const lastAttemptBuilding = useRef('');
+  /** Increments per request, so a slow answer for an older building cannot overwrite a newer one. */
+  const requestSeq = useRef(0);
 
   /**
    * Price what is in the stores **now**, not what was in the render that created this callback.
@@ -298,6 +399,8 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       currentConfig.length === null ||
       currentConfig.height === null
     ) {
+      requestSeq.current += 1; // an answer still in flight is for a building that has no size now
+      setCalculating(false);
       setEvaluation(null);
       setPriceError(null);
       return;
@@ -306,6 +409,9 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     const currentBuilding = JSON.stringify(currentConfig);
     const currentMoney = JSON.stringify(currentPricing);
     const currentInputs = JSON.stringify({ building: currentBuilding, money: currentMoney });
+    // Set before the await, so an effect in the same commit already sees this building as tried.
+    lastAttemptBuilding.current = currentBuilding;
+    const seq = ++requestSeq.current;
 
     setCalculating(true);
     setPriceError(null);
@@ -315,6 +421,8 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       body: { config: currentConfig, pricing: currentPricing },
     });
 
+    // A newer request is on its way: this answer describes a building that is no longer on screen.
+    if (seq !== requestSeq.current) return;
     setCalculating(false);
 
     if (!result.ok) {
@@ -338,41 +446,36 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
   }, [setPriced]);
 
   /**
-   * Price the building as soon as the draft it belongs to is in the store.
+   * Price the building **once**, as soon as the draft is in the store and the building is described.
    *
    * Doing it here rather than behind a button means a salesperson sees a number from the start —
-   * the whole point of the screen. It used to be skipped when opening a saved quote, which left an
-   * operator on an existing quote looking at "No price yet" and pressing Calculate before they could
-   * reach the plan; the building was already known, so the click bought nothing.
+   * the whole point of the screen. A saved quote, a template or a `.sqd` link prices on open; a new
+   * quote starts with **no dimensions** and prices the moment its span, length and height are stated,
+   * instead of waiting for "Calculate again" on a building the operator has just finished describing.
+   * After that, `calculate` is driven by the stale/money machinery below.
+   *
+   * ## Why one effect
+   *
+   * These were two effects — "price when the draft is ready" and "price the first time the building
+   * is describable". Opening a saved quote made both true in the same commit, and the editor sent
+   * **two** `evaluate` requests 3 ms apart, each writing an evaluation row on the server (measured
+   * with `performance.getEntriesByType('resource')` on the test quote: `[1072, 1075]`).
    *
    * Gated on `draftReady` rather than firing on mount: opening a quote applies its building in the
-   * same commit, and pricing a render earlier would price the default shed.
-   */
-  const autoPriced = useRef(false);
-  useEffect(() => {
-    if (autoPriced.current || !draftReady) return;
-    autoPriced.current = true;
-    void calculate();
-  }, [calculate, draftReady]);
-
-  /**
-   * Price it again the first time the building becomes describable.
-   *
-   * A new quote starts with **no dimensions**, so the effect above runs `calculate()` into the gate
-   * and nothing happens — `evaluation` stays `null` and steps 2 and 3 stay locked. Waiting for the
-   * operator to press "Calculate again" on a quote they have just finished describing is a step that
-   * exists only because of the gate.
-   *
-   * Keyed on whether the dimensions are stated, so it fires on the transition and not on every
-   * keystroke afterwards: after that, `calculate` is driven by the dirty/stale machinery as before.
+   * same commit, and pricing a render earlier would price the default shed. The live store is checked
+   * as well as this render's `purchasable`, because in that same commit the render still shows the
+   * building from *before* `applyConfig` — claiming the one price on a store that turns out to have no
+   * dimensions would leave the real building unpriced.
    */
   const purchasable = config.span !== null && config.length !== null && config.height !== null;
-  const pricedFirstBuilding = useRef(false);
+  const autoPriced = useRef(false);
   useEffect(() => {
-    if (!purchasable || pricedFirstBuilding.current) return;
-    pricedFirstBuilding.current = true;
+    if (autoPriced.current || !draftReady || !purchasable) return;
+    const live = useShedStore.getState().config;
+    if (live.span === null || live.length === null || live.height === null) return;
+    autoPriced.current = true;
     void calculate();
-  }, [purchasable, calculate]);
+  }, [calculate, draftReady, purchasable]);
 
   const dirty = useDraftStore((state) => state.isDirty());
   const pricedStale = useDraftStore((state) => state.priceIsStale(priceInputs));
@@ -402,24 +505,77 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
     pricedInputs.current.money !== moneyInputs;
 
   /**
-   * A refresh is in flight for a money-only change.
+   * A refresh of the price is in flight that the operator did not ask for: a money-only change, or
+   * the fresh evaluation fetched after a save (the saved one is spent).
    *
    * Tracked so the Save button waits for it rather than sending an evaluation whose id is about to
    * be replaced. Saving in that window would freeze a preview the operator never saw — the exact
-   * failure the evaluation exists to prevent.
+   * failure the evaluation exists to prevent — or send one the server has already consumed.
    */
-  const [refreshingMoney, setRefreshingMoney] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  /*
+   * A count, not a flag: refreshes overlap (a building edit while the last one is in flight), and with
+   * a flag the first to finish cleared it while the second was still waiting on its debounce.
+   */
+  const pendingRefreshes = useRef(0);
+  const beginRefresh = useCallback((): void => {
+    pendingRefreshes.current += 1;
+    setRefreshing(true);
+  }, []);
+  const endRefresh = useCallback((): void => {
+    pendingRefreshes.current = Math.max(0, pendingRefreshes.current - 1);
+    if (pendingRefreshes.current === 0) setRefreshing(false);
+  }, []);
 
   // Debounced, because the operator is typing a figure: a request per keystroke would be a dozen
   // evaluations of a half-typed number, and only the last would matter.
+  //
+  // The cleanup clears `refreshing` when the timer had not fired yet: otherwise a building edit inside
+  // the 600 ms (which ends `moneyOnly`) left Save held by a refresh that never ran.
   useEffect(() => {
     if (!moneyOnly) return;
-    setRefreshingMoney(true);
+    beginRefresh();
+    let fired = false;
     const timer = setTimeout(() => {
-      void calculate().finally(() => setRefreshingMoney(false));
+      fired = true;
+      void calculate().finally(() => endRefresh());
     }, 600);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (!fired) endRefresh();
+    };
   }, [moneyOnly, moneyInputs, calculate]);
+
+  /**
+   * Re-price after a **building** change, the same way a money change is.
+   *
+   * The operator used to have to press "Calculate again" after every span, bay or option change, and
+   * Save stayed blocked until they found the button. Number fields commit when the box is left (not
+   * per keystroke), so a short debounce is enough to coalesce a burst of edits into one request.
+   *
+   * Only while the building has no issue: a span outside the book or a missing height is not a
+   * building the server can price, and asking would only replace the old price with an error. The old
+   * price then stays on screen marked out of date; fixing the field re-prices.
+   *
+   * Keyed on the building last **sent** (`lastAttemptBuilding`), not the last priced: a refused request
+   * is not repeated on every render. After the opening price (`autoPriced`) only — that effect owns the
+   * first request, and runs first in the same commit.
+   */
+  const buildingBlocked = buildingIssueCount > 0;
+  useEffect(() => {
+    if (!autoPriced.current || !draftReady || !purchasable || buildingBlocked) return;
+    if (lastAttemptBuilding.current === buildingInputs) return;
+    beginRefresh();
+    let fired = false;
+    const timer = setTimeout(() => {
+      fired = true;
+      void calculate().finally(() => endRefresh());
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+      if (!fired) endRefresh();
+    };
+  }, [buildingInputs, buildingBlocked, draftReady, purchasable, calculate]);
 
   const pricedAt: 'none' | 'stale' | 'current' =
     evaluation === null
@@ -429,7 +585,8 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         : 'current';
 
   // A refresh in flight is a blocked save: the evaluation id is about to change under it.
-  const gate = evaluateGate({ dirty: anyChange, issues, pricedAt, saving: saving || refreshingMoney });
+  // `calculating` too: a Calculate press in flight is about to replace the evaluation Save would send.
+  const gate = evaluateGate({ dirty: anyChange, issues, pricedAt, saving, refreshing: refreshing || calculating });
 
   const goTo = (next: EditorStep): void => {
     startTransition(() => setStep(next));
@@ -496,15 +653,47 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
       return;
     }
 
+    /*
+     * Clean against **what was sent**, not what the store holds now.
+     *
+     * The store used to be fingerprinted when the response arrived, so a word typed into a customer
+     * field while the request was in flight counted as saved: the button said "Nothing has been
+     * changed yet" over a field holding text no revision contains, and the leave-page warning was
+     * off. Reproduced with a stubbed 1.5 s save: sent `a@example.com`, typed another address during
+     * the wait, and the screen called the quote clean.
+     */
     markClean({
       quoteId: result.data.quoteId,
       quoteNumber: result.data.quoteNumber,
       revision: result.data.revision,
+      saved: { customer, site, pricing },
     });
     // The building's baseline moves with the save too, or the next render would still call the
-    // quote dirty and offer to save a revision identical to the one just written.
+    // quote dirty and offer to save a revision identical to the one just written. `config` is the
+    // building this request sent, for the same reason as above.
     buildingBaseline.current = JSON.stringify(config);
     setSaved({ number: result.data.quoteNumber, revision: result.data.revision });
+
+    /*
+     * The next save needs a **new key and a new evaluation**.
+     *
+     * The key was renewed only by `calculate()`. A second save on the same page that changed only the
+     * customer or the site — which leaves the price current, so nothing re-priced — sent the same
+     * key, and the server answers a known key by replaying the revision it already wrote (`replayed:
+     * true`, status 200). The client then showed "Saved" and marked the draft clean while the edit was
+     * never stored. Reproduced with a stubbed save: two saves, one key, one evaluation id. A new key
+     * alone is not enough: the server consumed the evaluation, so the next save would be refused with
+     * a conflict. Re-pricing now gets a fresh evaluation (same inputs, same figure) before the
+     * operator can press Save again; `refreshing` holds the button meanwhile.
+     *
+     * Not on a first save: that one moves to the quote's own address, a new editor mounts there and
+     * prices on open.
+     */
+    idempotency.current = newIdempotencyKey();
+    if (quoteId !== null) {
+      beginRefresh();
+      void calculate().finally(() => endRefresh());
+    }
 
     /*
      * A **first** save moves the screen to the quote's own address.
@@ -649,14 +838,17 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
 
       <StepRail
         current={step}
-        reachable={(target) => (target === 'details' ? true : evaluation !== null)}
+        reachable={(target) => target === 'details' || canAdvance}
         blockedReason={(target) =>
-          target === 'details' || evaluation !== null
+          target === 'details' || canAdvance
             ? undefined
-            : 'Calculate the price first — there is nothing to place or negotiate yet.'
+            : buildingIssueCount > 0
+              ? 'Fix the building on Quote details first — the plan and the price depend on it.'
+              : 'Calculate the price first — there is nothing to place or negotiate yet.'
         }
         onSelect={goTo}
         noticeCount={issues.length}
+        onShowNotices={revealIssues}
       />
 
       {/*
@@ -671,20 +863,47 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
         `sticky top-0` on the page rather than inside the grid: the grid is one row per column count
         and the form decides the height, so a sticky child of it would be constrained to its own cell.
       */}
-      <div className="sticky top-0 z-20 border-b border-sq-line bg-sq-ground/95 backdrop-blur xl:hidden">
+      <div className={layout.stripClass}>
         <div className="mx-auto max-w-[1400px] px-sq-3 py-sq-2">
           <PriceSummary
             evaluation={evaluation}
             stale={pricedAt === 'stale'}
             stages={stages}
             onOpenCost={step === 'cost' ? undefined : () => goTo('cost')}
+            actions={
+              assistantOn && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPriceOpen(true)}
+                    aria-haspopup="dialog"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
+                  >
+                    <ReceiptIcon size={16} />
+                    <span className="sr-only sm:not-sr-only">Price details</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssistantOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-keyshortcuts="Control+/"
+                    className="hidden min-h-11 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-sq-line px-sq-2 text-sq-micro font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground lg:inline-flex xl:hidden"
+                  >
+                    <SparkleIcon size={16} />
+                    Assistant
+                  </button>
+                </>
+              )
+            }
           />
         </div>
       </div>
 
-      <div className="mx-auto grid w-full max-w-[1400px] flex-1 gap-sq-3 px-sq-3 py-sq-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,300px)]">
+      <div className={layout.gridClass}>
         {/* ------------------------------------------------------------ left: the step */}
-        <div className="flex min-w-0 flex-col gap-sq-3">
+        {/* `data-editor-column`: the Building parameters flyout measures this column's right edge to open
+            beside it, over the plan, instead of over the fields (BuildingParamsPopover). */}
+        <div data-editor-column="form" className="flex min-w-0 flex-col gap-sq-3">
           {/*
             ## The header sticks, because Save lives in it
 
@@ -701,7 +920,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
             `z-10` puts it above the fields but below the price strip (`z-20`), which must stay on
             top: the strip is the number being quoted, and a header sliding over it would hide it.
           */}
-          <div className="sticky top-[3.9rem] z-10 -mx-sq-1 flex flex-wrap items-start justify-between gap-sq-2 border-b border-sq-line bg-sq-ground/95 px-sq-1 pb-sq-2 backdrop-blur xl:top-0">
+          <div className={layout.formHeaderClass}>
             <div className="flex min-w-0 flex-col">
               <h1 id="editor-step-heading" tabIndex={-1} className="text-sq-title font-semibold outline-none">
                 {STEP_LABEL[step]}
@@ -728,42 +947,59 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
               heading keeps the left. `min-h-11` because it is the primary action on the screen and a
               30 px target is not a target.
             */}
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-sq-2">
+            <div className="flex justify-end">
+              <button
+                  type="button"
+                  /*
+                   * Pressable while fields are missing, so the press can say which: errors stay hidden
+                   * until a field is left, and a disabled button beside a form with nothing red would
+                   * give no way to find them. Any other block (no change, no price, saving) disables.
+                   */
+                  onClick={() => (issues.length > 0 ? revealIssues() : void save())}
+                  disabled={gate.blocked && issues.length === 0}
+                  aria-describedby="save-reason"
+                  className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
+                >
+                  {saving ? 'Saving…' : quoteId === null ? 'Save quote' : 'Save revision'}
+              </button>
+            </div>
+
+            {/*
+              The reason sits right under the button, always — not only on step 3, and not in a
+              tooltip. A tooltip cannot be read on a phone and cannot be reached by a keyboard, and the
+              commonest state here is a disabled button: a person who cannot save needs the reason in
+              the page, not behind a hover.
+
+              Its own full-width row (`col-span-2`) rather than a column beside the button: in a 380 px
+              form column the button + 2-line reason block did not fit next to the title, wrapped onto a
+              row of its own and took the header to 193 px (measured 2026-11-14 at 375 and 1440).
+
+              `aria-live="polite"` because the reason changes as fields are filled in, and it is the
+              only feedback that the button just became available.
+            */}
+            <div className="col-span-2 flex flex-wrap items-center gap-x-sq-2 text-sq-micro text-sq-ink-muted">
               {saved !== null && (
                 <span className="flex items-center gap-sq-2" role="status">
                   <StatusPill tone="ok" label={`Saved ${saved.number} · rev ${saved.revision}`} />
                   <a
                     href={`/quotes/${quoteId}`}
-                    className="text-sq-micro font-medium text-sq-brand underline underline-offset-2"
+                    className="font-medium text-sq-brand underline underline-offset-2"
                   >
                     Open
                   </a>
                 </span>
               )}
-              <div className="flex flex-col items-end">
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={gate.blocked}
-                  aria-describedby="save-reason"
-                  className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  {saving ? 'Saving…' : quoteId === null ? 'Save quote' : 'Save revision'}
-                </button>
-                {/*
-                  The reason sits with the button, always — not only on step 3, and not in a tooltip.
-                  A tooltip cannot be read on a phone and cannot be reached by a keyboard, and the
-                  commonest state here is a disabled button: a person who cannot save needs the reason
-                  in the page, not behind a hover.
-
-                  `aria-live="polite"` because the reason changes as fields are filled in, and it is
-                  the only feedback that the button just became available.
-                */}
-                <span id="save-reason" aria-live="polite" className="mt-sq-1 max-w-[22rem] text-right text-sq-micro text-sq-ink-muted">
-                  {gateMessage}
-                </span>
-              </div>
+              <span id="save-reason" aria-live="polite" className="min-w-0 flex-1 basis-48">
+                {gateMessage}
+              </span>
             </div>
+
+            {/* Step 1 is six collapsible groups in one column: the chips are its table of contents. */}
+            {step === 'details' && (
+              <div className="col-span-2">
+                <SectionJump issuesByPath={visibleIssuesByPath} />
+              </div>
+            )}
           </div>
 
           <ErrorSummary
@@ -787,8 +1023,79 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
              * "Rating imported" while the fields still showed the previous numbers.
              */
             <SiteCheckProvider quoteId={quoteId}>
+            {/*
+              The actions (gates, pin, import, drift, popover) for every SiteCheck control on the step:
+              the PIN button, the Building parameters popover, the Design group and the Shed group.
+            */}
+            <SiteCheckActionsProvider
+              quoteId={quoteId}
+              site={{
+                address: site.address,
+                suburb: site.suburb,
+                state: site.state,
+                postcode: site.postcode,
+              }}
+              client={{ firstName: customer.firstName, lastName: customer.lastName, email: customer.email }}
+              /* The pitches the book sells for this span, for the popover's pitch select. */
+              roofPitchHints={
+                config.span === null
+                  ? []
+                  : roofPitchHintsForSpan(catalogue?.roofPitchGroups ?? [], config.span)
+              }
+              /*
+               * The **email**, because that is the ShedSafe salesman key.
+               *
+               * Measured against the live API: a display name ("Dana Nguyen"), the API login
+               * name ("wdsapi1") and an unregistered email are all refused with *"The
+               * salesman provided is not a valid salesman username"*, while a registered
+               * salesman's email is accepted and returns a real building id. Defaulting to
+               * the display name meant every pin failed, with a message about a field the
+               * operator had not been shown.
+               */
+              defaultSalesman={session.email}
+              canWrite={session.capabilities.includes('quote:write')}
+              onImported={(values) => {
+                // The certified values replace what was typed. Only the ones ShedSafe
+                // actually returned: a null is "not calculated", and writing it would blank
+                // a real value.
+                if (values.windRegion !== null) applyPartial({ windRegion: values.windRegion as never });
+                if (values.terrainCategory !== null) {
+                  applyPartial({ terrainCategory: values.terrainCategory as never });
+                }
+                if (values.importanceLevel !== null) {
+                  applyPartial({ importanceLevel: values.importanceLevel as never });
+                }
+                if (values.buildingClass !== null) {
+                  applyPartial({ buildingClass: values.buildingClass });
+                }
+                if (values.snowLoad !== null) applyPartial({ snowLoad: values.snowLoad });
+                if (values.designWindSpeed !== null) {
+                  applyPartial({ designWindSpeed: values.designWindSpeed });
+                }
+                /*
+                 * Price it again, because an import always changes something that prices.
+                 *
+                 * `windRegion` and `terrainCategory` select the purlin span table and the
+                 * frame schedule, so importing a rating **invalidates the price** — before
+                 * this, `pricedAt` became `'stale'` and the operator was told to press
+                 * "calculate again" immediately after being told the import succeeded. Two
+                 * messages, one action, and the Save button blocked in between.
+                 *
+                 * `applyPartial` is called several times above, and each call is synchronously
+                 * applied to the store, so reading the store here sees the imported values.
+                 * The calculation is deferred one macrotask to let every `set` land and to keep
+                 * it out of the render that produced it — the same rule `calculate` follows
+                 * everywhere else: read the stores at call time, never from a closure.
+                 */
+                setTimeout(() => void calculate(), 0);
+              }}
+            >
             <div className="flex flex-col gap-sq-3">
-              <div className="rounded-lg border border-sq-line bg-sq-surface">
+              {/*
+                `onBlur` here is how a field becomes "touched": React's blur bubbles through the React
+                tree (the Building parameters popover included), so one handler covers every field.
+              */}
+              <div className="rounded-lg border border-sq-line bg-sq-surface" onBlur={markTouched}>
                 {/*
                   The site check is rendered **into** the details panel, between Delivery and Design,
                   rather than beside it.
@@ -799,7 +1106,7 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                   now sits where the addresses end.
                 */}
                 <QuoteDetailsPanel
-                  issuesByPath={issuesByPath}
+                  issuesByPath={visibleIssuesByPath}
                   unit={unit}
                   onUnitChange={setUnit}
                   /*
@@ -810,78 +1117,10 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                   kneeBrace={
                     evaluation?.members.find((member) => member.item === 'knee_brace')?.section ?? null
                   }
-                  siteCheck={
-                    <SiteCheckPanel
-                      quoteId={quoteId}
-                      site={{
-                        address: site.address,
-                        suburb: site.suburb,
-                        state: site.state,
-                        postcode: site.postcode,
-                      }}
-                      client={{ firstName: customer.firstName, lastName: customer.lastName, email: customer.email }}
-                      /*
-                       * The quote as it stands — an **offer** for "Copy from the quote", and the
-                       * reference the panel compares against. It does not seed the panel: the four
-                       * numbers ShedSafe rates are typed by a person (see `SiteCheckPanel`).
-                       */
-                      roofPitchHints={
-                        config.span === null
-                          ? []
-                          : roofPitchHintsForSpan(catalogue?.roofPitchGroups ?? [], config.span)
-                      }
-                      /*
-                       * The **email**, because that is the ShedSafe salesman key.
-                       *
-                       * Measured against the live API: a display name ("Dana Nguyen"), the API login
-                       * name ("wdsapi1") and an unregistered email are all refused with *"The
-                       * salesman provided is not a valid salesman username"*, while a registered
-                       * salesman's email is accepted and returns a real building id. Defaulting to
-                       * the display name meant every pin failed, with a message about a field the
-                       * operator had not been shown.
-                       */
-                      defaultSalesman={session.email}
-                      canWrite={session.capabilities.includes('quote:write')}
-                      onImported={(values) => {
-                        // The certified values replace what was typed. Only the ones ShedSafe
-                        // actually returned: a null is "not calculated", and writing it would blank
-                        // a real value.
-                        if (values.windRegion !== null) applyPartial({ windRegion: values.windRegion as never });
-                        if (values.terrainCategory !== null) {
-                          applyPartial({ terrainCategory: values.terrainCategory as never });
-                        }
-                        if (values.importanceLevel !== null) {
-                          applyPartial({ importanceLevel: values.importanceLevel as never });
-                        }
-                        if (values.buildingClass !== null) {
-                          applyPartial({ buildingClass: values.buildingClass });
-                        }
-                        if (values.snowLoad !== null) applyPartial({ snowLoad: values.snowLoad });
-                        if (values.designWindSpeed !== null) {
-                          applyPartial({ designWindSpeed: values.designWindSpeed });
-                        }
-                        /*
-                         * Price it again, because an import always changes something that prices.
-                         *
-                         * `windRegion` and `terrainCategory` select the purlin span table and the
-                         * frame schedule, so importing a rating **invalidates the price** — before
-                         * this, `pricedAt` became `'stale'` and the operator was told to press
-                         * "calculate again" immediately after being told the import succeeded. Two
-                         * messages, one action, and the Save button blocked in between.
-                         *
-                         * `applyPartial` is called several times above, and each call is synchronously
-                         * applied to the store, so reading the store here sees the imported values.
-                         * The calculation is deferred one macrotask to let every `set` land and to keep
-                         * it out of the render that produced it — the same rule `calculate` follows
-                         * everywhere else: read the stores at call time, never from a closure.
-                         */
-                        setTimeout(() => void calculate(), 0);
-                      }}
-                    />
-                  }
                 />
               </div>
             </div>
+            </SiteCheckActionsProvider>
             </SiteCheckProvider>
           )}
 
@@ -889,6 +1128,9 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
 
           {step === 'cost' && (
             <>
+              {/* The price column is not rendered on this step (editorLayout), so this is the one place
+                  left that says the quote is blocked, has unpriced lines or rests on allowances. */}
+              {evaluation !== null && <PriceWarnings evaluation={evaluation} />}
               <CostPanel
                 price={evaluation === null ? null : evaluation.price}
                 stale={pricedAt === 'stale'}
@@ -934,8 +1176,14 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
                  */
                 <button
                   type="button"
-                  onClick={() => goTo(step === 'details' ? 'options' : 'cost')}
-                  disabled={issues.length > 0 || evaluation === null}
+                  // Pressable while building fields are missing, like Save: the press reveals them. The
+                  // same rule as the step tabs (`canAdvance`) — customer and site fields block Save only.
+                  onClick={() =>
+                    buildingIssueCount > 0 ? revealIssues() : goTo(step === 'details' ? 'options' : 'cost')
+                  }
+                  // No price yet is normal while the building is incomplete (a new quote has none), so
+                  // only a missing price with nothing to fix disables — that is "still calculating".
+                  disabled={evaluation === null && buildingIssueCount === 0}
                   className="min-h-11 cursor-pointer rounded-md bg-sq-brand px-sq-3 text-sq-body font-medium text-white transition-colors duration-sq-fast hover:bg-sq-brand-hover disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {step === 'details' ? 'Next: the plan' : 'Next: cost'}
@@ -944,13 +1192,19 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
 
               {step !== 'cost' && (
                 <span className="text-sq-micro text-sq-ink-muted" aria-live="polite">
-                  {issues.length > 0
-                    ? issues.length === 1
-                      ? 'One field still needs attention before the next step.'
-                      : `${issues.length} fields still need attention before the next step.`
+                  {buildingIssueCount > 0
+                    ? buildingIssueCount === 1
+                      ? 'One building field still needs attention before the next step.'
+                      : `${buildingIssueCount} building fields still need attention before the next step.`
                     : evaluation === null
-                      ? 'Calculate the price first.'
-                      : 'This step is ready. Save stays available in the top right on every step.'}
+                      ? calculating
+                        ? 'Calculating the price…'
+                        : 'Calculate the price first.'
+                      : issues.length > 0
+                        ? issues.length === 1
+                          ? 'This step is ready. One field is still needed before saving.'
+                          : `This step is ready. ${issues.length} fields are still needed before saving.`
+                        : 'This step is ready. Save stays available in the top right on every step.'}
                 </span>
               )}
             </div>
@@ -977,25 +1231,56 @@ export function QuoteEditor({ session, initial }: QuoteEditorProps) {
           the dimensions along the top edge — were hidden. `4.5rem` clears the strip, and `xl` returns
           to `sq-3` where the strip does not render.
         */}
-        <div className="min-h-[320px] min-w-0 lg:sticky lg:top-[4.5rem] lg:mb-sq-3 lg:h-[calc(100dvh-5.5rem)] lg:min-h-0 xl:top-sq-3 xl:h-[calc(100dvh-2rem)]">
-          <PlanView interactive={step === 'options'} />
+        <div className={layout.planBoxClass}>
+          {/*
+            The purlin and girt rows travel with the price: they are settled by the book's span
+            table, so before an evaluation there are none to draw and the model shows the frame
+            without them rather than inventing a spacing.
+          */}
+          <PlanView interactive={step === 'options'} frameLayout={evaluation?.frameLayout ?? null} />
         </div>
 
+        {/* ------------------------------------------------ right: the assistant */}
+        {layout.showAssistant && (
+          <AssistantColumn step={step} collapsed={railCollapsed} onToggle={() => setRailCollapsed((value) => !value)} />
+        )}
+
         {/* -------------------------------------------------- right: the price */}
-        <div className="min-w-0">
-          <div className="sticky top-sq-3">
-            <PricePanel
-              evaluation={evaluation}
-              stages={stages}
-              stale={pricedAt === 'stale'}
-              calculating={calculating}
-              error={priceError}
-              onCalculate={() => void calculate()}
-              saving={saving}
-            />
+        {/* Not rendered on Cost (see `editorLayout`): the grid there has two columns, and a hidden third
+            child would still drop to a new row. */}
+        {layout.showPanel && (
+          <div className="min-w-0">
+            <div className="sticky top-sq-3">
+              <PricePanel
+                evaluation={evaluation}
+                stages={stages}
+                stale={pricedAt === 'stale'}
+                calculating={calculating}
+                error={priceError}
+                onCalculate={() => void calculate()}
+                saving={saving}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
+      {assistantOn && (
+        <>
+          <AssistantOverlay step={step} open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={closeAssistant} />
+          <PriceDetailsDrawer
+            open={priceOpen}
+            onClose={closePrice}
+            evaluation={evaluation}
+            stages={stages}
+            stale={pricedAt === 'stale'}
+            calculating={calculating}
+            error={priceError}
+            onCalculate={() => void calculate()}
+            saving={saving}
+          />
+        </>
+      )}
     </div>
   );
 }

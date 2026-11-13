@@ -421,6 +421,22 @@ export function CategoryDock() {
                   <option value="single">Single</option>
                   <option value="double">Double</option>
                 </select>
+                {/*
+                  Leaf count sits with the track because the two together are what the 3D view
+                  draws: a double track with one leaf and a double track with two read very
+                  differently, and only the operator knows which was sold.
+                */}
+                <select
+                  value={String(door.leaves ?? 1)}
+                  onChange={(event) =>
+                    patchOpening(door.id, { leaves: event.target.value === '2' ? 2 : 1 })
+                  }
+                  className="min-h-9 rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-micro"
+                  aria-label="Leaves"
+                >
+                  <option value="1">One leaf</option>
+                  <option value="2">Two leaves</option>
+                </select>
                 <label className="flex items-center gap-sq-1 text-sq-micro text-sq-ink-muted">
                   Seg
                   <input

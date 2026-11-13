@@ -90,3 +90,15 @@ DELETE FROM usage_events WHERE at < now() - interval '365 days';
 ```
 
 Nothing else reads them for a quote; the Activity screen is a 7/30/90-day window.
+
+## 7. Before a release: quotes the editor would refuse to re-save
+
+The editor will not save a building that sits outside the active price book. That includes an old quote whose stored building is out of book, even when the only edit is the customer's email. Count those quotes before a release. The count is read-only and safe on the live database:
+
+```bash
+pnpm quotes:blocked                       # every company
+pnpm quotes:blocked -- --tenant <slug>    # one company
+pnpm quotes:blocked -- --list             # name each blocked quote and why
+```
+
+It runs the editor's own validator against the current revision of each quote, so the numbers match what a salesperson will see. See `docs/reviews/2026-11-13-quote-editor-overview.md` item 7.

@@ -17,6 +17,20 @@
 
 import type { Opening, OpeningType, OptionKind, ShedConfig, SwingDirection, WallSide, DimensionedShed } from './types';
 import { bayWidthsFor, positionsFromWidths } from './bays';
+/*
+ * The opening-symbol sizes live with the 3D hardware that shares them (`openings3d.ts`), so a
+ * plan's jamb tick and a door's guide rail cannot disagree about how deep a roller door is.
+ */
+import {
+  JAMB,
+  OPENING_HOLE_DEPTH,
+  ROLLER_DEPTH,
+  ROLLER_INSET,
+  ROLLER_TRACK_WIDTH,
+  TRACK_INSET,
+  WINDOW_DEPTH,
+  WINDOW_INSET,
+} from './openings3d';
 import { resolveOptions, type ResolvedOption } from './options';
 import { placementToPlanRect, resolveOpeningPlacement } from './placement';
 import { roundUpTo50 } from './units';
@@ -129,23 +143,6 @@ function fallsAlongLength(shed: DimensionedShed): boolean {
   return shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
 }
 
-/** Jamb block size, mm — matches the canvas's former `JAMB_TICK`. */
-const JAMB = 90;
-/** Depth of a window's plan rectangle into the wall, mm. */
-const WINDOW_DEPTH = JAMB;
-/** Inset of a window's three interior lines from the rectangle edges, mm. */
-const WINDOW_INSET = JAMB / 2;
-/** Plan depth of a plain hole's rectangle into the wall, mm. */
-const OPENING_HOLE_DEPTH = JAMB;
-/** Depth of a roller door's curtain and tracks into the building, mm. */
-const ROLLER_DEPTH = 2 * JAMB;
-/** Inset of a roller door's curtain from each jamb, mm. */
-const ROLLER_INSET = JAMB / 2;
-/** How far inside the wall a sliding door's track line sits, mm. */
-const TRACK_INSET = 60;
-/** Width of a roller door's side track, mm. */
-const ROLLER_TRACK_WIDTH = JAMB / 2;
-
 /** A rectangle primitive of an opening symbol. */
 type SymbolRect = {
   x: number;
@@ -255,11 +252,10 @@ function buildOpeningSymbol(
   }
 
   // pa_door / sliding_door: a jamb block at each end and the opening line. With
-  // a swing, a 45° leaf from the near jamb and a quarter arc of radius = the
-  // opening width centred on that same (hinge) jamb, so the tip lands on the arc
-  // (PADoor2D.cs:82-97; the desktop's GDI+ print arc at PADoor2D.Print.cs:154 is
-  // also centred on the near jamb). A sliding door has no swing in reality, but
-  // the brief lumps it with `pa_door`, so it gets the same treatment here.
+  // a swing, a 45° leaf from the hinge jamb and a quarter arc of radius = the
+  // opening width centred on that same jamb, so the tip lands on the arc
+  // (PADoor2D.cs:82-97). A sliding door has no swing in reality, but the brief
+  // lumps it with `pa_door`, so it gets the same treatment here.
   rects.push(box(-JAMB, 0, 0, JAMB, false));
   rects.push(box(extent, extent + JAMB, 0, JAMB, false));
   line(at(0, 0), at(extent, 0));
@@ -273,22 +269,39 @@ function buildOpeningSymbol(
     if (opening.track === 'double') {
       line(at(0, TRACK_INSET * 2), at(extent, TRACK_INSET * 2));
     }
+    // A two-leaf door meets in the middle. The joint is the only thing that
+    // distinguishes it in plan — both leaves share the opening line and track.
+    if (opening.leaves === 2) {
+      line(at(extent / 2, 0), at(extent / 2, TRACK_INSET));
+    }
   }
 
   if (swing !== null) {
     const side = swing === 'inward' ? 1 : -1;
     const inv = 1 / Math.SQRT2;
-    // The leaf, half-open at 45°, hinged on the near jamb and swung to the
+    /*
+     * Which jamb the leaf hangs on. A PA door carries the answer; a sliding door
+     * does not, and the brief has always drawn it with the hinge on the near jamb.
+     */
+    const hingeOnRight = type === 'pa_door' && opening.hinge === 'right';
+    const hingeU = hingeOnRight ? extent : 0;
+    // The leaf, half-open at 45°, hinged on the chosen jamb and swung to the
     // swing side; its tip sits on the arc below.
-    line(at(0, 0), at(extent * inv, side * extent * inv));
+    line(
+      at(hingeU, 0),
+      at(hingeU + (hingeOnRight ? -1 : 1) * extent * inv, side * extent * inv),
+    );
 
-    const centre = at(0, 0);
+    const centre = at(hingeU, 0);
     // A 90° sweep on the swing side, from the closed position along the wall to
     // the fully-open perpendicular. Konva's `Arc` starts at `rotation` and
     // sweeps clockwise (increasing angle, y down), so start at whichever of the
     // two bounding directions reaches the other by +90°.
     const toDeg = (x: number, y: number) => (Math.atan2(y, x) * 180) / Math.PI;
-    const closed = toDeg(axis.x, axis.y);
+    // "Closed" points from the hinge along the wall to the other jamb, so its
+    // sign flips with the hinge side.
+    const away = hingeOnRight ? -1 : 1;
+    const closed = toDeg(axis.x * away, axis.y * away);
     const open = toDeg(side * normal.x, side * normal.y);
     const delta = normalizeDegrees(open - closed);
     const rotation = Math.abs(delta - 90) < 1e-6 ? closed : open;

@@ -120,8 +120,16 @@ export interface DraftState {
     quoteNumber: string | null;
     expectedRev: number;
   }) => void;
-  /** Take a new baseline after a save, so the next edit is what counts as dirty. */
-  markClean: (input: { quoteId: string; quoteNumber: string; revision: number }) => void;
+  /**
+   * Take a new baseline after a save, so the next edit is what counts as dirty. `saved` is the draft
+   * the request carried — not the store at response time, which may hold edits made meanwhile.
+   */
+  markClean: (input: {
+    quoteId: string;
+    quoteNumber: string;
+    revision: number;
+    saved: { customer: DraftCustomer; site: DraftSite; pricing: PricingInput };
+  }) => void;
   /** A fingerprint of everything the draft controls. */
   fingerprint: () => string;
   /** True when the draft differs from the baseline. */
@@ -247,7 +255,9 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
   },
 
   markClean(input) {
-    const { customer, site, pricing } = get();
+    // The baseline is what the save **sent**, not the store now: an edit made while the request was
+    // in flight is not in that revision and must stay dirty.
+    const { customer, site, pricing } = input.saved;
     set({
       quoteId: input.quoteId,
       quoteNumber: input.quoteNumber,

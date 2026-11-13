@@ -154,7 +154,22 @@ function openingFromSegment(
 
   const sill = type === 'window' ? 900 : 0;
 
-  return { id: `fb-${index + 1}`, type, width, height, sill, wall, align, offset, swing, track: null };
+  return {
+    id: `fb-${index + 1}`,
+    type,
+    width,
+    height,
+    sill,
+    wall,
+    align,
+    offset,
+    swing,
+    track: null,
+    // A described door states no leaf count and no jamb, so the defaults a new door gets apply;
+    // the normaliser would fill them anyway, and stating them here keeps the value honest.
+    leaves: type === 'sliding_door' ? 1 : null,
+    hinge: type === 'pa_door' ? 'left' : null,
+  };
 }
 
 /**

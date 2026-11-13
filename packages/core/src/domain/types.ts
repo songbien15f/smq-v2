@@ -112,6 +112,27 @@ export interface Opening {
   /** How the door runs; `null` for every type except a sliding door. */
   track: OpeningTrack | null;
   /**
+   * Sliding door only: how many leaves the door has (1 or 2). `null` for every other type.
+   *
+   * Stored rather than derived. A leaf count is not recoverable from the width — the desktop
+   * carried it separately as `SDType` (`SingleInSingleBay`, `DoubleInSingleBay`, …) — and the
+   * 3D view has to draw what was sold, not a guess from the opening size. Absent on an older
+   * config, which the normaliser reads as one leaf.
+   *
+   * Priced? Not yet: the v2 BOM reads the track, not the leaf count, so this field currently
+   * changes the drawing only. Recorded in `docs/KNOWN-DEVIATIONS.md`.
+   */
+  leaves?: 1 | 2 | null;
+  /**
+   * PA door only: which jamb the leaf hangs on, as seen from outside. `null` for every other
+   * type.
+   *
+   * The 2D swing arc and the 3D leaf both read it. Before it existed the plan hard-coded the
+   * near jamb, so a right-hinged door was drawn mirrored — a plan a fabricator would fit the
+   * wrong way round. Absent on an older config, read as `left` (the desktop's `Vector = -1`).
+   */
+  hinge?: 'left' | 'right' | null;
+  /**
    * The catalogue row the operator chose, or `null` for a typed size.
    *
    * Informational today: the door BOM matches a size ladder by width and height, so the

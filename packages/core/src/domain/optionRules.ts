@@ -34,6 +34,7 @@
 import type { OptionKind, ShedConfig, ShedOption, SkylightOption, DimensionedShed } from './types';
 import { hasPlanGeometry, resolveOption } from './options';
 import { carryBeamRefusal } from './placementRules';
+import { resolveOpeningPlacement } from './placement';
 import { skylightCollision } from './skylightSnap';
 import { MEZZ_SLAB } from './options';
 
@@ -322,6 +323,51 @@ export function optionsThatNoLongerFit(shed: DimensionedShed): { id: string; kin
         kind: option.kind,
         reason: 'This option no longer fits the building and is drawn with no size.',
       });
+    }
+  }
+
+  return problems;
+}
+
+/**
+ * Doors and windows that no longer fit the building after it changed.
+ *
+ * `placeOpening` checks a door when it is placed, but nothing checked it again when a wall moved: a
+ * 4 m roller door at 7 000 mm on a 12 000 mm front wall overran the wall by 1 000 mm once the span
+ * dropped to 10 000 mm, and a 3 600 mm door outgrew a wall lowered to 3 000 mm. The plan drew it, the
+ * BOM priced it, and the quote saved.
+ *
+ * The test is the geometry everything else draws and prices from (`resolveOpeningPlacement`): past
+ * either end of its wall, taller than the wall, or overlapping another opening on the same wall. Not
+ * the 100 mm placement margin — a door aligned left or right resolves flush with the corner, so the
+ * margin would flag every such door after any resize.
+ *
+ * Reported, not removed or moved, for the reason `optionsThatNoLongerFit` gives.
+ */
+export function openingsThatNoLongerFit(shed: DimensionedShed): { id: string; reason: string }[] {
+  const problems: { id: string; reason: string }[] = [];
+  const placed = shed.openings.map((opening) => ({ opening, placement: resolveOpeningPlacement(opening, shed) }));
+
+  for (const { opening, placement } of placed) {
+    const label = OPENING_LABEL[opening.type] ?? opening.type;
+    const name = `The ${opening.width} × ${opening.height} mm ${label} on the ${opening.wall} wall`;
+
+    if (!placement.valid) {
+      const why = placement.reason ?? 'It is outside the wall.';
+      problems.push({ id: opening.id, reason: `${name} no longer fits: ${why.charAt(0).toLowerCase()}${why.slice(1)}` });
+      continue;
+    }
+
+    const clash = placed.find(
+      (other) =>
+        other.opening !== opening &&
+        other.opening.wall === opening.wall &&
+        other.placement.u < placement.u + opening.width &&
+        placement.u < other.placement.u + other.opening.width,
+    );
+    if (clash !== undefined) {
+      const otherLabel = OPENING_LABEL[clash.opening.type] ?? clash.opening.type;
+      problems.push({ id: opening.id, reason: `${name} now overlaps the ${otherLabel} beside it. Move one of them.` });
     }
   }
 

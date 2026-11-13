@@ -89,9 +89,15 @@ Không hình học: **`misc_option`** `{ name, quantity, unit }` — dòng catal
 ### 3.4 `Opening`
 
 `type (roller_door|pa_door|sliding_door|window|opening) · width · height · sill · wall ·
-align (center|left|right|custom) · offset · swing · track (none|single|double)`
+align (center|left|right|custom) · offset · swing · track (none|single|double) · leaves (1|2) · hinge (left|right)`
 
-`track` chỉ có nghĩa với `sliding_door`; normalise xoá ở các loại khác.
+`track` và `leaves` chỉ có nghĩa với `sliding_door`; `hinge` chỉ với `pa_door`. Normalise xoá ở
+các loại khác và điền mặc định cho quote cũ: `leaves = 1`, `hinge = 'left'` (đúng như desktop:
+`SDType` và `Vector`).
+
+**`leaves` và `hinge` chưa ảnh hưởng giá** — chúng chỉ đổi hình vẽ (2D và 3D). Ghi ở
+`KNOWN-DEVIATIONS.md` dòng 50. Import `.sqd` đọc được cả hai: `ESlidingDoorType` 2 =
+`DoubleInSingleBay` → 2 cánh; `PADoor.Vector = 1` → bản lề phải.
 
 ---
 
@@ -1118,6 +1124,67 @@ Spec §4.8 nói "bảng `salesmen` theo tenant + đồng bộ `createsalesman`/`
 **Đã làm thay:** một ô **chuỗi tự do** trên site check, mặc định là người đang đăng nhập, gửi lên qua
 **cả hai** chỗ: `Salesman` trong `/building/create` và tham số `salesman` của `getsalesmansitelink`;
 lưu trong `detail_json`.
+
+## 12.6 Hình học 3D — cửa theo loại, vỏ nhà, khung (2026-11-13)
+
+### Nguồn hình học: ba module thuần, không phải component
+
+| File | Trả về | Test |
+|---|---|---|
+| `packages/core/src/domain/openings3d.ts` | `openingParts(opening, u, colors)` — mảnh phần cứng của một cửa, toạ độ **wall-local mm** | `__tests__/openings3d.test.ts` (20) |
+| `packages/core/src/domain/structure3d.ts` | `roofParts` / `gableEndParts` / `gutterParts` / `frameParts` / `purlinAndGirtParts` / `structureParts` | `__tests__/structure3d.test.ts` (19) |
+| `packages/client/.../three/PartMesh.tsx` | đặt mảnh vào scene, chọn material theo `finish` | — |
+
+Hai module core là **plain data**, không import three: một test khẳng định được "mọi cửa cuốn có 2
+ray", "tang cuốn nằm trên khung đầu", "không mảnh đặc nào phủ kính cửa sổ" mà không cần WebGL.
+
+**Hệ toạ độ** (ghi trong `openings3d.ts`): `x` dọc tường tính từ góc trái **nhìn từ ngoài**, `y` cao
+từ sàn, **`z` dương là đi vào trong nhà**. Phần cứng ngoài tường vì thế có `z < 0`. Đây từng là lỗi
+thật: khung cửa sổ cũ đặt `z = +8` nên nằm *sau* kính, không lộ ra.
+
+**Hằng số dùng chung với 2D**: `plan.ts` import `JAMB`, `ROLLER_*`, `WINDOW_*`, `TRACK_INSET` từ
+`openings3d.ts`, nên ký hiệu 2D và ray 3D là cùng một số đo.
+
+### Cửa — mỗi loại một bộ phần cứng
+
+| Loại | Mảnh |
+|---|---|
+| `roller_door` | curtain + gờ slat 150 mm + 2 ray (45 mm) + khung đầu + tang cuốn Ø300 + 2 bracket + 2 lò xo + thanh đáy |
+| `pa_door` | khung 3 cạnh 70 mm + ngưỡng + cánh mở 22° + tay nắm + 3 bản lề; cánh lật theo `hinge` |
+| `sliding_door` | 1–2 cánh (theo `leaves`), mỗi cánh 4 thanh + panel; ray 1 hoặc 2 lớp (60/120 mm), dài đúng khoảng cánh chiếm |
+| `window` | vòng 4 thanh 45 mm + đố giữa khi rộng > 900 + kính lùi 30 mm + flashing đầu/sill |
+| `opening` | không có gì — tường khoét, không lắp |
+
+### Vỏ nhà
+
+- **Mái**: 2 slope đúng pitch + ridge cap (chỉ gable; skillion 1 slope, không ridge).
+- **Đầu hồi**: tam giác kín ở hai đầu khi nhà có tường đầu hồi; **bỏ** nếu đầu đó đã có option
+  `gable_infill` để không vẽ đôi. Carport không có tường đầu hồi nên không đóng.
+- **Máng xối + ống thoát**: luôn có (BOM luôn tính), đặt ngoài tường dưới eave.
+- **Khung**: cột + bản mã ở mỗi grid line, rìa theo pitch.
+- **Purlin / girt**: chỉ vẽ **sau khi evaluate**, đọc `frameLayout` từ `EvaluationView`
+  (`purlinRows`, `purlinSpanMm`, `girtRows`, `girtSpanMm`) — đó là số của sách giá, không đoán.
+  Trước lần evaluate đầu tiên không có purlin nào, và đó là trạng thái trung thực.
+
+### Vật liệu và ánh sáng
+
+`Render3D` dùng `ACESFilmicToneMapping` (exposure 1.05) + `StudioEnvironment` (PMREM từ
+`RoomEnvironment` có sẵn của three — **không tải HDR**), key light có bóng + fill light.
+Tường dùng texture gân **sinh bằng canvas** (`useSheetingTexture`), 1 gân / 762 mm đúng cover tôn.
+Mái **đục** — bỏ lớp 60 % trong suốt cũ; muốn nhìn vào trong thì dùng nút **Roof**.
+
+### Toggle Roof
+
+`PlanView` giữ `showRoof` cục bộ (không vào store, không vào config, không tạo undo step) và chỉ
+hiện nút khi `view === '3d'`. Tắt mái bỏ slopes + ridge + gutter; **giữ** đầu hồi và khung, vì đó là
+tường và thép chứ không phải mái.
+
+### Cái nó KHÔNG làm
+
+- Bu lông, bản mã, vít, flashing quanh cửa cuốn vẫn nằm trong giả định.
+- `leaves` / `hinge` không đổi giá (KNOWN-DEVIATIONS 50).
+- Đầu hồi kín được vẽ nhưng `gable_infill` chưa có dòng BOM (KNOWN-DEVIATIONS 49).
+- Slab sàn là thiết bị vẽ, không có dòng BOM (KNOWN-DEVIATIONS 52).
 
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
@@ -3868,6 +3935,339 @@ server không có Places; (b) `#shed-span` trống vì `applyDimension` mở con
 helper test thiếu `page.on('dialog')`.
 
 ---
+
+## 13.41 PIN nằm trong ô Site address, popover Building Parameters, Design là nơi duy nhất (2026-11-13)
+
+Thay thế bố cục của §13.22 và §13.37 (panel ShedSafe riêng giữa Delivery và Design). Spec:
+`docs/superpowers/specs/2026-11-13-sitecheck-pin-design.md`.
+
+**Vấn đề:** sáu giá trị chứng nhận (Importance, Wind region, Terrain, Building class, Snow load, Wind
+speed) hiện **hai lần** — một trong panel ShedSafe, một trong Design — cách nhau vài trăm px. Desktop đặt
+PIN **trong** ô Site Address và các giá trị đó chỉ đọc.
+
+**Bố cục mới:**
+
+| Chỗ | Có gì |
+|---|---|
+| Ô Site address (`SiteGroup`) | nút **📍 PIN** (`#sitecheck-pin`) ở slot `suffix` của `Field`; dưới ô là một dòng trạng thái (`#sitecheck-status`) + link "Open ShedSafe ↗" khi đã có building |
+| Popover **Building Parameters** (`#sitecheck-popover`, `role="dialog"`) | Importance · Span · Height · Overall length · Roof pitch (5 ô nhập) + Avg. height (chỉ đọc); người bán; nút `#sitecheck-go` "GO TO SHEDSAFE" / "Pin again & open ShedSafe"; khi đã pin: 4 bước, Watching/Stop watching, `#sitecheck-import` |
+| Nhóm **Design** | **nơi duy nhất** hiện sáu giá trị (`DesignValue compact`, giữ id `design-*`) và 8 thông số phụ trong "More parameters"; header: "From ShedSafe" + pill trạng thái + `#design-sitecheck-refetch` "↻ Get again" |
+| Nhóm **Shed** | một dòng cảnh báo lệch dưới Span / Height / Overall length |
+
+**Popover dùng chung record với Shed.** Năm ô ghi qua đúng các hàm của nhóm Shed (`commitSpan`,
+`commitHeight`, `commitLength`, `applyDimension({ roofPitchDeg })`, `applyPartial({ importanceLevel })`
+— `useShedDimensions`), nên gõ span trong popover thì Shed đổi theo và ngược lại, cùng confirm xoá
+option. Không có bản sao riêng nào (bài học `pinnedFor` ở §13.38).
+
+**Hành vi popover:** mở bằng PIN (bật khi đủ khách + site, nếu thiếu thì `title` "Needs: …"), focus vào
+Importance; đóng bằng **Escape** hoặc ✕, trả focus về PIN. **Không** đóng khi cuộn, click ra ngoài hay
+blur — người ta phải đọc giá trị ở chỗ khác rồi quay lại. Desktop: neo dưới ô, lật lên nếu tràn đáy
+(đo một lần mỗi lần mở). Mobile: bottom sheet cố định.
+
+**GO TO SHEDSAFE** chỉ bật khi đủ năm giá trị (và không dưới sàn), login là salesman ShedSafe, và có
+quyền ghi; nếu chặn thì dòng lý do hiện ngay dưới nút. Đường gọi không đổi: `site-checks/pin` khi quote
+chưa lưu (rồi `setSiteCheckId`), `quotes/{id}/site-check/pin` khi đã lưu.
+
+**Lệch (drift)** — `driftOf(check, config)` so `pinnedFor` với công trình hiện tại, chỉ khi check đã
+`calculated`:
+- Design: một câu đỏ liệt kê mọi trường lệch (cả importance) + nút "Pin again at Site address" (focus
+  vào PIN).
+- Shed: một dòng vàng dưới đúng ô lệch (span/height/length; importance **không** hiện ở Shed).
+- Check pin trước khi có `pinnedFor`: Design hiện *"Certified dimensions weren’t recorded — pin again to
+  verify."*
+
+**"More parameters"** (8 dòng: shielding, topographic factor, snow load region, earthquake hazard
+factor, elevation, location `lat, lng`, rainfall `100y/20y mm/h`, rainfall town): giá trị chứng nhận →
+nếu không có thì số provisional (màu vàng, tooltip "Provisional — not auto calculated") → `—`. Bộ đếm
+"n of 8 from the rating" chỉ đếm giá trị chứng nhận.
+
+**File:** `details/SiteCheckPin.tsx`, `details/BuildingParamsPopover.tsx`, `siteCheckActions.tsx`
+(`useSiteCheckActions`, provider bọc thân Step 1), `siteCheckGates.ts` (gate, drift, status — hàm thuần).
+`SiteCheckPanel.tsx` đã **xoá**.
+
+**Chưa kiểm được trên browser:** pin thật, drift và import — login test (E2ESHEDS) không phải salesman
+ShedSafe. Các e2e của §6 trong spec (cũ đọc panel ShedSafe) sẽ đỏ cho tới khi được cập nhật theo bố cục
+mới (tests=off nên chưa sửa).
+
+## 13.42 Lỗi Step 1: khi nào hiện, một dòng ngắn, mọi control cao 44 px (2026-11-13)
+
+Spec: `docs/superpowers/specs/2026-11-13-step1-errors-layout-design.md`. Trước đó một quote mới chưa gõ gì
+đã có 7 lỗi đỏ và 4 nhóm ghi "N to fix"; lỗi span cao 6 dòng (108 px); control cao 29/38/44 px lẫn lộn.
+
+**Khi nào một lỗi hiện** (`QuoteEditor.tsx`, `visibleIssuesByPath`):
+- Một lỗi của field chỉ hiện sau khi người dùng **rời** field đó (blur), hoặc sau khi bấm **Save / Next**.
+- Một `onBlur` duy nhất trên khung Step 1 ghi field vào `touched`. Path của issue = id của element; field
+  nào có id khác path thì khai `data-issue-path`: hai ô cantilever → `design-cantilever`; mỗi hàng màu
+  (`fieldset`) → `colours-<role>`; ba ô kích thước trong popover Building parameters → `shed-span` /
+  `shed-height` / `shed-length` (prop `issuePath` của `DimensionField`).
+- Lỗi inline và badge "N to fix" đọc **cùng một** map đã lọc → không thể có badge "3 to fix" mà không ô
+  nào đỏ. Error summary vẫn nhận **toàn bộ** danh sách.
+- Mở một quote **đã lưu** để sửa: hiện mọi lỗi ngay (`showIssues` bắt đầu `true`). Quote mới / template:
+  bắt đầu sạch.
+- **Save và Next bấm được** khi chỉ còn lỗi field: bấm → hiện hết lỗi + focus error summary, không lưu,
+  không sang bước. Save chỉ bị disable vì lý do khác (chưa đổi gì, chưa có giá, đang lưu); Next chỉ bị
+  disable khi chưa có giá **và** không còn lỗi (đang tính).
+- Customer address giờ có lỗi inline + `aria-invalid` và được đếm trong badge "Quote & client" (trước
+  đó summary liệt kê nhưng ô không bao giờ đỏ).
+
+**Hai câu cho mỗi issue** (`DraftIssue` trong `validation.ts`):
+- `short` — dòng dưới field: `Required`, `Missing @ or domain`, `Tick to confirm`,
+  `<min>–<max> mm` (span/height/length), `<min>–<max>°` (pitch), `<min>–<max>` (bays),
+  `Span ≥ 12 m needs walls ≥ 3 m`, `Bays don’t divide equally`, `Spacing × bays ≠ length`,
+  `Max 1400 mm on a standard building` (cantilever); option dùng `problem.reason`.
+- `message` — câu cho error summary, nêu tên field (vd. `Enter the site address.`). Câu "vì sao" phía
+  sau đã bỏ. Khoảng giá trị giữ đơn vị mm kể cả khi nhóm Shed hiển thị m.
+
+**Chiều cao:** mọi input / select / button trên Step 1 là `min-h-11` (44 px — touch target của
+`design-system/smartquote-v2/MASTER.md`). `DimensionField`: khung viền đạt 44 px. Ngoại lệ có chủ ý:
+nút × 32 px của popover và các ô màu 32 px trong bảng màu. Step 2 / 3 (`CategoryDock`, `CostPanel`)
+giữ nguyên.
+
+**Đã kiểm trên browser:** quote mới không có ô đỏ nào khi tải; rời First name → "Required" + "1 to fix";
+bấm Next → 9 lỗi trong summary, badge 4+1+1+3 khớp 8 ô đỏ + 1 trong nhóm Delivery đang đóng; 61
+control đều ≥ 44 px; ở 375 × 812 không cuộn ngang, lỗi dài nhất 2 dòng.
+
+**e2e sẽ đỏ** (tests=off nên chưa sửa): `stepOne.spec.ts:85` và `:1248` chờ nút Save `toBeDisabled()` trên
+quote trống — nay nút bấm được và chỉ hiện lỗi; `:93` chờ `#shed-span` có `aria-invalid` ngay khi tải —
+nay chỉ đỏ sau khi rời ô hoặc bấm Save/Next; `:94-96` còn kiểm câu dài cũ.
+
+**Sau review cuối:** bấm Save/Next ở Step 2/3 khi Step 1 còn lỗi sẽ quay về Quote details rồi mới hiện
+summary (lỗi `options-*` một mình thì không chuyển bước); tiêu đề summary có `scroll-margin` để không bị
+thanh bước dính phía trên che; ô nhập trong `DimensionField` cao bằng khung 44 px (`self-stretch`);
+`shed-nomBaySpacing` (template/import) nay đỏ tại chỗ và được đếm trong badge nhóm Shed.
+
+---
+
+## 13.43 Ô số commit khi rời ô, pitch là combobox, giới hạn lấy từ price book (2026-11-13)
+
+Spec: `docs/superpowers/specs/2026-11-13-step1-input-behaviour-design.md`. Trước đó các ô số ghi vào
+building **mỗi phím gõ** (gõ spacing "3000" chạy 4 lần, length nhảy theo "3", "30", "300"); slider pitch
+hỏi confirm "xoá mọi option" mỗi pixel kéo; validator dùng giới hạn cố định trong khi ô nhập dùng giới
+hạn của book — một giá trị có thể được nhận ở ô nhưng bị chặn khi lưu, hoặc ngược lại.
+
+**Commit khi rời ô hoặc Enter** (`CommitNumberInput.tsx`, mới; `DimensionField` cùng quy tắc):
+- Năm ô: Bays, Spacing (`shed-nomBaySpacing`), độ dài từng bay (`shed-bayWidth-<i>`), hai ô cantilever,
+  Quote rate (`customer-quoteRatePct`). Gõ không ghi gì; **blur** hoặc **Enter** mới commit.
+- Enter chỉ `blur()` — blur commit. Trước đó Enter commit rồi blur commit lần nữa → confirm hỏi 2 lần.
+  Nay confirm hỏi **đúng 1 lần**. Giá trị không đổi thì không gọi `onCommit` (không hỏi confirm).
+- **Escape** trả ô về giá trị đang lưu, không commit.
+- Ô trống / không phải số → ô hiện lại giá trị đang lưu, không báo gì. Chấp nhận dấu phẩy (`12,5` → 12.5).
+- Ngoài giới hạn → **từ chối** (không clamp), ô về giá trị đang lưu, dòng `role="alert"` dưới ô:
+  `9000 mm is outside 1000–4000 mm.`
+- Confirm bị huỷ (`onCommit` trả `false`) → ô về giá trị đang lưu.
+- Cantilever: **gõ 0** rồi rời ô để bỏ cantilever; xoá trắng ô thì chỉ trả về giá trị cũ. Hint ghi
+  "Type 0 to remove the cantilever."
+- Panel "Adjust bay spacing" bị giữ mở khi có bay nào lỗi (lỗi nằm trên `shed-bayWidth-<i>`, link trong
+  error summary cần ô đó tồn tại).
+- Panel "Adjust bay spacing" là **flyout bên phải cột form** (`details/SideFlyout.tsx`, dùng chung với panel
+  PIN), mũi tên chỉ vào nút mở nó; trên điện thoại nó nằm inline dưới hàng "Bay spacing". Chỉ một flyout mở
+  một lúc (mở PIN thì Bays đóng và ngược lại). Escape trong một ô bay chỉ hoàn ô; Escape lần hai đóng flyout.
+
+**Pitch là combobox sửa được** (`PitchCombobox.tsx`, mới), ở **hai chỗ**: nhóm Shed (`#shed-roofPitchDeg`,
+thay slider) và popover Building parameters (`#sitecheck-params-roofPitchDeg`, thay select;
+`issuePath="shed-roofPitchDeg"`).
+- Danh sách = các pitch book bán ở span này (vd. 7.5, 10, 15, 20, 25, 30°); nút ▾ 44 px mở/đóng; ArrowDown
+  mở và di chuyển, Enter chọn dòng đang sáng hoặc commit số đã gõ, Escape đóng list (list đã đóng → trả
+  về giá trị đang lưu).
+- Ô nhận **mọi** pitch trong khoảng của book cho span (desktop cũng là dropdown sửa được); pitch nằm giữa
+  hai mức book liệt kê vẫn hiện ghi chú "…It prices as an assumption."
+- Ngoài khoảng → `40° is outside 7.5–30° for this span.`, ô về giá trị đang lưu.
+- Chọn một dòng / Enter / rời ô: commit **1 lần**, confirm hỏi 1 lần.
+- Popover: quote chưa có pitch → lỗi "Choose a pitch."; span không có pitch nào trong book → "No pitches
+  in the book for this span."
+
+**Một bộ giới hạn từ price book** (`bookBounds.ts`, mới): `bookBounds(catalogue, span)` trả span / height /
+pitch / length / bays / bay spacing. Ô nhập (`useShedDimensions`) **và** validator (`validateDraft(…,
+bounds)`) đọc cùng bộ này; book không nêu thì dùng `FALLBACK_BOUNDS`.
+- Kích thước bay ngoài khoảng book **chặn lưu** (chỉ trong form, API không đổi): bay đều → kiểm bay **lớn
+  nhất** (`largestBay`), lỗi trên `shed-nomBaySpacing`: `Each bay is 6000 mm; this price book sells bays of
+  1000–4000 mm.`; bay tuỳ chỉnh → từng `shed-bayWidth-<i>`.
+- Hệ quả: quote cũ có bay ngoài book (vd. quote thử 4 × 6000 mm) mở ra sẽ báo lỗi và không lưu được cho
+  tới khi sửa bay.
+
+**Đã kiểm trên browser** (quote thử, không lưu): gõ spacing 5/50/500 không đổi length, 3000 + blur → 12000;
+bays + Enter với cantilever và confirm huỷ → confirm 1 lần, ô về 4; pitch chọn 15° → confirm 1 lần; `7,5` +
+Enter → 7.5; `40` → câu từ chối, confirm 0 lần.
+
+**e2e sẽ đỏ** (tests=off nên chưa sửa): `stepOne.spec.ts:144`, `:914`, `:974`, `:1037` dùng `selectOption`
+trên select pitch của popover — nay là combobox; `:439`, `:751` kéo slider pitch — nay là ô nhập;
+`:259`, `:797`, `:859` gõ số rồi kiểm ngay — nay cần blur hoặc Enter mới commit.
+
+**Chưa đổi (có từ trước):** đặt cửa sổ / cửa đi **không** hỏi confirm xoá option — chúng là `openings`,
+`shouldWipeOptions` chỉ đọc `options`.
+
+---
+
+## 13.44 Đường lưu: key mới sau mỗi lần lưu, clean theo cái đã gửi, một lần tính giá khi mở (2026-11-13)
+
+Từ review `docs/reviews/2026-11-13-quote-editor-overview.md`, mục 1, 2 và 6. Cả ba đều tái hiện trên browser
+bằng cách stub `fetch` cho `POST /api/sq/quotes` (không ghi gì vào DB), sửa xong chạy lại đúng các bước đó.
+
+- **Lưu lần 2 trên cùng trang** (`QuoteEditor.tsx` `save()`): trước đây idempotency key chỉ được tạo mới
+  trong `calculate()`. Lưu xong rồi chỉ sửa khách/site (giá vẫn "current") → Save gửi **cùng key, cùng
+  evaluationId** → server trả lại revision cũ (`replayed: true`) → màn hình báo "Saved", sửa đổi mất.
+  Nay lưu thành công thì tạo key mới, và nếu vẫn ở trang edit (`quoteId !== null`) thì **tính giá lại** để
+  có evaluation mới (evaluation cũ server đã tiêu). Trong lúc đó Save bị giữ (`refreshing`, trước tên là
+  `refreshingMoney`). Lần lưu đầu tiên chuyển sang `/quotes/<id>/edit`, nơi editor mới tự tính giá khi mở.
+- **Clean theo payload đã gửi** (`useDraftStore.markClean({…, saved: {customer, site, pricing}})`): trước
+  đây fingerprint lấy từ store lúc response về → gõ vào ô khách trong lúc đang lưu bị coi là đã lưu
+  ("Nothing has been changed yet", cảnh báo rời trang tắt). Nay chỗ gõ đó vẫn là thay đổi chưa lưu.
+  Baseline building vốn đã dùng `config` của request.
+- **Một lần tính giá khi mở**: hai effect (`autoPriced` + `pricedFirstBuilding`) gộp thành một. Effect này
+  chạy khi `draftReady` và building có span/length/height, đồng thời kiểm cả store thật (render trong commit
+  mở quote còn là building trước `applyConfig`). Mở quote đã lưu: 2 request `evaluate` → 1.
+
+---
+
+## 13.45 Một luật sang bước, tự tính lại giá khi đổi building (2026-11-13)
+
+Từ review `docs/reviews/2026-11-13-quote-editor-overview.md`, mục 3 và 4 (chốt phương án A cho cả hai).
+
+- **Một luật cho nút Next và tab StepRail** (`canAdvance` trong `QuoteEditor.tsx`): sang Options/Cost khi
+  có giá **và** không còn issue của building — `isBuildingIssue(path)` trong `validation.ts`, tức path
+  `shed-*` hoặc `design-*`. Issue khách/site/màu/option (`customer-*`, `site-*`, `colours-*`, `options-*`)
+  **chỉ chặn Save**.
+  - Trước đây tab chỉ đòi có giá, còn Next đòi 0 issue (kể cả email khách). Ở Options bấm "Next: cost" vì
+    thiếu email thì bị đá về Quote details.
+  - Còn issue building: tab bị khoá với lý do "Fix the building on Quote details first…". Next vẫn bấm được
+    để hiện các ô lỗi (như Save).
+  - Dòng cạnh Next: "One building field still needs attention…" / "This step is ready. One field is still
+    needed before saving." / "Calculating the price…" khi chưa có giá mà đang tính.
+- **Tự tính lại giá sau khi đổi building** (debounce 600 ms, cùng cơ chế với thay đổi tiền):
+  - Chỉ chạy khi không còn issue building. Còn issue thì giá cũ giữ nguyên, đánh dấu out of date; sửa xong
+    ô lỗi thì tự tính.
+  - Khoá theo building **đã gửi** gần nhất (`lastAttemptBuilding`, đặt trong `calculate()` trước `await`),
+    nên request bị server từ chối không bị gửi lại mỗi lần render. Nút Calculate vẫn là cách thử lại.
+  - Chạy sau lần tính giá khi mở (`autoPriced`), không trùng request.
+  - Mỗi request có số thứ tự (`requestSeq`): câu trả lời của building cũ về muộn bị bỏ qua.
+  - Save bị giữ trong lúc chờ. `refreshing` nay là bộ đếm (`beginRefresh`/`endRefresh`): hai lần refresh
+    chồng nhau không còn tắt cờ của nhau. Cleanup của effect giảm bộ đếm khi timer chưa chạy (trước đây đổi
+    building trong 600 ms sau khi sửa tiền làm Save bị giữ mãi). Gate cũng tính cả `calculating`.
+  - Dòng dưới Save khi đang tự tính: "Updating the price…" thay cho "calculate it again"
+    (`evaluateGate({…, refreshing})`).
+
+Kiểm trên browser (quote thử, stub `POST /api/sq/quotes`, không lưu):
+- Mở quote: 1 `evaluate`. Bay 6000 mm ngoài book (issue building) → tab Options/Cost khoá.
+- Span 12000 → 11000: không có request mới.
+- Bays 4 → 8 (bay 3000): sau 150 ms vẫn 1 request và Save báo "Updating the price…"; sau 600 ms có 2 request,
+  tab mở, Save sẵn sàng.
+- Span → 10000: thêm đúng 1 request.
+- Xoá email khách: Next sang Options, rồi Cost, không bị đá về. Save hiện lỗi và quay về Quote details,
+  không gửi request lưu.
+
+
+### 13.46 Cửa đi / cửa sổ được kiểm lại sau khi đổi kích thước
+
+Trước đây `placeOpening` chỉ kiểm cửa lúc đặt. Đổi span, length hoặc chiều cao sau đó không kiểm lại:
+cửa vượt tường vẫn được vẽ, BOM vẫn tính giá, báo giá vẫn lưu được.
+
+- Core: `openingsThatNoLongerFit(shed)` trong `packages/core/src/domain/optionRules.ts`, đặt cạnh
+  `optionsThatNoLongerFit`.
+  - Dùng đúng hình học mà plan, BOM và 3D dùng (`resolveOpeningPlacement`, `placement.ts:64`).
+  - Một cửa bị báo khi:
+    - vượt mép trái hoặc phải của tường;
+    - cao hơn tường;
+    - sill + chiều cao vượt tường;
+    - chồng lên cửa khác trên cùng tường.
+  - **Không** áp lề 100 mm của lúc đặt: cửa căn trái/phải resolve sát góc, nên lề đó sẽ báo mọi cửa như vậy.
+  - Chỉ báo; không xoá hay dời cửa.
+- Validator: `validateDraft` thêm issue `options-opening-<id>`.
+  - Nằm cùng điều kiện với options: phải có đủ span, length và chiều cao.
+  - Tiền tố `options-` nghĩa là chặn Save nhưng không chặn Next. Save không kéo người dùng về Quote details,
+    vì cửa được sửa ở bước Options.
+  - Câu báo gọi tên cửa, ví dụ: "The 4000 × 3600 mm roller door on the front wall no longer fits: opening
+    extends 1000 mm past the right edge of the front wall."
+
+Kiểm trên browser (quote thử, stub `POST /api/sq/quotes`, không lưu):
+- Bays 8. Thêm cửa cuốn 4000 × 3600, custom, cách mép trái 7000 mm trên tường front.
+- Span 10000, height 3000: có 1 issue (vượt mép phải 1000 mm). Save không gửi request; tab Options vẫn mở.
+- Span 12000: còn 1 issue (cửa 3600 cao hơn tường 3000).
+- Height 4200: hết issue.
+- Script tạm gọi core cho trường hợp chồng cửa: cửa custom 5000 và cửa căn phải, cả hai rộng 3000 mm.
+  - Span 12000: không có issue.
+  - Span 10000: báo cả hai cửa chồng nhau.
+
+### 13.47 Nút "Split into N bays of X mm" cho bay rộng hơn book
+
+Một building đã lưu có thể có bay rộng hơn band của price book. Có hai nguồn:
+- lưu trước khi có luật chặn;
+- một book mới thu hẹp band.
+
+Khi đó quote **không lưu được**, kể cả khi chỉ sửa email khách. Hiện tại (DB local) có 46/87 quote như vậy, đếm bằng `pnpm quotes:blocked`.
+
+Desktop không bao giờ tạo ra bay như vậy. Nút Adjust bays của nó chia chiều dài thành `ceil(dài / BayMax)` bay, kẹp trong 2–30 (`ServiceStructureData.cs:309-324`). v2 nay có cùng luật:
+- Core: `baysToFit(length, maxBay)` trong `packages/core/src/domain/bays.ts`.
+- Ô "Nominal bay spacing" (Shed group): khi bay lớn nhất > max của book, dưới lỗi hiện nút **"Split into N bays of X mm"**, với X = floor(dài / N). Nhãn ghi sẵn kết quả.
+- Bấm nút gọi `applyBays({ length, bays: N, nomBaySpacing: 0 })`, đúng lệnh mà ô Bays gọi khi gõ N:
+  - chiều dài giữ nguyên;
+  - mảng bay lệch bị bỏ;
+  - hỏi xác nhận nếu sẽ mất option;
+  - giá tự tính lại (§13.45).
+- Không có nút khi:
+  - bay nhỏ hơn min (chia lại không giải quyết được);
+  - book không ghi band bay;
+  - chưa có chiều dài.
+
+Đã kiểm trên quote thử (lệnh lưu bị stub): 4 × 6000 → nút "Split into 6 bays of 4000 mm". Bấm thì thành 6 × 4000, hết lỗi bay, chỉ 1 request `evaluate`, Save được mở.
+
+Chiều dài không chia hết, ví dụ 25000 → 7 bay: kết quả giống hệt gõ 7 vào ô Bays. Building vẫn còn 2 lỗi:
+- "Bays don't divide equally";
+- "Spacing × bays ≠ length".
+
+Đây là luật có chủ ý của v2 (validation.ts, rule chia đều), khác desktop, nơi bay cuối gánh phần dư. Người dùng phải sửa tiếp chiều dài, hoặc sửa từng bay.
+
+---
+
+## 13.46 Bố cục editor: Cost không có cột giá, Options đặt bản vẽ lên trước, chip nhảy nhóm (2026-11-14)
+
+Nguồn: `docs/reviews/2026-11-13-ui-ux-review.md` (mục "Đã làm T2–T6") và plan `docs/superpowers/plans/2026-11-13-editor-uiux-improvements.md`.
+Mọi quyết định "cột nào hiện, rộng bao nhiêu, sticky offset bao nhiêu" nằm ở một hàm thuần
+`editorLayout(step)` (`apps/client/src/components/editor/editorLayout.ts`); `QuoteEditor.tsx` chỉ gọi nó.
+
+**Bước Cost (Step 3) không có cột giá.**
+- Giá vẫn luôn hiện: dải `PriceSummary` (sticky, cao 61 px) hiện ở **mọi độ rộng** trên bước Cost, kể cả `xl`. Ở bước Details/Options, dải này vẫn chỉ hiện dưới `xl` vì từ `xl` đã có cột giá.
+- Cột form của Cost rộng **640 px** ở `xl` (trước đó 380 px), 380 px ở `lg`. Bảng additions và Steelwork không còn bị bóp.
+- Cảnh báo vốn nằm trong cột giá (blockers, dòng chưa có giá, allowances) tách thành `PriceWarnings` (xuất từ `PricePanel.tsx`) và hiện **ở đầu CostPanel** khi không có cột giá. `PricePanel` vẫn render nó dưới thẻ giá ở bước khác. Allowances là `<details>` đóng sẵn.
+- Bất biến của e2e `layout.spec.ts`: `aside[aria-label="Price"]` hoặc `"Price summary"` phải thấy được ở 1440/1279/768/390, và đỉnh bản vẽ ≥ đáy dải giá sau khi cuộn.
+
+**Bước Options: bản vẽ lên trước trên điện thoại.**
+- Dưới `lg`, ô bản vẽ có `order-first` nên nằm trên danh sách option (trước đây nằm cuối trang, y = 3164 ở 375×812). Từ `lg` thứ tự cũ giữ nguyên (`lg:order-none`).
+- Đo ở 375×812: đỉnh bản vẽ y = 171.
+
+**Details: dải chip nhảy tới nhóm.**
+- `details/SectionJump.tsx` đặt trong tiêu đề sticky: Client · Site · Delivery · Design · Shed · Colours, mỗi chip có đếm lỗi (cùng danh sách path mà các nhóm dùng; Colours khớp theo tiền tố `colours-`). Dải chip cuộn ngang một hàng.
+- Mỗi `Group` có `id` (`group-customer|site|delivery|design|shed|colour`) và nghe sự kiện `window` `sq:open-group`: nhóm đang đóng (Delivery đóng mặc định) tự mở, rồi trang cuộn tới và focus nút tiêu đề nhóm.
+- Vị trí cuộn **đo từ chính tiêu đề sticky** (`top` + chiều cao), không dùng `scroll-margin`: giá trị cố định làm tiêu đề nhóm bị che 49 px ở 1440. Sau sửa: tiêu đề nhóm y = 152 ≥ đáy header 145. `prefers-reduced-motion` dùng cuộn tức thì.
+- Chip cao tối thiểu 44 px (`min-h-11`).
+
+**Thông báo "N item(s) need attention" ở StepRail bấm được.**
+- Khi có `onShowNotices` nó là `<button>` (nếu không vẫn là `<span>`); bấm gọi `revealIssues`, hiện `ErrorSummary` và chuyển focus vào tiêu đề của nó.
+
+**Còn mở.**
+- **Header sticky là lưới 3 hàng** (`editorLayout.ts` `FORM_HEADER`: `grid grid-cols-[minmax(0,1fr)_auto]`): hàng 1 = tiêu đề + số revision | nút Save; hàng 2 = trạng thái "Saved …" (nếu có) + lý do Save (`#save-reason`, `aria-live`), full-width; hàng 3 = chip nhảy nhóm (chỉ ở Details). Trước đó khối Save (nút + lý do 2 dòng) không vừa cạnh cột tiêu đề 380 px nên xuống một hàng riêng, header cao **193 px**; nay **145 px** ở cả 375 và 1440 (mục tiêu ≤ 160). Lý do Save vẫn nằm trong header, không bị ẩn.
+- T1 (cột giá thu gọn được) **không làm**: bị thay bởi spec trợ lý AI `docs/superpowers/specs/2026-11-13-ai-assistant-ui-design.md`; khung của nó đã dựng ở §13.48.
+
+## 13.48 Khung Assistant: cột 3 thành Assistant, giá ở dải sticky + drawer (2026-11-14, chưa nối AI)
+
+Làm theo §12 của spec AI: **chỉ dựng khung**, không gọi mô hình, không backend.
+
+**Công tắc.** Mặc định **tắt** → bố cục 3 cột cũ giữ nguyên. Bật bằng `NEXT_PUBLIC_SQ_ASSISTANT=1` (build) hoặc `?assistant=1` trên địa chỉ (`?assistant=0` ép tắt, thắng biến build). Đây chỉ là chỗ tạm cho cờ theo công ty mà spec yêu cầu (`useAssistantEnabled.ts`). URL đọc sau khi mount nên có một khung hình bố cục cũ trước khi đổi.
+
+**Khi bật** (`editorLayout.ts`, tham số `assistant: {on, collapsed}`):
+- Dải giá (`aside[aria-label="Price summary"]`) hiện **mọi độ rộng**, sticky `top-0`, 61 px; thêm nút **Price details** (≥ 44 px, chỉ biểu tượng dưới `sm`) và, ở 1024–1279, nút **Assistant**.
+- Không còn cột giá. `PricePanel` đầy đủ nằm trong **drawer Price details** (modal ở mọi độ rộng, Esc đóng, focus về nút mở).
+- `xl` (≥ 1280): cột 3 là `AssistantColumn`, mở sẵn, thu gọn được thành rail 48 px. Details/Options: 380 | 1fr | 340 (hoặc 48). Cost: 560 | 1fr | 340 (hoặc 640 | 1fr | 48). **Ở 1280 bước Cost bản vẽ còn ≈ 317 px khi Assistant mở**; thu gọn rail (`Ctrl+/`) trả lại ≈ 500 px. Đây là hệ quả của số đã duyệt trong spec, chưa đổi.
+- `lg` (1024–1279): Assistant là drawer 380 px **không modal** (form vẫn dùng được bên cạnh).
+- Dưới `lg`: nút tròn 56 px góc phải dưới (`bottom-24`, tránh thanh Next ở đáy) và bottom sheet 85 dvh có nền mờ.
+- z-index: SideFlyout 40 > drawer 35 > dải giá 30 (nút tròn 30, header form 10).
+
+**Panel** (`assistant/AssistantPanel.tsx`): tiêu đề + nhãn "AI", dải thông báo "The assistant is not connected yet…" (`role="status"`), luồng `role="log"` `aria-live="polite"`, tối đa 3 chip gợi ý mỗi bước (Details / Options / Cost), ô nhập (**vô hiệu** khi chưa nối, kèm lý do hiển thị), nút mic, nút gửi, chú thích "AI can make mistakes. Check the price before sending." Hành vi đã có sẵn để nối sau chỉ đổi dữ liệu: Enter gửi, Shift+Enter xuống dòng, Enter khi đang gõ IME (`isComposing`/229) không gửi, nút biểu tượng đều có nhãn và 44 px. Không lưu trạng thái vào localStorage.
+
+**Phím tắt.** `Ctrl+/` (hoặc `Cmd+/`): ≥ 1280 thu gọn/mở cột; dưới 1280 mở/đóng drawer. `Esc` đóng drawer.
+
+**Kiểm.** Đo ở 1440/1279/1280/768/390: không cuộn ngang; sheet 85 dvh mở/đóng bằng Esc và **focus về nút tròn** (nút bị gỡ khỏi DOM lúc sheet mở nên `Drawer` có `fallbackFocus`); drawer Price details ở 768 modal, focus vào hộp thoại, Esc trả focus về nút Price details; Cost ở 1440 là 560 | 452 | 340; cờ tắt → 380 | 672 | 300, không có Assistant/FAB/nút Price details. Client typecheck sạch, vitest 66/66, e2e `layout.spec.ts` 7/7 (chạy với cờ tắt). **Chưa** chạy e2e với cờ bật, chưa có test tự động cho khung Assistant (tests mặc định tắt).
+
+**Chưa làm (spec backend):** hội thoại, lưu phiên theo báo giá, thẻ thay đổi/hoàn tác, giọng nói thật, cờ theo công ty.
 
 ## 14. Kiểm thử hiện tại
 | Lớp | Số test |

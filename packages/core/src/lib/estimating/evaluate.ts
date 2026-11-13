@@ -92,5 +92,6 @@ export function evaluateQuote(
     provenance: book.provenance,
     members: built.members,
     punchings: built.punchings,
+    frameLayout: built.frameLayout,
   };
 }

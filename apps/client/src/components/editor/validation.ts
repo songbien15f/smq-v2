@@ -1,11 +1,13 @@
 'use client';
 
 import { COLOUR_ROLES } from '@sq/core/domain';
-import { baySpacingMismatch, optionsThatNoLongerFit } from '@sq/core/domain';
+import { baySpacingMismatch, openingsThatNoLongerFit, optionsThatNoLongerFit } from '@sq/core/domain';
 // From `domain`, not `pricing`: the pricing barrel re-exports `publish.ts`, whose `node:fs`
 // import breaks the browser bundle (`Module not found: Can't resolve 'fs'`, measured 2026-11-11).
 import { isNonStandardStructure } from '@sq/core/domain';
 import type { DimensionedShed, ShedColors, ShedConfig, StructureType } from '@sq/core/domain';
+import { bookBounds, largestBay } from './bookBounds';
+import type { BookBounds } from './bookBounds';
 
 /**
  * Validation for the quote draft.
@@ -23,16 +25,21 @@ import type { DimensionedShed, ShedColors, ShedConfig, StructureType } from '@sq
  * cannot be delivered to "unspecified". The distinction matters: a form that refuses to save for a
  * cosmetic reason teaches people to fill fields with nonsense.
  *
- * ## Why the messages are sentences
+ * ## Two texts per issue
  *
- * Every message says what is wrong **and** what to do. "Invalid" is not a message.
+ * `short` is the line under the field: the label is right beside it, so "Required" or "2000–30000 mm"
+ * is enough, and a five-line paragraph under every box is what made Step 1 unreadable. `message` is
+ * the sentence the error summary lists, read away from the field, so it names the field — and, where
+ * the fix is not obvious, says what to do. "Invalid" is never either.
  */
 
 /** A problem with the draft, addressed to a field so the summary can link to it. */
 export interface DraftIssue {
   /** The field's DOM id, so the summary can link to it and move focus. */
   path: string;
-  /** A sentence for a person. */
+  /** The one-line form shown under the field, e.g. `Required`. */
+  short: string;
+  /** A sentence naming the field, for the error summary. */
   message: string;
 }
 
@@ -104,17 +111,8 @@ export interface DraftForValidation {
  *  validator that iterated it loosely would silently stop checking when a role is added. */
 export const REQUIRED_COLOUR_ROLES = COLOUR_ROLES;
 
-/** Limits taken from the desktop's own accepted ranges, so a valid desktop quote stays valid. */
 /** The desktop's own limit for a cantilever on a standard structure (`Error.cs:320`). */
 const CANTILEVER_LIMIT_MM = 1400;
-
-const LIMITS = {
-  span: { min: 2000, max: 30000 },
-  length: { min: 2000, max: 120000 },
-  height: { min: 2000, max: 12000 },
-  bays: { min: 1, max: 30 },
-  pitch: { min: 0, max: 45 },
-} as const;
 
 /** True when `email` looks like an address. Deliberately permissive: the API is authoritative. */
 function looksLikeEmail(email: string): boolean {
@@ -137,23 +135,34 @@ export function validateDraft(
    * editor, which always has it.
    */
   book?: { nonStandardStructureCodes: readonly string[] },
+  /**
+   * The size limits — the price book's when the editor has its catalogue (`bookBounds`).
+   *
+   * The book's numbers decide validity, because the desktop's shed-config lookup keeps only rows whose
+   * span, height, bay and pitch bands contain the building (`ShedConfigCache.cs:47-54`): a building
+   * outside them has no row to price from. Defaults to the loose fallbacks, under which no bay size is
+   * checked.
+   */
+  bounds: BookBounds = bookBounds(null, draft.config.span),
 ): DraftIssue[] {
   const issues: DraftIssue[] = [];
   const { config, customer, site } = draft;
+  const forBook = (fromBook: boolean): string => (fromBook ? ' for this price book' : '');
 
   // ---------------------------------------------------------------- 1. Quote & client
   if (customer.firstName.trim() === '') {
-    issues.push({ path: 'customer-firstName', message: 'Enter the customer’s first name.' });
+    issues.push({ path: 'customer-firstName', short: 'Required', message: 'Enter the customer’s first name.' });
   }
   if (customer.lastName.trim() === '') {
-    issues.push({ path: 'customer-lastName', message: 'Enter the customer’s last name.' });
+    issues.push({ path: 'customer-lastName', short: 'Required', message: 'Enter the customer’s last name.' });
   }
   if (customer.email.trim() === '') {
-    issues.push({ path: 'customer-email', message: 'Enter the customer’s email address.' });
+    issues.push({ path: 'customer-email', short: 'Required', message: 'Enter the customer’s email address.' });
   } else if (!looksLikeEmail(customer.email)) {
     issues.push({
       path: 'customer-email',
-      message: 'That email address is missing an @ or a domain. Check it before the quote is sent.',
+      short: 'Missing @ or domain',
+      message: 'That email address is missing an @ or a domain.',
     });
   }
   /*
@@ -167,7 +176,8 @@ export function validateDraft(
   if (customer.address.trim() === '') {
     issues.push({
       path: 'customer-address',
-      message: 'Enter the customer’s address. It appears on the quote and on the contract.',
+      short: 'Required',
+      message: 'Enter the customer’s address.',
     });
   }
 
@@ -175,13 +185,15 @@ export function validateDraft(
   if (site.address.trim() === '') {
     issues.push({
       path: 'site-address',
-      message: 'Enter the site address. A shed cannot be delivered without the address it is going to.',
+      short: 'Required',
+      message: 'Enter the site address.',
     });
   }
   if (!site.deliveryAcknowledged) {
     issues.push({
       path: 'site-deliveryAcknowledged',
-      message: 'Tick that the delivery terms have been read. It is the customer’s acknowledgement, not a formality.',
+      short: 'Tick to confirm',
+      message: 'Tick that the delivery terms have been read.',
     });
   }
 
@@ -194,18 +206,18 @@ export function validateDraft(
    * `DEFAULT_SHED` filled these in, so a quote could be saved and sent against a shed nobody had
    * described — the reported defect.
    *
-   * The messages name the field and say why it cannot be skipped, because "required" on its own
-   * teaches people to type 1 into a box to make the button go green.
+   * Under the field the line is just "Required"; the summary sentence names which dimension.
    */
   for (const [field, label, path] of [
-    ['span', 'span (the clear width inside the columns)', 'shed-span'],
+    ['span', 'span', 'shed-span'],
     ['length', 'overall length', 'shed-length'],
     ['height', 'wall height', 'shed-height'],
   ] as const) {
     if (config[field] === null) {
       issues.push({
         path,
-        message: `Enter the ${label}. The price is built from the building’s dimensions, so there is nothing to quote until it is stated.`,
+        short: 'Required',
+        message: `Enter the ${label}.`,
       });
     }
   }
@@ -221,38 +233,45 @@ export function validateDraft(
   if (config.span !== null && config.height !== null && config.span >= 12000 && config.height < 3000) {
     const message =
       'A span of 12 m or more needs walls of at least 3 m. Raise the wall height or reduce the span.';
-    issues.push({ path: 'shed-span', message });
-    issues.push({ path: 'shed-height', message });
+    const short = 'Span ≥ 12 m needs walls ≥ 3 m';
+    issues.push({ path: 'shed-span', short, message });
+    issues.push({ path: 'shed-height', short, message });
   }
 
-  if (config.span !== null && (config.span < LIMITS.span.min || config.span > LIMITS.span.max)) {
+  const { span: spanR, length: lengthR, height: heightR, pitch: pitchR, bays: baysR } = bounds;
+  if (config.span !== null && (config.span < spanR.min || config.span > spanR.max)) {
     issues.push({
       path: 'shed-span',
-      message: `Span must be between ${LIMITS.span.min} mm and ${LIMITS.span.max} mm. This is the clear width, measured inside the columns.`,
+      short: `${spanR.min}–${spanR.max} mm`,
+      message: `Span must be between ${spanR.min} mm and ${spanR.max} mm${forBook(bounds.fromBook.span)}.`,
     });
   }
-  if (config.length !== null && (config.length < LIMITS.length.min || config.length > LIMITS.length.max)) {
+  if (config.length !== null && (config.length < lengthR.min || config.length > lengthR.max)) {
     issues.push({
       path: 'shed-length',
-      message: `Overall length must be between ${LIMITS.length.min} mm and ${LIMITS.length.max} mm.`,
+      short: `${lengthR.min}–${lengthR.max} mm`,
+      message: `Overall length must be between ${lengthR.min} mm and ${lengthR.max} mm.`,
     });
   }
-  if (config.height !== null && (config.height < LIMITS.height.min || config.height > LIMITS.height.max)) {
+  if (config.height !== null && (config.height < heightR.min || config.height > heightR.max)) {
     issues.push({
       path: 'shed-height',
-      message: `Wall height must be between ${LIMITS.height.min} mm and ${LIMITS.height.max} mm.`,
+      short: `${heightR.min}–${heightR.max} mm`,
+      message: `Wall height must be between ${heightR.min} mm and ${heightR.max} mm${forBook(bounds.fromBook.height)}.`,
     });
   }
-  if (config.roofPitchDeg < LIMITS.pitch.min || config.roofPitchDeg > LIMITS.pitch.max) {
+  if (config.roofPitchDeg < pitchR.min || config.roofPitchDeg > pitchR.max) {
     issues.push({
       path: 'shed-roofPitchDeg',
-      message: `Roof pitch must be between ${LIMITS.pitch.min}° and ${LIMITS.pitch.max}°.`,
+      short: `${pitchR.min}–${pitchR.max}°`,
+      message: `Roof pitch must be between ${pitchR.min}° and ${pitchR.max}°${forBook(bounds.fromBook.pitch)}.`,
     });
   }
-  if (config.bays < LIMITS.bays.min || config.bays > LIMITS.bays.max) {
+  if (config.bays < baysR.min || config.bays > baysR.max) {
     issues.push({
       path: 'shed-bays',
-      message: `Number of bays must be between ${LIMITS.bays.min} and ${LIMITS.bays.max}.`,
+      short: `${baysR.min}–${baysR.max}`,
+      message: `Number of bays must be between ${baysR.min} and ${baysR.max}.`,
     });
   }
 
@@ -261,8 +280,9 @@ export function validateDraft(
    *
    * This rule used to fire whenever the length did not divide evenly by the bay count — correct while
    * equal division was the only way to describe a building, and **wrong** the moment a person can edit
-   * one bay: 4 000/4 000/6 000 is 14 000 in three baits with no integer average, and the desktop's
-   * `Adjust Bay Spacing` panel exists precisely to produce it.
+   * one bay: 4 000/4 000/5 000 is 13 000 in three bays with no integer average, and the desktop's
+   * `Adjust Bay Spacing` panel exists precisely to produce it. (Whether each bay is one the book sells
+   * is a separate rule, below.)
    *
    * So the array decides. With a stored array the length is the sum of the bays by construction
    * (`applyBayWidths` sets it), and a remainder is not a defect. Without one, an uneven division still
@@ -276,10 +296,45 @@ export function validateDraft(
     if (!Number.isInteger(perBay)) {
       issues.push({
         path: 'shed-bays',
+        short: 'Bays don’t divide equally',
         message:
           `${config.length} mm does not divide into ${config.bays} equal bays (${perBay.toFixed(1)} mm each). ` +
           'Adjust the length or the bay count so the bays are equal, or edit each bay individually.',
       });
+    }
+  }
+
+  /*
+   * Every bay must be one the book sells.
+   *
+   * The book's bay band filters the shed-config rows exactly as span and height do
+   * (`ShedConfigCache.cs:51-52`), so a bay outside it has no frame row to price from. When the bays
+   * differ, each offending bay is marked on its own field; when they are equal, the nominal spacing
+   * carries it — ahead of the spacing-mismatch message on the same field, because a size the book
+   * cannot price is the bigger problem.
+   */
+  if (bounds.baySpacing !== null) {
+    const { min, max } = bounds.baySpacing;
+    const range = `${min}–${max} mm`;
+    if (hasUnevenBays) {
+      (config.bayWidths ?? []).forEach((width, index) => {
+        if (width < min || width > max) {
+          issues.push({
+            path: `shed-bayWidth-${index}`,
+            short: range,
+            message: `Bay ${index + 1} is ${width} mm; this price book sells bays of ${range}.`,
+          });
+        }
+      });
+    } else {
+      const largest = largestBay(config);
+      if (largest !== null && (largest.mm < min || largest.mm > max)) {
+        issues.push({
+          path: 'shed-nomBaySpacing',
+          short: range,
+          message: `Each bay is ${Math.round(largest.mm)} mm; this price book sells bays of ${range}.`,
+        });
+      }
     }
   }
 
@@ -306,6 +361,7 @@ export function validateDraft(
   ) {
     issues.push({
       path: 'shed-nomBaySpacing',
+      short: 'Spacing × bays ≠ length',
       message:
         `${config.nomBaySpacing} mm × ${config.bays} bays is ${config.nomBaySpacing * config.bays} mm, ` +
         `but the building is ${config.length} mm long. Change the spacing or the bay count so they agree.`,
@@ -330,7 +386,15 @@ export function validateDraft(
    */
   if (config.span !== null && config.length !== null && config.height !== null) {
     for (const problem of optionsThatNoLongerFit(config as unknown as DimensionedShed)) {
-      issues.push({ path: `options-${problem.id}`, message: problem.reason });
+      issues.push({ path: `options-${problem.id}`, short: problem.reason, message: problem.reason });
+    }
+    /*
+     * Doors and windows, by the same reasoning: a wall that moved can leave a door hanging past its
+     * end or taller than the wall. Under the `options-` prefix on purpose — the fix is on the Options
+     * step, so the issue blocks Save but not Next, and does not pull the person back to Quote details.
+     */
+    for (const problem of openingsThatNoLongerFit(config as unknown as DimensionedShed)) {
+      issues.push({ path: `options-opening-${problem.id}`, short: problem.reason, message: problem.reason });
     }
   }
 
@@ -365,6 +429,7 @@ export function validateDraft(
       for (const cantilever of overLimit) {
         issues.push({
           path: 'design-cantilever',
+          short: `Max ${CANTILEVER_LIMIT_MM} mm on a standard building`,
           message:
             `The ${cantilever.wall} cantilever is ${cantilever.length} mm; a standard building is limited to ` +
             `${CANTILEVER_LIMIT_MM} mm. Shorten it, or choose a custom (non-standard) structure — a longer ` +
@@ -391,14 +456,14 @@ export function validateDraft(
    * an empty one is not a default, it is a missing table.
    */
   if (config.stateCode === '') {
-    issues.push({ path: 'design-stateCode', message: 'Choose the state. It selects this state’s prices.' });
+    issues.push({ path: 'design-stateCode', short: 'Required', message: 'Choose the state.' });
   }
 
   // ---------------------------------------------------------------- 6. Colours
   for (const role of REQUIRED_COLOUR_ROLES) {
     const colour = config.colors[role];
     if (colour === undefined || colour.trim() === '') {
-      issues.push({ path: `colours-${role}`, message: `Choose a colour for the ${role}.` });
+      issues.push({ path: `colours-${role}`, short: 'Required', message: `Choose a colour for the ${role}.` });
     }
   }
 
@@ -422,11 +487,24 @@ export interface GateState {
   reasons: string[];
 }
 
+/**
+ * True for an issue with the **building** — its dimensions, bays, pitch or design rules.
+ *
+ * Only these stop the operator moving to Options and Cost: a plan and a price are facts about the
+ * building, and a salesperson often draws the shed before they have the customer's email. Customer,
+ * site, colour and option issues block **Save** only.
+ */
+export function isBuildingIssue(path: string): boolean {
+  return path.startsWith('shed-') || path.startsWith('design-');
+}
+
 export function evaluateGate(input: {
   dirty: boolean;
   issues: readonly DraftIssue[];
   pricedAt: 'none' | 'stale' | 'current';
   saving: boolean;
+  /** A price the editor fetched on its own is on the way — the stale price is being replaced. */
+  refreshing?: boolean;
 }): GateState {
   const reasons: string[] = [];
 
@@ -454,9 +532,14 @@ export function evaluateGate(input: {
   if (input.pricedAt === 'none') {
     reasons.push('No price has been calculated for this building yet.');
   }
-  if (input.pricedAt === 'stale') {
+  if (input.refreshing === true) {
+    // The editor is already replacing the price (a building or money change, or after a save):
+    // "calculate it again" would ask for a press that is happening anyway, and a refresh that blocks
+    // on its own still needs a sentence, or the line under a disabled button is empty.
+    if (input.pricedAt !== 'none') reasons.push('Updating the price…');
+  } else if (input.pricedAt === 'stale') {
     reasons.push('The building changed after the price was calculated — calculate it again.');
   }
 
-  return { blocked: reasons.length > 0 || input.saving, reasons };
+  return { blocked: reasons.length > 0 || input.saving || input.refreshing === true, reasons };
 }

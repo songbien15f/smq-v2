@@ -1257,6 +1257,50 @@ test.describe('Step 1 — Save from anywhere', () => {
     await expect(page.getByText(/Saves revision 1/)).toHaveCount(0);
   });
 
+  test('the 3D view draws, and the roof can be lifted off', async ({ page }) => {
+    /*
+     * ## Why this is an end-to-end test and not a unit test
+     *
+     * The geometry is asserted as plain data in `@sq/core/domain` (`openings3d.test.ts`,
+     * `structure3d.test.ts`). What a unit test cannot see is whether that geometry ever reaches a
+     * **live WebGL canvas**: a component that throws while building a mesh, or a canvas that never
+     * gets a size, leaves every data assertion green and the screen blank.
+     *
+     * So this test asks three questions a person would ask: is there a 3D button, does pressing it
+     * put a canvas on the screen, and does the Roof button change state when pressed.
+     */
+    await page.goto('/quotes/new');
+    await expect(page.getByRole('heading', { name: 'Quote details', level: 1 })).toBeVisible({ timeout: 40_000 });
+    await page.waitForTimeout(1500);
+    await stateDimensions(page);
+
+    const three = page.getByRole('button', { name: '3D', exact: true });
+    await expect(three).toBeEnabled({ timeout: 20_000 });
+    await three.click();
+
+    // A canvas appears and has a real size: the 300 × 150 default is the failure this catches.
+    const canvas = page.locator('canvas');
+    await expect(canvas).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(async () => {
+        const box = await canvas.boundingBox();
+        return box === null ? 0 : Math.round(box.width);
+      }, { timeout: 20_000 })
+      .toBeGreaterThan(400);
+
+    /*
+     * The roof toggle is local to the view and defaults to on. Pressing it twice must return to the
+     * same state — a toggle that latches one way is a screen a person cannot get back from.
+     */
+    const roof = page.getByRole('button', { name: 'Roof', exact: true });
+    await expect(roof).toBeVisible();
+    await expect(roof).toHaveAttribute('aria-pressed', 'true');
+    await roof.click();
+    await expect(roof).toHaveAttribute('aria-pressed', 'false');
+    await roof.click();
+    await expect(roof).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('saving from step 1 keeps the operator on step 1 and in the same quote', async ({ page }) => {
     /*
      * The behaviour the change exists for. Filling step 1 and saving must not move the screen to

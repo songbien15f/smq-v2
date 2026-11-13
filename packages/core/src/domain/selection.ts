@@ -108,6 +108,18 @@ const SWING_OPTIONS: { value: string; label: string }[] = [
   { value: 'outward', label: 'Outward' },
 ];
 
+/** A sliding door has one leaf or two; the 3D view draws what is chosen. */
+const LEAVES_OPTIONS: { value: string; label: string }[] = [
+  { value: '1', label: 'One' },
+  { value: '2', label: 'Two' },
+];
+
+/** Which jamb a PA door hangs on, as seen from outside. */
+const HINGE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' },
+];
+
 /** Human-readable title for an opening type, matching the form's option labels. */
 function openingTitle(type: OpeningType): string {
   return OPENING_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type;
@@ -171,6 +183,24 @@ function openingFields(opening: Opening, unit: DisplayUnit): FieldSpec[] {
       type: 'select',
       value: opening.track ?? 'none',
       options: TRACK_OPTIONS,
+    });
+    // Leaf count after the track: the hardware reads before the leaf it carries, and the two
+    // together are what the 3D view draws.
+    fields.push({
+      key: 'leaves',
+      label: 'Leaves',
+      type: 'select',
+      value: String(opening.leaves ?? 1),
+      options: LEAVES_OPTIONS,
+    });
+  }
+  if (opening.type === 'pa_door') {
+    fields.push({
+      key: 'hinge',
+      label: 'Hinge',
+      type: 'select',
+      value: opening.hinge ?? 'left',
+      options: HINGE_OPTIONS,
     });
   }
   return fields;

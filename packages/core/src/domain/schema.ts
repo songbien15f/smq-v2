@@ -240,6 +240,10 @@ const openingSchema = z.object({
   windlock: z.boolean().default(false),
   trackSegments: z.number().int().min(1).max(20).optional(),
   trackWidth: z.number().min(1000).max(6000).optional(),
+  // Drawing fields. A complete config always carries them, `null` where they do not apply,
+  // so a renderer never has to ask "is this a sliding door?" to read a leaf count.
+  leaves: z.union([z.literal(1), z.literal(2)]).nullable().default(null),
+  hinge: z.enum(['left', 'right']).nullable().default(null),
 });
 
 /** The fields the model is asked to extract. */
@@ -757,6 +761,10 @@ const tolerantOpeningSchema = z.object({
   windlock: z.boolean().optional().catch(undefined),
   trackSegments: z.coerce.number().optional().catch(undefined),
   trackWidth: z.coerce.number().optional().catch(undefined),
+  // Left undefined when absent, so the type-aware defaults in `normaliseShedConfig` decide:
+  // one leaf and a left hinge. An older `.sqd` has neither field.
+  leaves: z.union([z.literal(1), z.literal(2)]).nullable().optional().catch(undefined),
+  hinge: z.enum(['left', 'right']).nullable().optional().catch(undefined),
 });
 
 /** True for a non-null, non-array object (a "plain" record). */
@@ -1085,6 +1093,15 @@ export function normaliseShedConfig(input: unknown): ShedConfig {
         opening.type === 'sliding_door'
           ? Math.round(Math.min(Math.max(opening.trackWidth ?? 3000, 1000), 6000))
           : undefined,
+      /*
+       * Drawing fields, defaulted by **type** rather than to `null`.
+       *
+       * A quote saved before these existed has neither value, and the 3D/2D views need an
+       * answer: one leaf and a left hinge are the desktop's own defaults, so an old quote is
+       * drawn the way it was drawn when it was sent.
+       */
+      leaves: opening.type === 'sliding_door' ? (opening.leaves === 2 ? 2 : 1) : null,
+      hinge: opening.type === 'pa_door' ? (opening.hinge === 'right' ? 'right' : 'left') : null,
     };
   });
 

@@ -37,10 +37,12 @@ export interface StepRailProps {
   onSelect: (step: EditorStep) => void;
   /** Count of resolved problems, shown so the rail is not the only signal. */
   noticeCount?: number;
+  /** When given, the notice is a button that takes the operator to the list of problems. */
+  onShowNotices?: () => void;
   children?: ReactNode;
 }
 
-export function StepRail({ current, reachable, blockedReason, onSelect, noticeCount }: StepRailProps) {
+export function StepRail({ current, reachable, blockedReason, onSelect, noticeCount, onShowNotices }: StepRailProps) {
   const currentIndex = ORDER.findIndex((step) => step.id === current);
 
   return (
@@ -92,9 +94,19 @@ export function StepRail({ current, reachable, blockedReason, onSelect, noticeCo
 
         {noticeCount !== undefined && noticeCount > 0 && (
           <li className="ml-auto flex items-center">
-            <span className="text-sq-micro font-medium text-sq-attention">
-              {noticeCount} {noticeCount === 1 ? 'item needs attention' : 'items need attention'}
-            </span>
+            {onShowNotices !== undefined ? (
+              <button
+                type="button"
+                onClick={onShowNotices}
+                className="min-h-11 cursor-pointer rounded-md px-sq-2 text-sq-micro font-medium text-sq-attention underline-offset-2 hover:underline"
+              >
+                {noticeCount} {noticeCount === 1 ? 'item needs attention' : 'items need attention'}
+              </button>
+            ) : (
+              <span className="text-sq-micro font-medium text-sq-attention">
+                {noticeCount} {noticeCount === 1 ? 'item needs attention' : 'items need attention'}
+              </span>
+            )}
           </li>
         )}
       </ol>
@@ -110,7 +122,7 @@ function StepNumber({ index, done, current }: { index: number; done: boolean; cu
       className={[
         'grid h-5 w-5 shrink-0 place-items-center rounded-full text-sq-micro font-semibold',
         current
-          ? 'bg-sq-brand text-white'
+          ? 'bg-sq-brand/10 text-sq-brand ring-1 ring-sq-brand'
           : done
             ? 'bg-sq-ok/15 text-sq-ok'
             : 'bg-sq-ground text-sq-ink-muted',

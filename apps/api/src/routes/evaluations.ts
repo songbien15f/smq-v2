@@ -399,6 +399,9 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
       // Same capability as the members: hole positions are the factory's workshop data,
       // and a viewer reads the quote, not how it is fabricated.
       punchings: canSeeDesign ? evaluation.punchings : [],
+      // Shape, not money: every caller gets the row counts and spacings so the model they look at
+      // is the building that was priced. See `FrameLayoutView`.
+      frameLayout: evaluation.frameLayout,
       issues: toIssueViews(evaluation),
       priceBookHash: hash,
       overrideVersion: overrides.version,

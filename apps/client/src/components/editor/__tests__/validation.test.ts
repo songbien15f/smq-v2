@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_SHED, normaliseShedConfig } from '@sq/core/domain';
 import type { ShedConfig } from '@sq/core/domain';
 import { validateDraft } from '../validation';
+import { bookBounds } from '../bookBounds';
 
 /**
  * The two rules that had been written in core and never called.
@@ -196,5 +197,84 @@ describe('validateDraft — bays that differ on purpose', () => {
     const even = { ...shed({ length: 14000, bays: 2, bayWidths: [7000, 7000] }) };
     const issues = validateDraft({ config: even, customer, site });
     expect(issues.some((issue) => issue.path === 'shed-bays')).toBe(false);
+  });
+});
+
+/**
+ * The book's limits are the validator's limits.
+ *
+ * Three sources disagreed: the validator said span 2000–30000, the book 1800–15000, and the field
+ * accepted what the book allowed and then showed the validator's numbers. A building outside the book
+ * finds no config row to price from (`ShedConfigCache.cs:47-54`), so it is an error, not an assumption.
+ */
+describe('validateDraft — the price book’s limits', () => {
+  const dim = (min: number, max: number) => ({ defaultValue: null, min, max, hints: [] as number[] });
+  const fake = {
+    dimensions: {
+      span: dim(1800, 15000),
+      height: dim(2200, 6000),
+      baySpacing: dim(1000, 4000),
+      roofPitch: dim(7.5, 30),
+    },
+    roofPitchGroups: [
+      { spanMin: 1800, spanMax: 9000, pitchMin: 7.5, pitchMax: 15, hints: [7.5, 10, 15] },
+      { spanMin: 9001, spanMax: 15000, pitchMin: 20, pitchMax: 30, hints: [20, 25, 30] },
+    ],
+  };
+  const check = (config: ShedConfig) =>
+    validateDraft({ config, customer, site }, undefined, bookBounds(fake, config.span));
+  const at = (issues: ReturnType<typeof validateDraft>, path: string) =>
+    issues.filter((issue) => issue.path === path);
+
+  it('span inside the book is fine', () => {
+    const issues = check(shed({ span: 12000, roofPitchDeg: 25, nomBaySpacing: 4000, length: 16000, bays: 4 }));
+    expect(at(issues, 'shed-span')).toEqual([]);
+    expect(at(issues, 'shed-roofPitchDeg')).toEqual([]);
+    expect(at(issues, 'shed-nomBaySpacing')).toEqual([]);
+  });
+
+  it('span above the book is blocked and names the book’s range', () => {
+    const [issue] = at(check(shed({ span: 20000, roofPitchDeg: 25 })), 'shed-span');
+    expect(issue?.short).toBe('1800–15000 mm');
+    expect(issue?.message).toBe('Span must be between 1800 mm and 15000 mm for this price book.');
+  });
+
+  it('a span the old limits refused but the book accepts', () => {
+    expect(at(check(shed({ span: 1900, roofPitchDeg: 10 })), 'shed-span')).toEqual([]);
+  });
+
+  it('height uses the book', () => {
+    const [issue] = at(check(shed({ height: 7000, roofPitchDeg: 25 })), 'shed-height');
+    expect(issue?.short).toBe('2200–6000 mm');
+  });
+
+  it('pitch range follows the span band', () => {
+    const [issue] = at(check(shed({ span: 6000, roofPitchDeg: 25 })), 'shed-roofPitchDeg');
+    expect(issue?.short).toBe('7.5–15°');
+    expect(at(check(shed({ span: 12000, roofPitchDeg: 25 })), 'shed-roofPitchDeg')).toEqual([]);
+  });
+
+  it('pitch between listed angles is not an error', () => {
+    expect(at(check(shed({ span: 12000, roofPitchDeg: 22 })), 'shed-roofPitchDeg')).toEqual([]);
+  });
+
+  it('even bays larger than the book sells', () => {
+    const issues = at(check(shed({ roofPitchDeg: 25, length: 24000, bays: 4, nomBaySpacing: 6000 })), 'shed-nomBaySpacing');
+    expect(issues[0]?.message).toBe('Each bay is 6000 mm; this price book sells bays of 1000–4000 mm.');
+  });
+
+  it('the uneven bay that is too long is the one marked', () => {
+    const config = { ...shed({ roofPitchDeg: 25, length: 14000, bays: 3 }), bayWidths: [4000, 4000, 6000] };
+    const issues = check(config).filter((issue) => issue.path.startsWith('shed-bayWidth-'));
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toBe('shed-bayWidth-2');
+    expect(issues[0]?.message.startsWith('Bay 3 is 6000 mm')).toBe(true);
+  });
+
+  it('without bounds nothing about the book runs', () => {
+    const wide = validateDraft({ config: shed({ span: 31000 }), customer, site });
+    expect(at(wide, 'shed-span')[0]?.message).toBe('Span must be between 2000 mm and 30000 mm.');
+    const bigBays = validateDraft({ config: shed({ nomBaySpacing: 6000 }), customer, site });
+    expect(at(bigBays, 'shed-nomBaySpacing')).toEqual([]);
   });
 });

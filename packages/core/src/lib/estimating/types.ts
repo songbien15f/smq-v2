@@ -24,6 +24,7 @@
 import type { ShedConfig } from '@/domain/types';
 import type { BomResult } from '@/lib/bom/types';
 import type { FrameMember } from '@/lib/bom/groups/frame';
+import type { FrameRowLayout } from '@/domain/structure3d';
 import type { PunchPage } from '@/lib/bom/punchings';
 import type { PriceLookup } from '@/lib/pricing/types';
 import type { QuotePrice } from '@/lib/pricing/price';
@@ -140,4 +141,12 @@ export interface Evaluation {
    * followed it would disagree with the steel that was ordered.
    */
   punchings: PunchPage[];
+  /**
+   * Where the purlins and girts run, frozen with the revision.
+   *
+   * The row counts are the ones the purlin and girt lines were multiplied by, so a model drawn from
+   * this shows the shed that was priced. A later book revision could change them; a drawing that
+   * followed it would describe different steel from the order it sits beside.
+   */
+  frameLayout: FrameRowLayout;
 }

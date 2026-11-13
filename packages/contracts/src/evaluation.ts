@@ -223,6 +223,28 @@ export interface PunchPageView {
 }
 
 /** The answer to a preview request. */
+/**
+ * Where the purlins and girts run, as the price book chose them.
+ *
+ * The counts and spacings come from the book's span table, which is why the client receives them
+ * rather than deriving them: a model that guessed a row count would show three purlins over a bill
+ * that charges for four.
+ *
+ * **Not gated by `cost:read`.** This is shape, not money: it says where members are, never their
+ * section or cost, and a viewer looking at a 3D model should see the same building the workshop
+ * builds.
+ */
+export interface FrameLayoutView {
+  /** Roof purlin rows per slope (a gable has two slopes, a skillion one). */
+  purlinRows: number;
+  /** Spacing the book allows for a purlin, mm. */
+  purlinSpanMm: number;
+  /** Wall girt rows per wall face. */
+  girtRows: number;
+  /** Spacing the book allows for a girt, mm. */
+  girtSpanMm: number;
+}
+
 export interface EvaluationView {
   evaluationId: string;
   /**
@@ -254,6 +276,12 @@ export interface EvaluationView {
    * rather than one with guessed hole positions.
    */
   punchings: PunchPageView[];
+  /**
+   * Where the purlins and girts run, for the 3D model.
+   *
+   * Present for every caller — see `FrameLayoutView` for why this is not a cost-gated field.
+   */
+  frameLayout: FrameLayoutView;
   issues: IssueView[];
   /** Content hash of the price book used. A republish invalidates the preview. */
   priceBookHash: string;

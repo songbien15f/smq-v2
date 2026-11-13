@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { parseNumber } from './CommitNumberInput';
 
 export type DisplayUnit = 'mm' | 'm';
 
@@ -40,7 +41,11 @@ export interface DimensionFieldProps {
   valueMm: number | null;
   /** How the operator is typing. Converted to mm before `onCommit`. */
   unit: DisplayUnit;
-  onCommit: (mm: number) => void;
+  /**
+   * Called with the accepted value in mm. Return `false` when it was not taken — the person cancelled
+   * the "removes every option" confirm — and the field shows the stored value again.
+   */
+  onCommit: (mm: number) => boolean | void;
   /** Shown under the field; also used as the accessible description. */
   hint?: string;
   error?: string;
@@ -52,6 +57,12 @@ export interface DimensionFieldProps {
   step?: number;
   /** A short note about what the number means (e.g. "clear span"). */
   suffixNote?: string;
+  /**
+   * The validator's path for this field when `id` cannot be it — a second copy of a field, such as the
+   * Building parameters popover's span, whose id must differ from the Shed group's `shed-span`.
+   * Leaving the field then marks that path touched (see `QuoteEditor`'s `markTouched`).
+   */
+  issuePath?: string;
 }
 
 /** Format a stored value for display in `unit`, without trailing zeros. */
@@ -75,6 +86,7 @@ export function DimensionField({
   maxMm,
   step,
   suffixNote,
+  issuePath,
 }: DimensionFieldProps) {
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
@@ -84,6 +96,8 @@ export function DimensionField({
   // A ref guards against overwriting what the operator is typing: the input is only reset when
   // the text does not already mean this value.
   const focused = useRef(false);
+  /** Set by Escape so the blur it causes reverts instead of committing what was typed. */
+  const escaping = useRef(false);
   useEffect(() => {
     if (focused.current) return;
     setText(format(valueMm, unit));
@@ -104,39 +118,35 @@ export function DimensionField({
    */
   const [refusal, setRefusal] = useState<string | null>(null);
 
-  /** Parse and commit, or leave the text alone so the operator can finish typing. */
-  const commit = (raw: string): void => {
-    const trimmed = raw.trim();
-    if (trimmed === '') {
+  /** Parse and commit. True when the value is now the stored one; false when it was not taken. */
+  const commit = (raw: string): boolean => {
+    const parsed = parseNumber(raw);
+    if (parsed === null) {
       setRefusal(null);
-      return;
-    }
-
-    const parsed = Number(trimmed.replace(',', '.'));
-    if (!Number.isFinite(parsed)) {
-      setRefusal(null);
-      return;
+      return false;
     }
 
     const mm = Math.round(unit === 'm' ? parsed * 1000 : parsed);
     const shown = (value: number) => `${unit === 'm' ? (value / 1000).toFixed(2) : value} ${unit}`;
     if (minMm !== undefined && mm < minMm) {
       setRefusal(`${shown(mm)} is below the smallest this book sells (${shown(minMm)}).`);
-      return;
+      return false;
     }
     if (maxMm !== undefined && mm > maxMm) {
       setRefusal(`${shown(mm)} is above the largest this book sells (${shown(maxMm)}).`);
-      return;
+      return false;
     }
 
     setRefusal(null);
-    onCommit(mm);
+    // Unchanged: nothing to apply, and no reason to ask the confirm.
+    if (mm === valueMm) return true;
+    return onCommit(mm) !== false;
   };
 
   const invalid = error !== undefined;
 
   return (
-    <div className="flex flex-col gap-sq-1">
+    <div className="flex flex-col gap-sq-1" data-issue-path={issuePath}>
       <label htmlFor={id} className="text-sq-micro font-medium text-sq-ink">
         {label}
         {required === true && (
@@ -149,7 +159,7 @@ export function DimensionField({
 
       <div
         className={[
-          'flex min-h-[38px] items-center rounded-md border bg-sq-surface',
+          'flex min-h-11 items-center rounded-md border bg-sq-surface',
           'transition-colors duration-sq-fast focus-within:ring-2 focus-within:ring-offset-1',
           invalid ? 'border-sq-danger focus-within:ring-sq-danger' : 'border-sq-line focus-within:ring-sq-brand',
         ].join(' ')}
@@ -171,32 +181,40 @@ export function DimensionField({
           }}
           onBlur={(event) => {
             focused.current = false;
-            const before = text;
-            commit(event.target.value);
+            if (escaping.current) {
+              escaping.current = false;
+              return;
+            }
             /*
-             * Snap the display back to the **stored** value when the entry was refused, and leave the
-             * typed text alone when it was accepted.
+             * Snap the display back to the **stored** value whenever the entry was not taken — refused
+             * (and `refusal` says why), empty, not a number, or a cancelled confirm — and leave the typed
+             * text alone when it was accepted, so the box always shows what the quote holds.
              *
-             * The unconditional snap that was here made a refusal invisible: 24 000 mm appeared in the
-             * box, blur reverted it to the stored 6 000, and the only trace was a number that changed
-             * back. `refusal` says why, and the box must show what is actually stored so the sentence
-             * and the field agree.
+             * This used to read `refusal` here, which is the state from **before** `commit` ran, so a
+             * fresh refusal left the typed number in the box; and a cancelled confirm was not seen at
+             * all, leaving the box at the number the quote did not keep.
              */
-            if (refusal !== null || before.trim() === '') setText(format(valueMm, unit));
+            if (!commit(event.target.value)) setText(format(valueMm, unit));
           }}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              commit(event.currentTarget.value);
+              // Blur commits. Committing here as well asked the wipe confirm twice: once for Enter,
+              // then again from blur, whose closure still held the pre-change config.
               event.currentTarget.blur();
             }
             if (event.key === 'Escape') {
+              // Revert without committing: the DOM still holds the typed text when blur fires.
+              escaping.current = true;
+              setRefusal(null);
               setText(format(valueMm, unit));
               event.currentTarget.blur();
             }
           }}
-          className="min-w-0 flex-1 bg-transparent px-sq-2 py-sq-1 text-sq-body text-sq-ink outline-none"
+          // `self-stretch`: the 44 px is the wrapper's; without it the input is ~29 px tall and a tap
+          // on the wrapper's top or bottom strip focuses nothing.
+          className="min-w-0 flex-1 self-stretch bg-transparent px-sq-2 py-sq-1 text-sq-body text-sq-ink outline-none"
         />
         <span className="shrink-0 pr-sq-2 text-sq-micro font-medium text-sq-ink-muted" aria-hidden="true">
           {unit}

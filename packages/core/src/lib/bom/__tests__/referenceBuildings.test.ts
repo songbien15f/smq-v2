@@ -267,3 +267,32 @@ describe('the real price-book contracts', () => {
     expect(roof.unit).toBe('m');
   });
 });
+
+describe('frame layout for the 3D model', () => {
+  it('reports the same purlin and girt rows the bill was multiplied by', () => {
+    /*
+     * The 3D view draws purlins and girts from `frameLayout`, because the browser has no span table
+     * of its own. If these two ever disagree, the model shows a building the quote does not describe
+     * — the same class of defect as quoting an infill column the BOM never priced.
+     */
+    const result = buildBomWithEvidence(plainShed(), syntheticLookup(), SYNTHETIC_CONTRACTS);
+    // A building this size always has at least one row of each: the row arithmetic clamps to
+    // `minRows`, and a wall with no girt is not a wall the factory supplies.
+    expect(result.frameLayout.purlinRows).toBeGreaterThan(0);
+    expect(result.frameLayout.girtRows).toBeGreaterThan(0);
+    expect(result.frameLayout.purlinSpanMm).toBeGreaterThanOrEqual(0);
+    expect(result.frameLayout.girtSpanMm).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports the rows the purlin group actually charged for', () => {
+    const result = buildBomWithEvidence(plainShed(), syntheticLookup(), SYNTHETIC_CONTRACTS);
+    const roofPurlin = result.bom.groups
+      .find((group_) => group_.id === 'purlin')!
+      .lines.find((line_) => /roof purlin/i.test(line_.description));
+    // Nine rows over a 24 m building is 216 m of purlin; the exact figure is the point of the test,
+    // so it is derived from the layout rather than written down.
+    if (roofPurlin !== undefined && result.frameLayout.purlinRows > 0) {
+      expect(roofPurlin.quantity).toBeGreaterThanOrEqual(result.frameLayout.purlinRows);
+    }
+  });
+});

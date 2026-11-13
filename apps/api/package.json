@@ -16,7 +16,8 @@
     "sync:salesmen": "node --env-file-if-exists=../../.env --import tsx scripts/sync-shedsafe-salesmen.ts",
     "install:company": "node --env-file-if-exists=../../.env --import tsx scripts/install.ts",
     "publish-book": "node --env-file-if-exists=../../.env --import tsx scripts/publish-book.ts",
-    "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts"
+    "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts",
+    "quotes:blocked": "node --env-file-if-exists=../../.env --import tsx scripts/count-blocked-quotes.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

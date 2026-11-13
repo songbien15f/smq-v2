@@ -337,7 +337,18 @@ function readOpenings(
           windlock: entry.WindLock === true,
         };
       case 'pa_door':
-        return { ...common, type: 'pa_door', track: null, sku: str(entry.PADoorType) || null };
+        return {
+          ...common,
+          type: 'pa_door',
+          track: null,
+          sku: str(entry.PADoorType) || null,
+          /*
+           * The desktop's `Vector` is a ±1 mirror: `-1` draws the leaf from the near jamb and
+           * `1` from the far one (`PADoor2D.cs:137-190`, and `PADoor3D.cs:156-215` for the 3D
+           * orientation). A file with no `Vector` was drawn hinged on the near jamb.
+           */
+          hinge: num(entry.Vector) === 1 ? 'right' : 'left',
+        };
       case 'sliding_door': {
         const reserves = arr(entry.TrackReserves)
           .map((value) => Math.round(num(value) ?? 0))
@@ -362,6 +373,13 @@ function readOpenings(
           track: segments > 1 || type === 2 ? 'double' : 'single',
           trackSegments: segments,
           trackWidth: Math.round(reserves[0] ?? width),
+          /*
+           * `ESlidingDoorType`: 0 InnerTrack, 1 OuterTrack, 2 DoubleInSingleBay, 3
+           * SingleInSingleBay. Only `DoubleInSingleBay` is two leaves; the other three are one,
+           * which is also what the desktop's own quantity arithmetic concludes
+           * (`BOMQuote.cs:374-378` reads 1 vs 2 from `SDType`).
+           */
+          leaves: type === 2 ? 2 : 1,
         };
       }
       case 'window':

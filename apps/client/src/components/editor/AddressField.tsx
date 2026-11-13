@@ -51,6 +51,9 @@ export interface AddressFieldProps {
   placeholder?: string;
   disabled?: boolean;
   hint?: string;
+  /** The one-line problem shown under the field (red border, `aria-invalid`), or undefined. */
+  error?: string;
+  required?: boolean;
   /**
    * Reports whether the server has Places configured.
    *
@@ -77,6 +80,8 @@ export function AddressField({
   placeholder,
   disabled = false,
   hint,
+  error,
+  required,
 }: AddressFieldProps) {
   const listId = useId();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -196,11 +201,21 @@ export function AddressField({
   };
 
   const activeId = active >= 0 ? `${listId}-${active}` : undefined;
+  const hasNote = note !== '' || hint !== undefined;
+  const describedBy =
+    [error !== undefined ? `${id}-error` : '', hasNote ? `${id}-note` : ''].filter((part) => part !== '').join(' ') ||
+    undefined;
 
   return (
     <div className="flex flex-col gap-sq-1">
       <label htmlFor={id} className="text-sq-micro font-medium text-sq-ink">
         {label}
+        {required === true && (
+          <span className="ml-1 text-sq-danger" aria-hidden="true">
+            *
+          </span>
+        )}
+        {required === true && <span className="sr-only"> (required)</span>}
       </label>
 
       <div className="relative">
@@ -211,7 +226,8 @@ export function AddressField({
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={activeId}
-          aria-describedby={note === '' && hint === undefined ? undefined : `${id}-note`}
+          aria-describedby={describedBy}
+          aria-invalid={error !== undefined || undefined}
           autoComplete="off"
           disabled={disabled}
           placeholder={placeholder}
@@ -226,7 +242,10 @@ export function AddressField({
             // `onMouseDown` fires first and picks.
             setTimeout(() => setOpen(false), 120);
           }}
-          className="min-h-[38px] w-full rounded-md border border-sq-line bg-sq-surface px-sq-2 py-sq-1 text-sq-body text-sq-ink"
+          className={[
+            'min-h-11 w-full rounded-md border bg-sq-surface px-sq-2 py-sq-1 text-sq-body text-sq-ink',
+            error !== undefined ? 'border-sq-danger' : 'border-sq-line',
+          ].join(' ')}
         />
 
         {open && suggestions.length > 0 && (
@@ -261,7 +280,12 @@ export function AddressField({
         )}
       </div>
 
-      {(note !== '' || hint !== undefined) && (
+      {error !== undefined && (
+        <p id={`${id}-error`} className="text-sq-micro text-sq-danger">
+          {error}
+        </p>
+      )}
+      {hasNote && (
         <p id={`${id}-note`} className="text-sq-micro text-sq-ink-muted">
           {note !== '' ? note : hint}
         </p>

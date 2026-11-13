@@ -84,6 +84,21 @@ export function clampBays(bays: number): number {
 }
 
 /**
+ * The fewest equal bays that keep each bay within `maxBay`: the desktop's Adjust bays rule.
+ *
+ * `ceil(length / maxBay)` clamped to 2..30, and 2 when the whole length fits in one bay
+ * (`ServiceStructureData.cs:309-324`, `MinNoOfBays = 2`, `MaxNoOfBays = 30`). The lower bound is
+ * the desktop's 2 here, not `clampBays`'s 1: this rule picks a count, it does not accept one typed.
+ *
+ * Used to offer a one-click fix for a stored building whose bays are wider than the price book sells
+ * (review 2026-11-13 item 7), which otherwise cannot be saved at all.
+ */
+export function baysToFit(length: number, maxBay: number): number {
+  if (!Number.isFinite(length) || !Number.isFinite(maxBay) || maxBay <= 0 || length <= maxBay) return 2;
+  return Math.max(2, Math.min(30, Math.ceil(length / maxBay)));
+}
+
+/**
  * Grid-line positions along the bay direction, in millimetres.
  *
  * Returns `n + 1` positions for `n` bays; the first is `0` and the last is

@@ -9,6 +9,9 @@
  * 2. **An unconfigured server says so.** With no key, the route returns `configured: false` and the
  *    field stays a plain text box. It does not fall back to a fake list, and it does not silently
  *    return nothing as though the address were unknown.
+ * 3. **A refusal keeps Google's words.** `403` alone covers a revoked key, billing switched off, a
+ *    disabled API and key restrictions — four different fixes, one number. `describeRefusal` reads the
+ *    body so the message names which; discarding it is what made the 2026-11-13 outage undiagnosable.
  *
  * ## Why `details` parses address components here and not in the browser
  *
@@ -109,6 +112,26 @@ export function splitAddress(components: AddressComponent[], formatted: string):
 }
 
 /**
+ * Google's own words for a refusal, so the screen and the log can say why.
+ *
+ * The status alone is not enough: `403` covers a revoked key, a key whose restrictions no longer
+ * list Places, billing switched off, and a disabled API — four different fixes, one number. The body
+ * names which. It is read here, once, rather than left to whoever debugs it next with `curl`.
+ */
+async function describeRefusal(response: Response): Promise<string> {
+  let detail = '';
+  try {
+    const body = (await response.json()) as { error?: { message?: string; status?: string } };
+    const message = body.error?.message?.trim() ?? '';
+    const status = body.error?.status?.trim() ?? '';
+    if (message !== '') detail = status === '' ? message : `${status}: ${message}`;
+  } catch {
+    // A body that is not the documented error shape tells us nothing; the status still does.
+  }
+  return detail === '' ? `Places refused with ${response.status}` : `Places refused with ${response.status} — ${detail}`;
+}
+
+/**
  * A transport backed by the Places API (New).
  *
  * Field masks are explicit and narrow: Places bills by the fields requested, and a wildcard mask is
@@ -134,7 +157,7 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
           includedRegionCodes: ['au'],
         }),
       });
-      if (!response.ok) throw new Error(`Places autocomplete failed: ${response.status}`);
+      if (!response.ok) throw new Error(await describeRefusal(response));
 
       const body = (await response.json()) as {
         suggestions?: {
@@ -174,7 +197,16 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
           },
         },
       );
-      if (!response.ok) return null;
+      if (!response.ok) {
+        /*
+         * `400`/`404` mean the suggestion this id came from is stale — a normal answer, and `null` is
+         * what a caller can act on. Every other refusal (revoked key, API off, quota) is the same
+         * failure autocomplete reports; answering `null` there would look like "no such address" and
+         * leave all four fields blank with nothing to explain it.
+         */
+        if (response.status === 400 || response.status === 404) return null;
+        throw new Error(await describeRefusal(response));
+      }
 
       const body = (await response.json()) as {
         formattedAddress?: string;

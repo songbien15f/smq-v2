@@ -33,6 +33,7 @@ import {
   type FrameMember,
 } from './groups/frame';
 import { buildPunchingPages, type PunchPage, type PunchSource } from './punchings';
+import type { FrameRowLayout } from '@/domain/structure3d';
 import { infillOverrideRefusal } from '@/domain/placementRules';
 import { resolveOpeningPlacement } from '@/domain/placement';
 import { purlinLines } from './groups/purlin';
@@ -140,6 +141,14 @@ export interface BomWithEvidence {
    * guessed offset is a member that is cut and welded wrong.
    */
   punchings: PunchPage[];
+  /**
+   * Where the purlins and girts run, for a drawing.
+   *
+   * A count and a spacing, both settled by the price book's span table. Carried out of the engine
+   * because the 3D view cannot derive them: the client has no span table, and a guessed row would
+   * be a drawing of a building nobody priced.
+   */
+  frameLayout: FrameRowLayout;
 }
 
 /**
@@ -500,5 +509,16 @@ export function buildBomWithEvidence(
     status: classifyEstimate(issues),
     members,
     punchings: buildPunchingPages(members, punchSource, shed.roofPitchDeg),
+    /*
+     * The row counts the quote was priced from, straight out of the same optimised frame. Not a
+     * drawing convenience: these numbers are what the purlin and girt lines were multiplied by, so
+     * a model that shows three rows while the bill charges for four is a model of a different shed.
+     */
+    frameLayout: {
+      purlinRows: frame.purlinRows,
+      purlinSpanMm: frame.purlinInternalSpan,
+      girtRows: frame.girtRows,
+      girtSpanMm: frame.girtInternalSpan,
+    },
   };
 }

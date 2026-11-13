@@ -65,7 +65,9 @@ export function ErrorSummary({ issues, visible, serverMessage, serverDetails }: 
         id="error-summary-heading"
         ref={heading}
         tabIndex={-1}
-        className="text-sq-body font-semibold text-sq-danger outline-none"
+        // The heading is what `focusErrorSummary` scrolls to: the margin keeps it clear of the sticky
+        // step header (and, below xl, the price strip) instead of landing underneath them.
+        className="scroll-mt-40 text-sq-body font-semibold text-sq-danger outline-none xl:scroll-mt-28"
       >
         {count > 0
           ? `There ${count === 1 ? 'is 1 problem' : `are ${count} problems`} to fix before this quote can be saved`

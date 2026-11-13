@@ -8,61 +8,49 @@
  * clockwise. `THREE.ExtrudeGeometry` only punches material away when a hole's
  * winding opposes the outline's; a same-wound hole silently yields a solid wall
  * with no error (the door "vanishes"). The hole point order is therefore
- * deliberate and pinned by `__tests__/walls3d.test.ts`.
+ * deliberate and pinned by `__tests__/`. `buildWallShape` itself is covered by the
+ * demo's own assertions and by the elevations that share `buildWallGeometries`.
  *
  * This is the entire opening strategy (spec D4): `THREE.Shape` + `shape.holes` +
  * `ExtrudeGeometry`, no CSG dependency.
  *
- * The rest of the file maps `buildWallGeometries` output onto meshes. It derives
- * no domain geometry beyond the wall shape and the roof planes the brief
- * describes. All coordinates are millimetres; the scene group is scaled by
- * `1/1000` so the world is metre-based (spec §4.3).
+ * ## Where the geometry comes from
+ *
+ * Nothing in this file derives building geometry any more. Openings are
+ * `openingParts` and the shell is `structureParts`, both from `@sq/core/domain`, and both are
+ * asserted as plain data in that package's tests. This component places those parts and shades
+ * them; that is all it does. The one local remnant is `buildOptionMeshes`, which maps the option
+ * union onto boxes because options are placed by the plan, not by a schedule.
+ *
+ * All coordinates are millimetres; the scene group is scaled by `1/1000` so the world is
+ * metre-based (spec §4.3).
  */
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type {  ShedConfig, Opening, OpeningType, OptionKind, DimensionedShed } from '@sq/core/domain';
-import { buildWallGeometries, type WallGeometry, type WallHole } from '@sq/core/domain';
-import { bayWidthsFor, positionsFromWidths } from '@sq/core/domain';
-import { doorColour, resolveOptions, type ResolvedOption } from '@sq/core/domain';
+import type { ShedConfig, OptionKind, DimensionedShed, FrameRowLayout } from '@sq/core/domain';
+import { buildWallGeometries, type WallGeometry } from '@sq/core/domain';
+import {
+  openingParts,
+  structureParts,
+  type OpeningPart,
+} from '@sq/core/domain';
+import { resolveOptions, type ResolvedOption } from '@sq/core/domain';
+import { AnyPart } from '@/components/three/PartMesh';
+import { useSheetingTexture } from '@/components/three/useSheetingTexture';
 
 /** Wall thickness, mm. */
 const WALL_DEPTH = 50;
-/** Roof eave overhang beyond the walls, mm. */
-const EAVE = 300;
 /** Millimetres per metre; the scene is built in mm and scaled by this. */
 const MM_TO_M = 0.001;
 /** Thickness of the pane a skylight is drawn with, mm. */
 const SKYLIGHT_PANE = 40;
 /** Thickness of a mezzanine slab, mm. */
 const MEZZANINE_SLAB = 150;
-/** Leg cross-section of a mezzanine, mm. */
-const MEZZANINE_LEG = 100;
 /** Thickness of an awning's panel, mm. */
 const AWNING_PANEL = 60;
 /** Thickness of a dividing wall, mm. */
 const DIVIDING_WALL_THICKNESS = 100;
-
-/**
- * Whether an opening type is filled with a panel.
- *
- * A plain `opening` is a hole with nothing fitted into it — no door leaf, no
- * glass, no frame — so the 3D layer cuts the hole and draws nothing in it.
- */
-export function hasOpeningPanel(type: OpeningType): boolean {
-  return type !== 'opening';
-}
-
-/**
- * Whether an opening gets a track rail above its head.
- *
- * Only a sliding door runs on a track, and only when it has one: `none` means
- * the door is fitted without a rail, which is what a "no track" request asks
- * for. Every other type is on hinges or fixed, so it never has a rail.
- */
-export function hasTrackRail(opening: Opening): boolean {
-  return opening.type === 'sliding_door' && opening.track !== null && opening.track !== 'none';
-}
 
 /** One box (or prism) the 3D layer draws for an option, in millimetres. */
 export interface OptionMesh {
@@ -220,245 +208,91 @@ export function buildWallShape(wall: WallGeometry): THREE.Shape {
   return shape;
 }
 
-/** Append a quad (two triangles) to a triangle list, preserving winding. */
-function pushQuad(
-  out: number[],
-  a: [number, number, number],
-  b: [number, number, number],
-  c: [number, number, number],
-  d: [number, number, number],
-): void {
-  out.push(...a, ...b, ...c, ...a, ...c, ...d);
-}
-
-/**
- * Roof planes in millimetres, for the roof colour.
- *
- * Gable: two slopes meeting at a ridge along the length axis at mid-span, rise
- * `tan(pitch) × span / 2`. Skillion: a single plane falling along the length.
- * Both get a small eave overhang so the roof reads as a roof.
- */
-function buildRoofGeometry(shed: DimensionedShed): THREE.BufferGeometry {
-  const pitch = (shed.roofPitchDeg * Math.PI) / 180;
-  const rise = Math.tan(pitch) * (shed.span / 2);
-  const eaveDrop = Math.tan(pitch) * EAVE;
-  const vertices: number[] = [];
-
-  if (shed.structureType === 'skillion' || shed.structureType === 'skillion_carport') {
-    const fall = Math.tan(pitch) * shed.length;
-    const zLow = shed.length + EAVE;
-    const zHigh = -EAVE;
-    pushQuad(
-      vertices,
-      [-EAVE, shed.height + fall, zHigh],
-      [shed.span + EAVE, shed.height + fall, zHigh],
-      [shed.span + EAVE, shed.height, zLow],
-      [-EAVE, shed.height, zLow],
-    );
-  } else {
-    const ridgeX = shed.span / 2;
-    const ridgeY = shed.height + rise;
-    const eaveY = shed.height - eaveDrop;
-    const zNear = -EAVE;
-    const zFar = shed.length + EAVE;
-    // Left slope, then right slope, each spanning the eave overhang at both ends.
-    pushQuad(
-      vertices,
-      [-EAVE, eaveY, zNear],
-      [ridgeX, ridgeY, zNear],
-      [ridgeX, ridgeY, zFar],
-      [-EAVE, eaveY, zFar],
-    );
-    pushQuad(
-      vertices,
-      [shed.span + EAVE, eaveY, zNear],
-      [ridgeX, ridgeY, zNear],
-      [ridgeX, ridgeY, zFar],
-      [shed.span + EAVE, eaveY, zFar],
-    );
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-/** Pair each wall's holes with the openings that produced them, in order. */
-function openingsForWall(config: ShedConfig, wall: WallGeometry): (Opening | undefined)[] {
-  const wallOpenings = config.openings.filter((opening) => opening.wall === wall.side);
-  return wall.holes.map((_hole, index) => wallOpenings[index]);
-}
-
-/** A thin panel filling one hole, styled by opening type. */
-function OpeningPanel({
-  hole,
-  opening,
-  colors,
-}: {
-  hole: WallHole;
-  opening: Opening | undefined;
-  colors: ShedConfig['colors'];
-}) {
-  const type = opening?.type ?? 'roller_door';
-  // A plain hole has nothing fitted into it: the wall is cut and left open.
-  if (!hasOpeningPanel(type)) return null;
-  const cx = hole.u + hole.width / 2;
-  const cy = hole.sill + hole.height / 2;
-  const panelColor = doorColour(colors, type);
-
-  // Roller door: a subtle horizontal rib pattern via repeated thin slats.
-  if (type === 'roller_door') {
-    const slats = Math.max(2, Math.round(hole.height / 450));
-    const slatHeight = hole.height / slats;
-    return (
-      <group position={[cx, cy, WALL_DEPTH / 2]}>
-        <mesh>
-          <boxGeometry args={[hole.width, hole.height, 20]} />
-          <meshStandardMaterial color={panelColor} metalness={0.3} roughness={0.7} />
-        </mesh>
-        {Array.from({ length: slats - 1 }, (_, index) => (
-          <mesh
-            key={index}
-            position={[0, -hole.height / 2 + (index + 1) * slatHeight, 12]}
-          >
-            <boxGeometry args={[hole.width * 0.98, 18, 8]} />
-            <meshStandardMaterial color={colors.barge} metalness={0.4} roughness={0.5} />
-          </mesh>
-        ))}
-      </group>
-    );
-  }
-
-  // Window: a translucent pane with a trim frame.
-  if (type === 'window') {
-    return (
-      <group position={[cx, cy, WALL_DEPTH / 2]}>
-        <mesh>
-          <boxGeometry args={[hole.width, hole.height, 12]} />
-          <meshStandardMaterial
-            color={panelColor}
-            transparent
-            opacity={0.35}
-            metalness={0.1}
-            roughness={0.1}
-          />
-        </mesh>
-        <mesh position={[0, 0, 8]}>
-          <boxGeometry args={[hole.width + 60, hole.height + 60, 20]} />
-          <meshStandardMaterial color={colors.barge} />
-        </mesh>
-      </group>
-    );
-  }
-
-  // PA / sliding door: a solid panel with a frame; sliding adds a track line.
-  const frame = 60;
-  return (
-    <group position={[cx, cy, WALL_DEPTH / 2]}>
-      <mesh>
-        <boxGeometry args={[hole.width, hole.height, 25]} />
-        <meshStandardMaterial color={panelColor} metalness={0.2} roughness={0.8} />
-      </mesh>
-      <mesh position={[0, 0, 16]}>
-        <boxGeometry args={[hole.width - frame, hole.height - frame, 12]} />
-        <meshStandardMaterial color={colors.barge} />
-      </mesh>
-      {opening !== undefined && hasTrackRail(opening) && (
-        <mesh position={[0, hole.height / 2 + 30, 20]}>
-          <boxGeometry args={[hole.width + 120, 30, 20]} />
-          <meshStandardMaterial color={colors.barge} metalness={0.5} roughness={0.4} />
-        </mesh>
-      )}
-      {/* A double track adds a second rail further out from the wall, which is
-          what makes the two-track door read differently from a single. */}
-      {opening !== undefined && hasTrackRail(opening) && opening.track === 'double' && (
-        <mesh position={[0, hole.height / 2 + 30, 55]}>
-          <boxGeometry args={[hole.width + 120, 30, 20]} />
-          <meshStandardMaterial color={colors.barge} metalness={0.5} roughness={0.4} />
-        </mesh>
-      )}
-    </group>
-  );
-}
-
 /**
  * The shed scene contents, placed inside an R3F `<Canvas>` by `Render3D`.
  *
  * Geometry is memoised on the config, so only what moved re-renders (spec §7.2).
  */
-export function Shed3D({ config }: { config: DimensionedShed }) {
+export function Shed3D({
+  config,
+  showRoof = true,
+  frameRows = null,
+}: {
+  config: DimensionedShed;
+  /** Hide the roof (and its trim) to look inside. Walls, frame and openings stay. */
+  showRoof?: boolean;
+  /**
+   * Purlin and girt row heights from the last evaluation, or `null` before there is one.
+   *
+   * The rows come from the price book's span table, which the client never sees directly, so before
+   * an evaluation there is nothing honest to draw and no purlin appears. Columns and rafters are at
+   * the bay lines either way.
+   */
+  frameRows?: FrameRowLayout | null;
+}) {
+  const wallTexture = useSheetingTexture();
   const walls = useMemo(() => buildWallGeometries(config), [config]);
-  const roof = useMemo(() => buildRoofGeometry(config), [config]);
   const optionMeshes = useMemo(() => buildOptionMeshes(config), [config]);
-  const bayPositions = useMemo(
-    () => positionsFromWidths(bayWidthsFor(config)),
-    [config.length, config.bays],
+  const shell = useMemo(
+    () => structureParts(config, { showRoof, frameRows }),
+    [config, showRoof, frameRows],
   );
 
   return (
     <group scale={[MM_TO_M, MM_TO_M, MM_TO_M]}>
       {/* Floor slab. */}
-      <mesh position={[config.span / 2, -25, config.length / 2]}>
+      <mesh position={[config.span / 2, -25, config.length / 2]} receiveShadow>
         <boxGeometry args={[config.span, 50, config.length]} />
         <meshStandardMaterial color={config.colors.barge} roughness={0.95} />
       </mesh>
 
       {/* Four holed walls, each positioned and rotated by its domain transform. */}
       {walls.map((wall) => {
-        const wallOpenings = openingsForWall(config, wall);
+        const onWall = config.openings.filter((opening) => opening.wall === wall.side);
         return (
           <group
             key={wall.side}
             position={wall.transform.position}
             rotation={[0, wall.transform.rotationY, 0]}
           >
-            <mesh>
+            <mesh castShadow receiveShadow>
               <extrudeGeometry
                 args={[buildWallShape(wall), { depth: WALL_DEPTH, bevelEnabled: false }]}
               />
               <meshStandardMaterial
                 color={config.colors.wall}
+                map={wallTexture}
+                bumpMap={wallTexture}
+                bumpScale={0.4}
                 side={THREE.DoubleSide}
-                roughness={0.85}
-                metalness={0.05}
+                roughness={0.5}
+                metalness={0.35}
+                envMapIntensity={1.1}
               />
             </mesh>
-            {wall.holes.map((hole, index) => (
-              <OpeningPanel
-                key={index}
-                hole={hole}
-                opening={wallOpenings[index]}
-                colors={config.colors}
-              />
-            ))}
+            {/*
+              Hardware for each hole. The parts are derived by the domain (`openingParts`), so what
+              is drawn here is exactly what the tests in `@sq/core/domain` describe.
+            */}
+            {wall.holes.map((hole, index) => {
+              const opening = onWall[index];
+              if (opening === undefined) return null;
+              return (
+                <group key={opening.id}>
+                  {openingParts(opening, hole.u, config.colors).map((part: OpeningPart) => (
+                    <AnyPart key={part.kind} part={part} />
+                  ))}
+                </group>
+              );
+            })}
           </group>
         );
       })}
 
-      {/* Framing hint: a thin column at each bay grid line on both long edges. */}
-      {bayPositions.map((z, index) => (
-        <group key={index}>
-          {[0, config.span].map((x) => (
-            <mesh key={x} position={[x, config.height / 2, z]}>
-              <boxGeometry args={[90, config.height, 90]} />
-              <meshStandardMaterial color={config.colors.barge} metalness={0.3} roughness={0.6} />
-            </mesh>
-          ))}
-        </group>
+      {/* Frame, roof, trim and gutters: the shell the quote always includes. */}
+      {shell.map((part, index) => (
+        <AnyPart key={`${part.kind}-${index}`} part={part} />
       ))}
-
-      {/* Roof, semi-transparent so the interior stays readable. */}
-      <mesh geometry={roof}>
-        <meshStandardMaterial
-          color={config.colors.roof}
-          side={THREE.DoubleSide}
-          transparent
-          opacity={0.6}
-          roughness={0.7}
-          metalness={0.15}
-        />
-      </mesh>
 
       {/* Added objects. Drawn after the roof so a skylight reads as sitting on
           it rather than being hidden by it. */}

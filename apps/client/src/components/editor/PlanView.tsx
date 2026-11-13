@@ -17,8 +17,9 @@
  * the lists beside it, with real controls.
  */
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { describeSelection } from '@sq/core/domain';
+import type { FrameRowLayout } from '@sq/core/domain';
 import { Render2D } from './Render2D';
 import type { Render2DHandle } from './Render2D';
 import { Render3D } from './Render3D';
@@ -29,13 +30,30 @@ import { useShedStore } from '@/store/useShedStore';
 export interface PlanViewProps {
   /** True on the Options step, where the canvas is the editor's working surface. */
   interactive?: boolean;
+  /**
+   * Purlin and girt rows from the last evaluation, or `null` before there is one.
+   *
+   * Passed down rather than read from the store because the evaluation is the editor's transient
+   * state: it is not part of the quote, and a stale copy saved into the config would outlive the
+   * price it belongs to.
+   */
+  frameLayout?: FrameRowLayout | null;
 }
 
-export function PlanView({ interactive = true }: PlanViewProps) {
+export function PlanView({ interactive = true, frameLayout = null }: PlanViewProps) {
   const config = useShedStore((state) => state.config);
   const selection = useShedStore((state) => state.selection);
   const view = useShedStore((state) => state.view);
   const setView = useShedStore((state) => state.setView);
+
+  /**
+   * Whether the 3D model is drawn with its roof.
+   *
+   * Local to this view and not in the store: it is a way of looking at the drawing, not a property
+   * of the quote, so it must not reach the saved config, the history stack or the `.sqd`. A person
+   * lifting the roof off to show a customer the frame should not create an undo step.
+   */
+  const [showRoof, setShowRoof] = useState(true);
 
   /**
    * The 2D canvas, so its picture can be saved.
@@ -81,7 +99,8 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             className={[
               'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
               view === mode
-                ? 'border-sq-brand bg-sq-brand text-white'
+                ? // Selected, not primary: a solid fill is reserved for the one action (Save) per screen.
+                  'border-sq-brand bg-sq-brand/10 text-sq-brand'
                 : 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground',
             ].join(' ')}
           >
@@ -100,6 +119,25 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             className="min-h-11 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
           >
             Save image
+          </button>
+        )}
+        {/*
+          Lift the roof off. In 3D only, because that is the only view with a roof to remove, and
+          because the plan is a drawing of the building rather than a picture of it.
+        */}
+        {view === '3d' && (
+          <button
+            type="button"
+            aria-pressed={showRoof}
+            onClick={() => setShowRoof((current) => !current)}
+            className={[
+              'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
+              showRoof
+                ? 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground'
+                : 'border-sq-brand bg-sq-brand/10 text-sq-brand',
+            ].join(' ')}
+          >
+            Roof
           </button>
         )}
       </div>
@@ -123,7 +161,7 @@ export function PlanView({ interactive = true }: PlanViewProps) {
             : `3D view of a ${config.span} by ${config.length} millimetre shed`
         }
       >
-        {view === '2d' ? <Render2D ref={render2d} /> : <Render3D />}
+        {view === '2d' ? <Render2D ref={render2d} /> : <Render3D showRoof={showRoof} frameRows={frameLayout} />}
       </div>
 
       {/*

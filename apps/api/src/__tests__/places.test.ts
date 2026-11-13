@@ -146,9 +146,42 @@ describe('the Google transport', () => {
     expect(address?.postcode).toBe('4455');
   });
 
-  it('answers null rather than throwing when details fails', async () => {
-    const fake = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
+  it('answers null when the place id is stale, because that is a normal answer', async () => {
+    const fake = (async () => new Response('{"error":{"code":404}}', { status: 404 })) as unknown as typeof fetch;
     expect(await createGooglePlacesTransport('k', fake).details('place-1')).toBeNull();
+  });
+
+  it('throws on a refusal, so a dead key does not look like an unknown address', async () => {
+    /*
+     * This is the defect the 2026-11-13 outage exposed: every `!response.ok` became `null`, so a key
+     * Google had started refusing produced four empty address fields and no reason anywhere.
+     */
+    const fake = (async () =>
+      new Response(
+        JSON.stringify({ error: { code: 403, message: 'The caller does not have permission', status: 'PERMISSION_DENIED' } }),
+        { status: 403 },
+      )) as unknown as typeof fetch;
+
+    await expect(createGooglePlacesTransport('k', fake).details('place-1')).rejects.toThrow(/PERMISSION_DENIED/);
+  });
+
+  it('reports Google’s own reason, not just the status, when autocomplete is refused', async () => {
+    // `403` alone covers a revoked key, billing, a disabled API and key restrictions — four fixes.
+    // The body names which one, and throwing it away is what made the outage undiagnosable.
+    const fake = (async () =>
+      new Response(
+        JSON.stringify({ error: { code: 403, message: 'The caller does not have permission', status: 'PERMISSION_DENIED' } }),
+        { status: 403 },
+      )) as unknown as typeof fetch;
+
+    await expect(createGooglePlacesTransport('k', fake).autocomplete('12 Example')).rejects.toThrow(
+      /403.*PERMISSION_DENIED.*The caller does not have permission/,
+    );
+  });
+
+  it('still names the status when the refusal body is not the documented shape', async () => {
+    const fake = (async () => new Response('<html>gateway</html>', { status: 500 })) as unknown as typeof fetch;
+    await expect(createGooglePlacesTransport('k', fake).autocomplete('12 Example')).rejects.toThrow(/500/);
   });
 
   it('skips a suggestion with no place id, because it cannot be resolved', async () => {
