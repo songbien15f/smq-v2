@@ -1292,6 +1292,37 @@ test.describe('Step 1 — Save from anywhere', () => {
      * The roof toggle is local to the view and defaults to on. Pressing it twice must return to the
      * same state — a toggle that latches one way is a screen a person cannot get back from.
      */
+    /*
+     * ## The scene is not redrawn while nothing moves
+     *
+     * Two separate defects made the model flicker: the frame arrays were rebuilt on every keystroke
+     * (an object identity in a `useMemo` dependency), and there was no `frameloop` policy at all. The
+     * fix is `frameloop="demand"` plus memoising on primitives, and this counts the draw calls that
+     * actually reach WebGL with the camera parked — measured 0 after the fix, ~54 000 before.
+     */
+    const idleDraws = await page.evaluate(async () => {
+      const proto = WebGL2RenderingContext.prototype as unknown as {
+        drawElements: (...args: unknown[]) => unknown;
+      };
+      const original = proto.drawElements;
+      let draws = 0;
+      proto.drawElements = function (this: unknown, ...args: unknown[]) {
+        draws += 1;
+        return original.apply(this, args);
+      };
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      proto.drawElements = original;
+      return draws;
+    });
+    // A handful of frames while damping settles is fine; a permanent 60 fps loop is not.
+    expect(idleDraws).toBeLessThan(400);
+
+    /* Reset view must be reachable and must not throw once the camera has been dragged. */
+    const reset = page.getByRole('button', { name: 'Reset view', exact: true });
+    await expect(reset).toBeVisible();
+    await reset.click();
+    await expect(page.locator('canvas').first()).toBeVisible();
+
     const roof = page.getByRole('button', { name: 'Roof', exact: true });
     await expect(roof).toBeVisible();
     await expect(roof).toHaveAttribute('aria-pressed', 'true');

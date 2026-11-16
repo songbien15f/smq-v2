@@ -56,6 +56,15 @@ export function PlanView({ interactive = true, frameLayout = null }: PlanViewPro
   const [showRoof, setShowRoof] = useState(true);
 
   /**
+   * Bumped to ask the 3D view to re-frame the building.
+   *
+   * A counter rather than a boolean or a ref: the 3D view has to act **every** time the button is
+   * pressed, including when the camera is already at the default. A flag that is set and cleared
+   * would be a second state to keep consistent; a number that only ever grows is not.
+   */
+  const [resetView, setResetView] = useState(0);
+
+  /**
    * The 2D canvas, so its picture can be saved.
    *
    * `exportPng()` has existed on `Render2D`'s imperative handle since the plan was built and
@@ -126,19 +135,33 @@ export function PlanView({ interactive = true, frameLayout = null }: PlanViewPro
           because the plan is a drawing of the building rather than a picture of it.
         */}
         {view === '3d' && (
-          <button
-            type="button"
-            aria-pressed={showRoof}
-            onClick={() => setShowRoof((current) => !current)}
-            className={[
-              'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
-              showRoof
-                ? 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground'
-                : 'border-sq-brand bg-sq-brand/10 text-sq-brand',
-            ].join(' ')}
-          >
-            Roof
-          </button>
+          <>
+            <button
+              type="button"
+              aria-pressed={showRoof}
+              onClick={() => setShowRoof((current) => !current)}
+              className={[
+                'min-h-11 cursor-pointer rounded-md border px-sq-2 text-sq-body font-medium transition-colors duration-sq-fast',
+                showRoof
+                  ? 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground'
+                  : 'border-sq-brand bg-sq-brand/10 text-sq-brand',
+              ].join(' ')}
+            >
+              Roof
+            </button>
+            {/*
+              Back to the framing view. Orbiting a building is easy to do and, without a way home,
+              easy to get lost in: the camera can end up under the floor of a shed it can no longer
+              find. The 2D view has had this button since it was built.
+            */}
+            <button
+              type="button"
+              onClick={() => setResetView((current) => current + 1)}
+              className="min-h-11 cursor-pointer rounded-md border border-sq-line bg-sq-surface px-sq-2 text-sq-body font-medium text-sq-ink transition-colors duration-sq-fast hover:bg-sq-ground"
+            >
+              Reset view
+            </button>
+          </>
         )}
       </div>
 
@@ -161,7 +184,11 @@ export function PlanView({ interactive = true, frameLayout = null }: PlanViewPro
             : `3D view of a ${config.span} by ${config.length} millimetre shed`
         }
       >
-        {view === '2d' ? <Render2D ref={render2d} /> : <Render3D showRoof={showRoof} frameRows={frameLayout} />}
+        {view === '2d' ? (
+          <Render2D ref={render2d} />
+        ) : (
+          <Render3D showRoof={showRoof} frameRows={frameLayout} resetView={resetView} />
+        )}
       </div>
 
       {/*

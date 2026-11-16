@@ -1186,6 +1186,26 @@ tường và thép chứ không phải mái.
 - Đầu hồi kín được vẽ nhưng `gable_infill` chưa có dòng BOM (KNOWN-DEVIATIONS 49).
 - Slab sàn là thiết bị vẽ, không có dòng BOM (KNOWN-DEVIATIONS 52).
 
+### Camera, khung nhìn, Reset view (2026-11-14)
+
+Operator: *"không mướt/đẹp như demo … chớp chớp render liên tục … cho cái nhà ở giữa giống demo, cho
+xoay xem toàn bộ dễ, cửa vẽ cũng bị lệch"*. Mỗi triệu chứng có nguyên nhân đo được:
+
+| Triệu chứng | Nguyên nhân | Sửa |
+|---|---|---|
+| Chớp liên tục | `frameLayout` là **object mới mỗi render** nằm trong dependency `useMemo` ⇒ cả trăm mesh dựng lại mỗi lần gõ phím. Đo: **~450 draw/frame, 54.000 draw trong 2 s khi đứng yên** | `Shed3D` memo theo **4 con số** (`purlinRows`, `purlinSpanMm`, `girtRows`, `girtSpanMm`) |
+| Chớp liên tục (2) | `<Canvas>` mặc định vẽ 60 fps dù không ai chạm | `frameloop="demand"`; `OrbitControls` tự `invalidate()` khi xoay/damping. Đo lại: **0 draw/2 s khi đứng yên, ~11.000 khi kéo** |
+| Nhà không ở giữa, khó xoay | Camera nhắm `(0,0,0)` = **một góc** nhà; orbit không có `target`, không giới hạn | `cameraFrameFor(shed, aspect)` → target là tâm; camera lùi theo **bán kính bao** và **nửa góc nhỏ hơn**; có `minDistance`/`maxDistance`/`maxPolarAngle`/`dampingFactor`; thêm nút **Reset view** |
+| Cửa lệch khỏi lỗ | `Shed3D` truyền `opening` gốc, trong khi lỗ đã bị `buildWallGeometries` **kẹp** vào tường ⇒ cửa rộng hơn tường có phần cứng to hơn lỗ và lệch một bên | truyền `{...opening, width: hole.width, height: hole.height, sill: hole.sill}` |
+| Nhấp nháy mặt tường (z-fighting) | Cột có mặt ngoài đúng `x = 0` (trùng mặt tôn), bản mã nhô 75 mm ra ngoài, girt/purlin đồng phẳng với tường và mái | `WALL_DEPTH` chuyển vào `structure3d.ts`; mọi thanh thép lùi vào sau tôn; test khẳng định không mặt phẳng nào trùng `x = 0`/`x = span` |
+| Bóng vỡ thành khối | Shadow camera để mặc định (±5 m) trong khi nhà 24 m | `shadow-camera-*` tính từ `extent`; key 2.4 + fill 0.55 như `/demo` |
+
+**Aspect là tham số, không phải hằng số.** Khung 3D của editor đo được **535 × 608** — cao hơn rộng.
+Nửa góc ngang là `atan(tan(fov/2) × aspect)`, nhỏ hơn nửa góc dọc khi `aspect < 1`, nên khoảng cách
+tính từ góc dọc làm nhà 24 m tràn hai mép. `cameraFrameFor` lấy **nửa góc nhỏ hơn** × **bán kính bao**,
+nên đúng ở mọi aspect; `__tests__/cameraFrame.test.ts` chiếu 8 góc nhà qua `PerspectiveCamera` thật và
+khẳng định cả 8 nằm trong NDC, cho 4 kích thước nhà × 2 aspect.
+
 ## 13. `.vqu` — định dạng cho BOM tool ngoài
 
 Nguồn: `smq-code-smartquote/Modules/Main/SmartQuote.Module.Main/Data/ExportFileVQU.cs`.
@@ -2293,8 +2313,13 @@ là một `fetch` phía server — nên `request.ip` ở API **luôn là 127.0.0
 là **một** địa chỉ. Phải sửa bridge trước:
 
 - bridge đọc `x-forwarded-for` / `x-real-ip` của request vào và **forward tiếp**;
-- không tự bịa, không ghi đè chuỗi đã có — vì API bật `trustProxy: true`, ghi đè sẽ biến nó thành lời
-  nói dối (hop cuối là chính bridge).
+- không tự bịa, không ghi đè chuỗi đã có — ghi đè sẽ vứt mất địa chỉ mà proxy đã ghi.
+
+> **Cập nhật 2026-11-15 (hardening):** câu "API bật `trustProxy: true`" ở trên **không còn đúng**.
+> `trustProxy` nay là **danh sách tin cậy** (`TRUST_PROXY`, mặc định `loopback`), nên bridge được tin
+> vì nó nối từ loopback còn người gọi trực tiếp thì không — header của họ bị Fastify bỏ qua. Lý do: với
+> `true`, ai cũng tự khai được địa chỉ và mọi giới hạn theo IP thành vô nghĩa. Chi tiết:
+> `docs/OPERATIONS.md` §5a, `apps/api/src/lib/http.ts` (`clientIp`), `apps/api/src/config.ts`.
 
 ### IP được băm, không được lưu
 

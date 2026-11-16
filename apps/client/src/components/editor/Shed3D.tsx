@@ -28,7 +28,7 @@
 
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import type { ShedConfig, OptionKind, DimensionedShed, FrameRowLayout } from '@sq/core/domain';
+import type { ShedConfig, Opening, OptionKind, DimensionedShed, FrameRowLayout } from '@sq/core/domain';
 import { buildWallGeometries, type WallGeometry } from '@sq/core/domain';
 import {
   openingParts,
@@ -211,7 +211,14 @@ export function buildWallShape(wall: WallGeometry): THREE.Shape {
 /**
  * The shed scene contents, placed inside an R3F `<Canvas>` by `Render3D`.
  *
- * Geometry is memoised on the config, so only what moved re-renders (spec §7.2).
+ * ## Why the memos depend on primitives and not on objects
+ *
+ * `frameRows` arrives from the editor as `evaluation.frameLayout`, and the editor re-renders on every
+ * keystroke and every price refresh. That object is **new on every render** even when its four numbers
+ * are unchanged, so a `useMemo(..., [frameRows])` threw the whole scene away — several hundred meshes
+ * destroyed and recreated per keystroke, which measured as continuous flicker and ~450 draw calls a
+ * frame with the camera standing still. The dependencies below are the four numbers, so a rebuild
+ * happens when the building changes and not when the parent happens to render.
  */
 export function Shed3D({
   config,
@@ -222,7 +229,7 @@ export function Shed3D({
   /** Hide the roof (and its trim) to look inside. Walls, frame and openings stay. */
   showRoof?: boolean;
   /**
-   * Purlin and girt row heights from the last evaluation, or `null` before there is one.
+   * Purlin and girt row counts and spacings from the last evaluation, or `null` before there is one.
    *
    * The rows come from the price book's span table, which the client never sees directly, so before
    * an evaluation there is nothing honest to draw and no purlin appears. Columns and rafters are at
@@ -233,9 +240,24 @@ export function Shed3D({
   const wallTexture = useSheetingTexture();
   const walls = useMemo(() => buildWallGeometries(config), [config]);
   const optionMeshes = useMemo(() => buildOptionMeshes(config), [config]);
+
+  // Flattened to numbers, so an object with the same contents does not rebuild the scene.
+  const purlinRows = frameRows?.purlinRows ?? 0;
+  const purlinSpanMm = frameRows?.purlinSpanMm ?? 0;
+  const girtRows = frameRows?.girtRows ?? 0;
+  const girtSpanMm = frameRows?.girtSpanMm ?? 0;
+
   const shell = useMemo(
-    () => structureParts(config, { showRoof, frameRows }),
-    [config, showRoof, frameRows],
+    () =>
+      structureParts(config, {
+        showRoof,
+        frameRows:
+          frameRows === null
+            ? null
+            : { purlinRows, purlinSpanMm, girtRows, girtSpanMm },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the four numbers are the object
+    [config, showRoof, frameRows === null, purlinRows, purlinSpanMm, girtRows, girtSpanMm],
   );
 
   return (
@@ -273,13 +295,25 @@ export function Shed3D({
             {/*
               Hardware for each hole. The parts are derived by the domain (`openingParts`), so what
               is drawn here is exactly what the tests in `@sq/core/domain` describe.
+
+              The opening handed over is the one **the wall actually cut**: `buildWallGeometries`
+              clamps a hole into the wall face, and an opening wider than its wall therefore has a
+              hole smaller than its own `width`. Passing the unclamped opening drew the hardware at
+              the requested size around a smaller hole, which is what read as "the door is off-centre"
+              — the curtain and guides hung past the jambs on one side.
             */}
             {wall.holes.map((hole, index) => {
               const opening = onWall[index];
               if (opening === undefined) return null;
+              const cut: Opening = {
+                ...opening,
+                width: hole.width,
+                height: hole.height,
+                sill: hole.sill,
+              };
               return (
                 <group key={opening.id}>
-                  {openingParts(opening, hole.u, config.colors).map((part: OpeningPart) => (
+                  {openingParts(cut, hole.u, config.colors).map((part: OpeningPart) => (
                     <AnyPart key={part.kind} part={part} />
                   ))}
                 </group>

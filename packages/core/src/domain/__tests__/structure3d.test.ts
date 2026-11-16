@@ -116,6 +116,57 @@ describe('frame', () => {
     }
   });
 
+  it('starts every vertical member behind the cladding, never on its plane', () => {
+    /*
+     * The flicker a person reported as "chớp chớp" was a z-fight: a column whose outer face landed
+     * on `x = 0` — the cladding's own outer face — and a base plate that poked 75 mm out through the
+     * wall. Two coplanar surfaces rasterise at the same depth, so the GPU picks one per pixel per
+     * frame and the wall shimmers.
+     *
+     * Members in the wall plane (columns, base plates, girts) must therefore start at least one
+     * cladding thickness in. Rafters are excluded on purpose: they run from the ridge out past the
+     * eave, so they legitimately cross the wall plane above it and never lie *in* it.
+     */
+    const s = shed();
+    const layout = { purlinRows: 4, purlinSpanMm: 900, girtRows: 3, girtSpanMm: 1200 };
+    const inWallPlane = new Set(['column', 'base-plate', 'girt-side', 'girt-end']);
+    const steel = [
+      ...frameParts(s, roofGeometry(s)),
+      ...purlinAndGirtParts(s, layout),
+    ].filter((part) => part.shape === 'box' && inWallPlane.has(part.kind));
+
+    for (const part of steel) {
+      const [width, , depth] = part.size ?? [0, 0, 0];
+      const [x, , z] = part.position;
+      const nearX = x - width / 2;
+      const farX = x + width / 2;
+      const nearZ = z - depth / 2;
+      const farZ = z + depth / 2;
+      expect(nearX).toBeGreaterThan(0.5);
+      expect(farX).toBeLessThan(s.span - 0.5);
+      expect(nearZ).toBeGreaterThan(0.5);
+      expect(farZ).toBeLessThan(s.length - 0.5);
+    }
+  });
+
+  it('leaves nothing standing proud of the outside face', () => {
+    // A base plate wider than its column poked 75 mm through the cladding, which read as a bracket
+    // floating on the wall. Everything *inside* the walls stays inside; rafters and purlins are
+    // excluded because they legitimately run out over the eave.
+    const s = shed();
+    const overEave = new Set(['rafter-left', 'rafter-right', 'rafter-single', 'purlin']);
+    const parts = [
+      ...frameParts(s, roofGeometry(s)),
+      ...purlinAndGirtParts(s, { purlinRows: 4, purlinSpanMm: 900, girtRows: 3, girtSpanMm: 1200 }),
+    ].filter((part) => part.shape === 'box' && !overEave.has(part.kind));
+    for (const part of parts) {
+      const [width] = part.size ?? [0, 0, 0];
+      const [x] = part.position;
+      expect(x - width / 2).toBeGreaterThan(-0.5);
+      expect(x + width / 2).toBeLessThan(s.span + 0.5);
+    }
+  });
+
   it('draws no purlin until an evaluation says where the rows go', () => {
     // Purlin spacing comes from the price book's span table, which the client does not have.
     // Drawing a guessed row would be a drawing of a building nobody priced.

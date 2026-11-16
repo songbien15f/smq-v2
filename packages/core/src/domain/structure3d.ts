@@ -35,6 +35,15 @@ export type StructurePart = OpeningPart;
 export const EAVE = 300;
 /** Roof sheet thickness, mm. */
 export const ROOF_SHEET = 40;
+/**
+ * Wall cladding thickness, mm.
+ *
+ * Lives here because the frame has to be placed **behind** it. The cladding is extruded from the wall
+ * line inward (`ExtrudeGeometry` depth 50 in `Shed3D`), so its outer face is the plane `x = 0` on the
+ * left wall and `x = span` on the right. A column whose own face lands on that plane z-fights the
+ * sheet — the flicker a person sees as "chờp chờp" — so every steel member starts at `WALL_DEPTH`.
+ */
+export const WALL_DEPTH = 50;
 /** Frame member section, mm. */
 export const FRAME_SECTION = 150;
 /** Purlin and girt section, mm. */
@@ -262,6 +271,11 @@ function evenPositions(count: number, start: number, end: number): number[] {
   return Array.from({ length: count }, (_unused, index) => start + index * step);
 }
 
+/** Clamp `value` into `[min, max]`; a reversed range collapses to `min`. */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
 /**
  * Columns and rafters: the portal frame, at every bay grid line.
  *
@@ -271,11 +285,27 @@ function evenPositions(count: number, start: number, end: number): number[] {
 export function frameParts(shed: DimensionedShed, roof: RoofGeometry): StructurePart[] {
   const parts: StructurePart[] = [];
   const bayPositions = positionsFromWidths(bayWidthsFor(shed));
-  // Columns sit inside the sheeting line, not on it: a column centred on the wall plane would
-  // bulge half its depth out through the cladding.
-  const columnX = [FRAME_SECTION / 2, shed.span - FRAME_SECTION / 2];
+  /*
+   * Columns stand **inside** the cladding, never on its plane.
+   *
+   * `WALL_DEPTH + FRAME_SECTION / 2` puts the column's outer face at x = 50, one cladding thickness
+   * behind the sheet. A column centred on `FRAME_SECTION / 2` (75 mm) would have its face at x = 0 —
+   * exactly coplanar with the sheeting's outer face, which z-fights and flickers. Same for the base
+   * plate, which is wider than the column and would otherwise poke through the wall.
+   */
+  const columnX = [WALL_DEPTH + FRAME_SECTION / 2, shed.span - WALL_DEPTH - FRAME_SECTION / 2];
+  /*
+   * The same inset along the length, for the end-wall columns.
+   *
+   * `bayWidthsFor` returns grid lines from 0 to `length`, and a column sitting *on* 0 stands half
+   * outside the end cladding. Clamping into `[WALL_DEPTH + half, length − WALL_DEPTH − half]` puts the
+   * corner column where the factory puts it: hard against the inside of the end wall.
+   */
+  const inset = WALL_DEPTH + FRAME_SECTION / 2;
+  const plateHalf = FRAME_SECTION * 0.8;
 
-  for (const z of bayPositions) {
+  for (const bayZ of bayPositions) {
+    const z = clamp(bayZ, inset, shed.length - inset);
     for (const x of columnX) {
       parts.push({
         kind: 'column',
@@ -285,12 +315,17 @@ export function frameParts(shed: DimensionedShed, roof: RoofGeometry): Structure
         color: '#8d9499',
         finish: 'metal',
       });
-      // Base plate, so a column reads as bolted down rather than floating.
+      /*
+       * Base plate. Narrower than twice the section (`1.6 ×`) and clamped, so its outer edge stays
+       * behind the sheeting: a 300 mm plate under a 150 mm column poked 75 mm out through the wall,
+       * which read as a bracket floating on the cladding.
+       */
+      const plateX = clamp(x, plateHalf + WALL_DEPTH / 2, shed.span - plateHalf - WALL_DEPTH / 2);
       parts.push({
         kind: 'base-plate',
         shape: 'box',
-        position: [x, 12, z],
-        size: [FRAME_SECTION * 2, 24, FRAME_SECTION * 2],
+        position: [plateX, 12, z],
+        size: [plateHalf * 2, 24, plateHalf * 2],
         color: '#8d9499',
         finish: 'metal',
       });
@@ -355,16 +390,23 @@ export function purlinAndGirtParts(
    */
   if (layout.purlinRows > 0) {
     const eaveY = shed.height - roof.eaveDrop;
+    /*
+     * Purlins sit **under** the roof sheet, not in its plane. The roof is a 40 mm slab whose underside
+     * is the reference; a purlin centred exactly on it would be half-buried and its top face coplanar
+     * with the sheet, which flickers. `ROOF_SHEET` is subtracted so the member hangs below.
+     */
+    const belowRoof = ROOF_SHEET / 2 + PURLIN_SECTION / 2;
     if (hasRidge(shed)) {
       // Each slope carries its rows from the eave to the ridge, and the ridge row is shared.
-      const across = evenPositions(layout.purlinRows, 0, shed.span / 2);
+      const across = evenPositions(layout.purlinRows, WALL_DEPTH, shed.span / 2);
       for (const [index, dx] of across.entries()) {
-        const y = eaveY + ((roof.ridgeY - eaveY) * dx) / (shed.span / 2);
+        const t = (dx - WALL_DEPTH) / (shed.span / 2 - WALL_DEPTH);
+        const y = eaveY + ((roof.ridgeY - eaveY) * Math.max(0, t));
         for (const x of index === across.length - 1 ? [shed.span / 2] : [dx, shed.span - dx]) {
           parts.push({
             kind: 'purlin',
             shape: 'box',
-            position: [x, y - PURLIN_SECTION / 2, shed.length / 2],
+            position: [x, y - belowRoof, shed.length / 2],
             size: [PURLIN_SECTION, PURLIN_SECTION, run],
             color: '#a3aaae',
             finish: 'metal',
@@ -375,12 +417,16 @@ export function purlinAndGirtParts(
       // A skillion falls along the length, so its rows step down `z` at one x each… except a
       // purlin still runs along z, so its rows step in *x*. Sitting them at the wall height is the
       // honest approximation: the slope is under 15° and the row positions are the book's count.
-      for (const [index, x] of evenPositions(layout.purlinRows, 0, shed.span).entries()) {
+      for (const [index, x] of evenPositions(
+        layout.purlinRows,
+        WALL_DEPTH + PURLIN_SECTION / 2,
+        shed.span - WALL_DEPTH - PURLIN_SECTION / 2,
+      ).entries()) {
         const y = shed.height + (index === 0 ? 0 : 40);
         parts.push({
           kind: 'purlin',
           shape: 'box',
-          position: [x, y - PURLIN_SECTION / 2, shed.length / 2],
+          position: [x, y - belowRoof, shed.length / 2],
           size: [PURLIN_SECTION, PURLIN_SECTION, run],
           color: '#a3aaae',
           finish: 'metal',
@@ -391,26 +437,28 @@ export function purlinAndGirtParts(
 
   /*
    * Girts run horizontally: along each long wall and across each end wall, at the same heights on
-   * all four faces.
+   * all four faces. Like the columns they stand **behind** the cladding, never on its plane.
    */
   for (const y of evenPositions(layout.girtRows, PURLIN_SECTION, shed.height - PURLIN_SECTION)) {
-    for (const x of [PURLIN_SECTION / 2, shed.span - PURLIN_SECTION / 2]) {
+    for (const x of [WALL_DEPTH + PURLIN_SECTION / 2, shed.span - WALL_DEPTH - PURLIN_SECTION / 2]) {
       parts.push({
         kind: 'girt-side',
         shape: 'box',
+        // Runs between the end walls, so its ends are not coplanar with their outside faces.
         position: [x, y, shed.length / 2],
-        size: [PURLIN_SECTION, PURLIN_SECTION, shed.length],
+        size: [PURLIN_SECTION, PURLIN_SECTION, shed.length - WALL_DEPTH * 2],
         color: '#a3aaae',
         finish: 'metal',
       });
     }
     if (hasEndWalls(shed)) {
-      for (const z of [PURLIN_SECTION / 2, shed.length - PURLIN_SECTION / 2]) {
+      // The end wall's cladding occupies z ∈ [0, WALL_DEPTH] and [length − WALL_DEPTH, length].
+      for (const z of [WALL_DEPTH + PURLIN_SECTION / 2, shed.length - WALL_DEPTH - PURLIN_SECTION / 2]) {
         parts.push({
           kind: 'girt-end',
           shape: 'box',
           position: [shed.span / 2, y, z],
-          size: [shed.span, PURLIN_SECTION, PURLIN_SECTION],
+          size: [shed.span - WALL_DEPTH * 2, PURLIN_SECTION, PURLIN_SECTION],
           color: '#a3aaae',
           finish: 'metal',
         });

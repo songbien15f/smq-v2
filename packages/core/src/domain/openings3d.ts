@@ -128,7 +128,7 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
 
   // Curtain, hanging just outside the guides.
   parts.push(
-    box('curtain', [cx, h / 2, -34], [w - ROLLER_TRACK_WIDTH * 2, h, 24], colors.rollerDoor, 'door'),
+    box('curtain', [cx, h / 2, -28], [w - ROLLER_TRACK_WIDTH * 2, h, 22], colors.rollerDoor, 'door'),
   );
 
   // Slat ribs; the bottom bar closes the curtain at the floor.
@@ -146,18 +146,25 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
     );
   }
 
-  // Guide rails either side, full height, standing proud of the wall.
+  /*
+   * Guide rails either side, full height, standing proud of the wall.
+   *
+   * Their **back face lands exactly on z = 0** — the wall's outside plane — which is coplanar with the
+   * cladding and flickers. Each guide is therefore sunk 10 mm into the wall so its back face is at
+   * z = +10 (inside the cladding volume, never on its surface) while its front still stands clear.
+   */
+  const guideSink = 10;
   parts.push(
     box(
       'guide-left',
-      [u + ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH],
+      [u + ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH + guideSink],
       [ROLLER_TRACK_WIDTH, h, ROLLER_TRACK_WIDTH * 2],
       colors.barge,
       'trim',
     ),
     box(
       'guide-right',
-      [u + w - ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH],
+      [u + w - ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH + guideSink],
       [ROLLER_TRACK_WIDTH, h, ROLLER_TRACK_WIDTH * 2],
       colors.barge,
       'trim',
@@ -174,7 +181,7 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
    * rolled curtain appears to pass through its own frame.
    */
   const drumY = h + 250;
-  const drumZ = -160;
+  const drumZ = -140;
   parts.push({
     kind: 'drum',
     shape: 'cylinder',
@@ -204,7 +211,7 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
 
   // Bottom bar, so the curtain reads as a door rather than a printed panel.
   parts.push(
-    box('bottom-bar', [cx, 35, -50], [w - ROLLER_TRACK_WIDTH * 2, 60, 40], colors.barge, 'metal'),
+    box('bottom-bar', [cx, 35, -44], [w - ROLLER_TRACK_WIDTH * 2, 60, 40], colors.barge, 'metal'),
   );
 
   return parts;

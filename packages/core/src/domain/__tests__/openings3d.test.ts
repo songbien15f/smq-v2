@@ -56,6 +56,19 @@ describe('roller door', () => {
     for (const part of parts) expect(part.position[2]).toBeLessThan(0);
   });
 
+  it('never puts a face coplanar with the wall surface', () => {
+    /*
+     * A guide's back face used to land exactly on `z = 0` — the cladding's outside plane — so the two
+     * surfaces fought for the same depth and the wall flickered as the camera moved. Sunk 10 mm in,
+     * the back face is inside the cladding volume and the front still stands clear.
+     */
+    for (const part of parts) {
+      if (part.shape !== 'box' || part.size === undefined) continue;
+      const back = part.position[2] + part.size[2] / 2;
+      expect(Math.abs(back)).toBeGreaterThan(0.5);
+    }
+  });
+
   it('cuts the curtain with slat ribs rather than leaving one flat sheet', () => {
     expect(parts.filter((part) => part.kind.startsWith('slat-')).length).toBeGreaterThan(8);
   });
