@@ -15,8 +15,8 @@
  * ## The one-time password is shown once, on purpose
  *
  * The API generates it and stores only a hash. A screen that could show it again would mean
- * storing it again. So it is rendered here, with a copy button, and a note that closing the panel
- * loses it — the fix is "reset the administrator's password", not "look it up".
+ * storing it again. So it is rendered here, with a copy button, and a note that leaving the page
+ * loses it — the fix is a reset link from the client's "Forgot password", not "look it up".
  *
  * ## Four fields are the sign-in credentials, so they are named as such
  *
@@ -27,7 +27,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Panel } from '@sq/ui';
+import { ActionLink, Button, Field, Panel } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 /** What the API answers with on success. */
@@ -55,9 +55,9 @@ function codeFrom(name: string): string {
     .slice(0, 10);
 }
 
+/** Always open: it is the whole of `/company/new`, and leaving that page is how it is cancelled. */
 export function CompanyCreator() {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -69,18 +69,6 @@ export function CompanyCreator() {
   const [seats, setSeats] = useState('5');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminDisplayName, setAdminDisplayName] = useState('');
-
-  function reset(): void {
-    setName('');
-    setCode('');
-    setSlug('');
-    setSeats('5');
-    setAdminEmail('');
-    setAdminDisplayName('');
-    setError(null);
-    setFieldErrors({});
-    setCreated(null);
-  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -121,8 +109,8 @@ export function CompanyCreator() {
     }
 
     setCreated(result.data);
-    // The list behind this panel is a server render; refreshing is what makes the new company
-    // appear without a reload.
+    // The directory is a server render; refreshing drops its cached copy so the new company is there
+    // when the operator goes back.
     router.refresh();
   }
 
@@ -153,8 +141,9 @@ export function CompanyCreator() {
 
         <p className="mt-sq-3 text-sq-micro text-sq-ink-muted">
           They sign in at the client app with the company code, the username and that password, and
-          are asked to choose a new password immediately. Closing this panel loses the password —
-          reset it from the company&apos;s page if that happens.
+          are asked to choose a new password immediately. Leaving this page loses the password. If
+          that happens, they can ask for a reset link from &ldquo;Forgot password&rdquo; at the client
+          sign-in — which needs mail to be set up on this server.
         </p>
 
         <div className="mt-sq-3 flex gap-sq-2">
@@ -166,31 +155,16 @@ export function CompanyCreator() {
           >
             Copy password
           </Button>
-          <Button
-            onClick={() => {
-              reset();
-              setOpen(false);
-            }}
-          >
-            Done
-          </Button>
+          <ActionLink href={`/company/${encodeURIComponent(created.tenantId)}`}>Open the company</ActionLink>
         </div>
       </Panel>
     );
   }
 
-  if (!open) {
-    return (
-      <Button variant="primary" onClick={() => setOpen(true)}>
-        New company
-      </Button>
-    );
-  }
-
   return (
     <Panel
-      title="New company"
-      description="Creates the company and its first administrator in one step."
+      title="Company and administrator"
+      description="The code, username and password are what the administrator types at the client sign-in."
     >
       <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-sq-3" noValidate>
         {error !== null && (
@@ -278,15 +252,7 @@ export function CompanyCreator() {
           <Button type="submit" variant="primary" loading={busy}>
             Create company
           </Button>
-          <Button
-            type="button"
-            onClick={() => {
-              reset();
-              setOpen(false);
-            }}
-          >
-            Cancel
-          </Button>
+          <ActionLink href="/company">Cancel</ActionLink>
         </div>
       </form>
     </Panel>

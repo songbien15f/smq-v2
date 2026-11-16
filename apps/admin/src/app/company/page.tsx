@@ -1,46 +1,38 @@
 import { redirect } from 'next/navigation';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
-import { date, Panel, Stat, StatusPill } from '@sq/ui';
+import { ActionLink, EmptyState, Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
+import { isCompanyFilter } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
 import { SignOutButton } from '@/components/SignOutButton';
-import { CompanyLimits } from '@/components/CompanyLimits';
-import { CompanyStatus } from '@/components/CompanyStatus';
-import { CompanyCreator } from '@/components/CompanyCreator';
+import { CompanyTable } from '@/components/CompanyTable';
 
 /**
  * The companies.
  *
  * Plural, because there can be many: converting the licence server's control plane means the vendor
- * holds one row per paying shed company. The single-company days — when this page said "the company"
- * and cut the list to `limit=2` then read `items[0]` — are gone, along with the note that claimed the
- * API refused a second company.
+ * holds one row per paying shed company.
  *
- * A page editing one company's seats already exists at `/seats`; this page is the directory plus the
- * screens that do not fit a row — the subscription end date, and creating the next company.
+ * This page is the directory and nothing else — one row per company, searchable and filterable. The
+ * screens that change a company (its seats, its end date, suspending it) are on the company's own page,
+ * `/company/[id]`, and creating one is `/company/new`. They used to stack here, one tall card per
+ * company with its editors open, which made the list unreadable past three companies and put a suspend
+ * control a scroll away from every row.
  */
-export default async function CompanyPage() {
+export default async function CompanyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; state?: string }>;
+}) {
   const session = await serverFetch<SessionView>('/auth/session');
   if (!session.ok) redirect('/');
 
-  const companies = await serverFetch<Page<CompanyRow>>('/admin/companies?limit=200');
-
-  if (!companies.ok) {
-    return (
-      <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/company">
-        <Panel title="Could not load the companies">
-          <p className="text-sq-body text-sq-danger">
-            {companies.code === 'forbidden'
-              ? 'Your role cannot see the companies. Ask for platform support access.'
-              : companies.message}
-          </p>
-        </Panel>
-      </ShellFrame>
-    );
-  }
+  const [params, companies] = await Promise.all([
+    searchParams,
+    serverFetch<Page<CompanyRow>>('/admin/companies?limit=200'),
+  ]);
 
   const canCreate = session.data.capabilities.includes('platform:companies');
-  const canEditLimits = session.data.capabilities.includes('platform:seats');
 
   return (
     <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/company">
@@ -49,93 +41,48 @@ export default async function CompanyPage() {
           <div>
             <h1 className="text-sq-title font-semibold">Companies</h1>
             <p className="text-sq-body text-sq-ink-muted">
-              Every shed company on this installation, and its subscription.
+              Every shed company on this installation. Open one to change its seats, its subscription or its
+              access.
             </p>
           </div>
-          {canCreate && <CompanyCreator />}
+          {canCreate && (
+            <ActionLink variant="primary" href="/company/new">
+              New company
+            </ActionLink>
+          )}
         </div>
 
-        {companies.data.items.length === 0 && (
-          <Panel title="No company yet" description="Nothing has been provisioned.">
-            <p className="text-sq-body text-sq-ink-muted">
-              Create the first company above, or run the installer from a terminal.
+        {!companies.ok ? (
+          <Panel title="Could not load the companies">
+            <p className="text-sq-body text-sq-danger">
+              {companies.code === 'forbidden'
+                ? 'Your role cannot see the companies. Ask for platform support access.'
+                : companies.message}
             </p>
           </Panel>
+        ) : companies.data.items.length === 0 ? (
+          <EmptyState
+            title="No company yet"
+            body={
+              canCreate
+                ? 'Nothing has been provisioned. Create the first company, or run the installer from a terminal.'
+                : 'Nothing has been provisioned. Someone with the companies capability can create the first one.'
+            }
+            action={
+              canCreate ? (
+                <ActionLink variant="primary" href="/company/new">
+                  Create the first company
+                </ActionLink>
+              ) : undefined
+            }
+          />
+        ) : (
+          <CompanyTable
+            companies={companies.data.items}
+            initialQuery={params.q ?? ''}
+            initialFilter={isCompanyFilter(params.state) ? params.state : 'all'}
+          />
         )}
-
-        {companies.data.items.map((company) => {
-          const saturated = company.seatsInUse >= company.seats;
-          const expired =
-            company.subscriptionEndsAt !== null && Date.parse(company.subscriptionEndsAt) < Date.now();
-
-          return (
-            <Panel key={company.id} title={company.name} description={`${company.slug} · code ${company.code ?? '—'}`}>
-              <div className="flex flex-col gap-sq-4">
-                <div className="flex flex-wrap items-center justify-between gap-sq-2">
-                  <StatusPill
-                    tone={company.status === 'active' ? (saturated || expired ? 'attention' : 'ok') : 'danger'}
-                    label={
-                      company.status === 'active'
-                        ? saturated
-                          ? 'Every seat in use'
-                          : expired
-                            ? 'Subscription ended'
-                            : 'Active'
-                        : 'Suspended'
-                    }
-                  />
-                  <span className="text-sq-micro text-sq-ink-muted">
-                    Created {date(company.createdAt)}
-                  </span>
-                </div>
-
-                <div className="grid gap-sq-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Stat label="Seats" value={String(company.seats)} hint="Purchased" />
-                  <Stat
-                    label="In use"
-                    value={String(company.seatsInUse)}
-                    hint="Devices holding a seat"
-                    tone={saturated ? 'attention' : 'neutral'}
-                  />
-                  <Stat label="People" value={String(company.memberCount)} />
-                  <Stat label="Quotes" value={String(company.quoteCount)} />
-                </div>
-
-                <dl className="flex flex-col gap-sq-1 text-sq-body">
-                  <div className="flex justify-between gap-sq-2">
-                    <dt className="text-sq-micro text-sq-ink-muted">Subscription ends</dt>
-                    <dd>{company.subscriptionEndsAt === null ? 'No end date' : date(company.subscriptionEndsAt)}</dd>
-                  </div>
-                </dl>
-
-                {/* The two numbers a vendor sells, editable without leaving the directory. */}
-                {canEditLimits && (
-                  <CompanyLimits
-                    tenantId={company.id}
-                    seats={company.seats}
-                    seatsInUse={company.seatsInUse}
-                    subscriptionEndsAt={company.subscriptionEndsAt}
-                  />
-                )}
-
-                {/*
-                  Ending access. The API has had `PATCH /admin/companies/:id/status` and its
-                  seat-and-session revocation since the control plane was built, with no control
-                  anywhere — so the only way to suspend a customer was a request by hand. The
-                  capability is the same one that governs the company record itself.
-                */}
-                {canCreate && (
-                  <CompanyStatus
-                    tenantId={company.id}
-                    name={company.name}
-                    status={company.status}
-                    seatsInUse={company.seatsInUse}
-                  />
-                )}
-              </div>
-            </Panel>
-          );
-        })}
       </div>
     </ShellFrame>
   );

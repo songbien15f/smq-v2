@@ -85,13 +85,14 @@ export function CompanyStatus({ tenantId, name, status, seatsInUse }: CompanySta
     router.refresh();
   };
 
+  // "Danger zone" only while there is something dangerous to do; putting a company back is not.
   return (
     <Panel
-      title="Access"
+      title={suspended ? 'Access' : 'Danger zone'}
       description={
         suspended
           ? 'This company cannot sign in. Nothing has been deleted.'
-          : 'Ending access takes effect immediately, not at the next sign-in.'
+          : "Suspending ends this company's access immediately, not at the next sign-in."
       }
     >
       <div className="flex flex-col gap-sq-3">
@@ -138,6 +139,7 @@ export function CompanyStatus({ tenantId, name, status, seatsInUse }: CompanySta
             </Button>
           ) : (
             <Button
+              variant="destructive"
               loading={busy}
               disabled={confirmName.trim() !== name}
               onClick={() => void apply('suspended')}

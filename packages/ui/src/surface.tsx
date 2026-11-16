@@ -91,7 +91,7 @@ export function Stat({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-sq-micro text-sq-ink-muted">{label}</span>
-      <span className={`sq-numeric text-sq-title font-semibold ${valueColour}`}>{value}</span>
+      <span className={`sq-numeric text-left text-sq-title font-semibold ${valueColour}`}>{value}</span>
       {hint !== undefined && <span className="text-sq-micro text-sq-ink-muted">{hint}</span>}
     </div>
   );

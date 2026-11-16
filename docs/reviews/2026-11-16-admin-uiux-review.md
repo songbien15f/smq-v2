@@ -45,7 +45,9 @@ tách hành động phá huỷ ra khỏi màn hình danh sách.
 > - Chưa chạy `next build` production.
 >
 > Còn lại sau khi sửa: `Stat` đặt số căn phải, cách xa nhãn (do `.sq-numeric`). Số trong ô thống kê nên
-> căn trái; căn phải chỉ dành cho cột bảng.
+> căn trái; căn phải chỉ dành cho cột bảng. **Đã sửa cùng §2:** `packages/ui/src/surface.tsx` thêm
+> `text-left` cho giá trị của `Stat`. Ảnh hưởng cả các ô thống kê bên client (UsagePage, trang báo giá), đồng
+> nhất.
 
 **Triệu chứng nhìn thấy**
 - Nút "Sign in", "Save", "New company" dính sát chữ, không padding, chữ lệch trái.
@@ -88,6 +90,30 @@ Nên thêm cho cả client và site, để client không còn phụ thuộc vào
 ---
 
 ## 2. P0 — `/company`: danh sách bị biến thành form dài vô tận (V)
+
+> **ĐÃ SỬA 2026-11-16.**
+> - `/company` giờ là **bảng** (`components/CompanyTable.tsx`): hàng 36px, header dính, số căn phải, hàng
+>   xen màu. Cột: Công ty + slug · Code · Trạng thái (chữ + màu) · Seats dùng/mua · Người · Báo giá · Hết hạn
+>   · Open ›. Ô seats và ngày hết hạn đổi màu "attention" khi đầy / đã hết hạn. Chưa có thanh nhỏ cho seats.
+> - Ô tìm (tên / code / slug) và lọc **All · Needs attention · Active · Suspended**, mỗi nút có số đếm. Cả
+>   hai ghi vào URL (`?q=`, `?state=`), nên tải lại hoặc gửi link giữ nguyên view. Khi không có kết quả, câu
+>   thông báo nói rõ bộ lọc hay từ khoá đã thu hẹp về 0, kèm nút "Show every company".
+> - Logic trạng thái dùng chung ở `lib/companyState.ts` (suspended → đầy seat → hết hạn → active).
+> - **Trang chi tiết `/company/[id]`** (nhận id hoặc slug): Overview (4 Stat) · Seats and subscription
+>   (`CompanyLimits`) · Prices (link sang `/prices?company=…`) · Danger zone (`CompanyStatus`, nút
+>   `destructive`, vẫn phải gõ tên). Khi công ty đang suspended, tiêu đề là "Access" vì kích hoạt lại không
+>   nguy hiểm. Dùng các section xếp dọc, không dùng tab: ít mục, đọc một lượt.
+> - **"New company" ở trang riêng `/company/new`.** Huỷ = quay về `/company`. Tạo xong có nút "Open the
+>   company". Sửa luôn câu sai: trước đây nói có thể reset mật khẩu ở trang công ty, thực tế không có; giờ
+>   chỉ đúng đường "Forgot password" ở client (cần cấu hình mail).
+> - **Không làm phần Members:** API admin không có route đọc danh sách người của một công ty (chỉ có số
+>   đếm). Cần route mới trước (B2 của gap review).
+> - API cũng không có `GET /admin/companies/:id`, nên trang chi tiết đọc từ danh sách (`limit=200`, cùng
+>   trần với trang danh sách). Khi số công ty vượt mức đó thì nên thêm route đọc một công ty.
+> - **Chưa làm:** biến `/seats` thành view lọc sẵn. Hiện vẫn sửa seats được ở hai chỗ.
+> - Đã kiểm: typecheck admin pass; trên dev server, bảng, tìm, lọc, khôi phục từ URL, trang chi tiết (qua
+>   slug) và `/company/new` đều render, không lỗi hydration. Chưa chạy `next build` production, chưa tạo thử
+>   công ty thật qua form mới.
 
 **Hiện trạng** (`app/company/page.tsx:66-136`). Mỗi công ty là một `Panel` chứa:
 - pill trạng thái;
