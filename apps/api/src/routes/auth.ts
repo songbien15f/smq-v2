@@ -58,6 +58,9 @@ import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import * as rateLimit from '../lib/rateLimit.js';
 import { hashIp, hashToken } from '../lib/tokens.js';
 import { requireSession } from '../lib/guard.js';
+import { subscriptionEnded } from '../lib/company.js';
+
+const ENDED_MESSAGE = "This company's subscription has ended. Contact your account manager to renew it.";
 
 /** Cookie name. One name, so a second app on the same host cannot shadow it. */
 export const SESSION_COOKIE = 'sq_session';
@@ -148,14 +151,15 @@ async function loadMemberships(db: Db, userId: string): Promise<MembershipView[]
 export async function resolveSignIn(
   db: Db,
   input: { companyCode: string; username: string },
-): Promise<{ userId: string; tenantId: string; tenantStatus: string } | null> {
+): Promise<{ userId: string; tenantId: string; tenantStatus: string; subscriptionEndsAt: string | null } | null> {
   const row = await db.get<{
     user_id: string;
     tenant_id: string;
     tenant_status: string;
+    subscription_ends_at: string | null;
     disabled_at: string | null;
   }>(
-    `SELECT m.user_id, m.tenant_id, t.status AS tenant_status, u.disabled_at
+    `SELECT m.user_id, m.tenant_id, t.status AS tenant_status, t.subscription_ends_at, u.disabled_at
        FROM memberships m
        JOIN tenants t ON t.id = m.tenant_id
        JOIN users   u ON u.id = m.user_id
@@ -165,7 +169,12 @@ export async function resolveSignIn(
   );
 
   if (row === null || row.disabled_at !== null) return null;
-  return { userId: row.user_id, tenantId: row.tenant_id, tenantStatus: row.tenant_status };
+  return {
+    userId: row.user_id,
+    tenantId: row.tenant_id,
+    tenantStatus: row.tenant_status,
+    subscriptionEndsAt: row.subscription_ends_at,
+  };
 }
 
 export function registerAuth(
@@ -239,6 +248,10 @@ export function registerAuth(
     // their member, so the message leaks nothing a stranger could have used to enumerate codes.
     if (resolved.tenantStatus !== 'active') {
       return sendFail(reply, 'forbidden', 'This company is on hold. Contact your account manager.');
+    }
+    // Same rule, same reason for waiting until after the password: only a member learns it has ended.
+    if (subscriptionEnded(resolved.subscriptionEndsAt)) {
+      return sendFail(reply, 'forbidden', ENDED_MESSAGE);
     }
 
     return completeSignIn({ request, reply, userId: resolved.userId, tenantId: resolved.tenantId, perAccount });
@@ -535,7 +548,11 @@ export function registerAuth(
       return sendFail(
         reply,
         'forbidden',
-        'Every seat in this company is in use. Ask your company admin to free a device under Team → Devices.',
+        issued.reason === 'ended'
+          ? ENDED_MESSAGE
+          : issued.reason === 'inactive'
+            ? 'This company is on hold. Contact your account manager.'
+            : 'Every seat in this company is in use. Ask your company admin to free a device under Team → Devices.',
       );
     }
 

@@ -15,6 +15,19 @@
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
 
+/**
+ * Has this subscription ended? `null` means no end date, which never ends.
+ *
+ * The admin picks a day and stores its last second (local), so "ends 30 June" still works all of
+ * 30 June. The old licence server refused an expired company at its heartbeat (`CheckKey` answered
+ * `Expired`); this is the same rule, applied at sign-in and on every request of an open session.
+ */
+export function subscriptionEnded(endsAt: string | null | undefined, at: Date = new Date()): boolean {
+  if (endsAt === null || endsAt === undefined) return false;
+  const end = Date.parse(endsAt);
+  return Number.isFinite(end) && end <= at.getTime();
+}
+
 /** The one company, as the application needs it. */
 export interface Company {
   id: string;

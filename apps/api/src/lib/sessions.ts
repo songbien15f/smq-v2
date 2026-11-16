@@ -25,6 +25,7 @@ import { isPast, isUniqueViolation, newId, now, plusMs } from '@sq/db';
 import type { CompanyRole } from '@sq/contracts';
 import type { ApiConfig } from '../config.js';
 import { hashToken, newToken } from './tokens.js';
+import { subscriptionEnded } from './company.js';
 import {
   deviceLabel,
   looksLikeDeviceToken,
@@ -67,7 +68,7 @@ export type SeatOutcome =
        */
       deviceToken: string | null;
     }
-  | { ok: false; reason: 'no_seat' };
+  | { ok: false; reason: 'no_seat' | 'inactive' | 'ended' };
 
 /**
  * Create a session, claiming a seat for its device when one is needed.
@@ -102,7 +103,7 @@ export async function createSession(
           : claimAndInsert(tx, config, input),
       )
       .catch((error: unknown) => {
-        if (error instanceof SeatRefused) return { ok: false as const, reason: 'no_seat' as const };
+        if (error instanceof SeatRefused) return { ok: false as const, reason: error.reason };
         throw error;
       });
 
@@ -177,13 +178,15 @@ async function claimAndInsert(
   const tenantId = input.tenantId as string;
   const createdAt = now();
 
-  const tenant = await tx.get<{ seats: number }>(
-    'SELECT seats FROM tenants WHERE id = ? AND status = ?',
+  const tenant = await tx.get<{ seats: number; subscription_ends_at: string | null }>(
+    'SELECT seats, subscription_ends_at FROM tenants WHERE id = ? AND status = ?',
     [tenantId, 'active'],
   );
   // A suspended or missing tenant cannot claim a seat. Checked here as well as at sign-in so a tenant
-  // suspended mid-flight does not gain a session.
-  if (tenant === null) throw new SeatRefused('The company is not active.');
+  // suspended mid-flight does not gain a session. Every door that opens a company session (sign-in,
+  // invitation, password reset) comes through here, so this is where an ended subscription is refused.
+  if (tenant === null) throw new SeatRefused('inactive');
+  if (subscriptionEnded(tenant.subscription_ends_at)) throw new SeatRefused('ended');
 
   /*
    * Free the seats of dead devices **inside this transaction**, before looking for a slot. Doing it
@@ -245,8 +248,8 @@ async function claimAndInsert(
 
 /** Internal signal: the transaction must roll back. */
 class SeatRefused extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(readonly reason: 'no_seat' | 'inactive' | 'ended') {
+    super(reason);
     this.name = 'SeatRefused';
   }
 }
@@ -295,6 +298,7 @@ export async function resolveSession(
     platform_role: string | null;
     user_disabled_at: string | null;
     tenant_status: string | null;
+    tenant_ends_at: string | null;
     tenant_code: string | null;
     role: string | null;
     membership_status: string | null;
@@ -305,7 +309,7 @@ export async function resolveSession(
             s.device_id, d.revoked_at AS device_revoked_at,
             t.code AS tenant_code, u.email, u.display_name, u.must_change_password, u.platform_role,
             u.disabled_at AS user_disabled_at,
-            t.status AS tenant_status,
+            t.status AS tenant_status, t.subscription_ends_at AS tenant_ends_at,
             m.role, m.status AS membership_status
        FROM sessions s
        JOIN users u ON u.id = s.user_id
@@ -330,6 +334,9 @@ export async function resolveSession(
   // now, so a removal or a suspension takes effect on this request, not the next one.
   if (row.tenant_id !== null) {
     if (row.tenant_status !== 'active') return null;
+    // An ended subscription stops an open session too, as a suspension does: otherwise a browser left
+    // signed in would go on working past the end date for up to a week.
+    if (subscriptionEnded(row.tenant_ends_at)) return null;
     if (row.membership_status !== 'active') return null;
     if (row.role === null) return null;
     /*

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
-import { count, DataTable, date, dateTime, Panel, Stat, StatusPill, type StatusTone } from '@sq/ui';
+import { BrandMark, count, DataTable, date, dateTime, Panel, Stat, StatusPill, type StatusTone } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { companyState } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
@@ -69,18 +69,24 @@ export default async function AdminHomePage() {
   // role would otherwise get a page of sections the API refuses, which reads as broken rather than as
   // "not your screen".
   if (!session.ok || session.data.platformRole === null) {
+    // A white card on navy, not the app shell: this is the vendor's internal door, and it should not
+    // look like the customer editor's sign-in (company code + username), which staff also use.
     return (
-      <ShellFrame>
-        <div className="mx-auto flex max-w-sm flex-col gap-sq-4 py-sq-8">
-          <div>
-            <h1 className="text-sq-title font-semibold">Administration</h1>
-            <p className="mt-1 text-sq-body text-sq-ink-muted">
-              For the vendor&apos;s own staff: the companies, their seats, price books and templates.
-            </p>
-          </div>
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-sq-4 bg-sq-brand px-sq-3 py-sq-8">
+        <div className="sq-on-brand flex items-center gap-sq-2">
+          <BrandMark size={28} tone="brand" title="" />
+          <span className="text-sq-title font-semibold text-white">SmartQuote</span>
+          <span className="text-sq-micro font-medium uppercase tracking-wide text-sq-gold">licence</span>
+        </div>
+        <div className="w-full max-w-sm rounded-lg bg-sq-surface p-sq-4 shadow-lg">
+          <h1 className="text-sq-title font-semibold text-sq-ink">Sign in to administration</h1>
+          <p className="mt-1 mb-sq-3 text-sq-body text-sq-ink-muted">
+            For the vendor&apos;s own staff. Use your vendor email address — a company&apos;s sign-in
+            (company code and username) does not work here.
+          </p>
           <SignInForm next="/" />
         </div>
-      </ShellFrame>
+      </main>
     );
   }
 

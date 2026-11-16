@@ -17,7 +17,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Field, Panel } from '@sq/ui';
+import { Button, date, Field, Panel } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 export interface CompanyLimitsProps {
@@ -27,19 +27,29 @@ export interface CompanyLimitsProps {
   subscriptionEndsAt: string | null;
 }
 
-/** An ISO instant as the `datetime-local` input wants it, or `''`. */
-function toLocalInput(iso: string | null): string {
+/**
+ * An ISO instant as the `date` input wants it (`YYYY-MM-DD`, local), or `''`.
+ *
+ * A subscription is sold by the day, so the screen asks for a date, not a time. A `datetime-local`
+ * input also rendered in the browser's own order (`mm/dd/yyyy --:-- --` on a US-configured browser)
+ * inside an `en-AU` app.
+ */
+function toDateInput(iso: string | null): string {
   if (iso === null) return '';
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return '';
-  // `toISOString` is UTC; the input is local, so the offset has to be removed deliberately.
-  const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+}
+
+/** The last moment of a picked day, local time: "ends 30 June" means it still works on 30 June. */
+function endOfDay(day: string): string {
+  return new Date(`${day}T23:59:59`).toISOString();
 }
 
 export function CompanyLimits({ tenantId, seats, seatsInUse, subscriptionEndsAt }: CompanyLimitsProps) {
   const [seatValue, setSeatValue] = useState(String(seats));
-  const [endsAt, setEndsAt] = useState(toLocalInput(subscriptionEndsAt));
+  const [endsAt, setEndsAt] = useState(toDateInput(subscriptionEndsAt));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'danger'; text: string } | null>(null);
 
@@ -59,7 +69,7 @@ export function CompanyLimits({ tenantId, seats, seatsInUse, subscriptionEndsAt 
       body: {
         seats: parsedSeats,
         // An empty input means "no end date", which is a value the API accepts explicitly.
-        subscriptionEndsAt: endsAt === '' ? null : new Date(endsAt).toISOString(),
+        subscriptionEndsAt: endsAt === '' ? null : endOfDay(endsAt),
       },
     });
 
@@ -91,10 +101,12 @@ export function CompanyLimits({ tenantId, seats, seatsInUse, subscriptionEndsAt 
           <Field
             id="limits-ends"
             label="Subscription ends"
-            type="datetime-local"
+            type="date"
             value={endsAt}
             onChange={(event) => setEndsAt(event.target.value)}
-            hint="Leave empty for no end date."
+            // The picker draws the date in the browser's own order (a US browser shows mm/dd/yyyy), so
+            // the hint repeats it in the app's format — 03/04 must not be read two ways.
+            hint={endsAt === '' ? 'No end date. Pick a day to set one.' : `Ends at the end of ${date(endOfDay(endsAt))}.`}
           />
         </div>
 

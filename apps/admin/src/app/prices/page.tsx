@@ -5,6 +5,8 @@ import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
 import { PriceOverridesPanel } from '@/components/PriceOverridesPanel';
+import { CompanyPicker } from '@/components/CompanyPicker';
+import { companyLabel } from '@/lib/companyState';
 
 export const metadata: Metadata = { title: 'Company prices' };
 
@@ -14,8 +16,7 @@ export const metadata: Metadata = { title: 'Company prices' };
  * The price list import writes these rows; until this screen nothing could read them back, and until
  * the evaluate route was wired they did not affect a quote either. Both halves exist now.
  *
- * With exactly one company on this installation the picker is a single entry, but the page takes the
- * company from the URL so a vendor with more than one does not need a different page.
+ * The company comes from the URL (`?company=<id or slug>`), so the company page can link straight here.
  */
 interface Version {
   id: string;
@@ -32,7 +33,7 @@ export default async function PricesPage({ searchParams }: { searchParams: Promi
   if (!session.ok) redirect('/');
 
   const params = await searchParams;
-  const companies = await serverFetch<Page<{ id: string; name: string; slug: string }>>('/admin/companies?limit=200');
+  const companies = await serverFetch<Page<{ id: string; name: string; slug: string; code: string | null }>>('/admin/companies?limit=200');
   const list = companies.ok ? companies.data.items : [];
 
   // The named company, or the first one. A URL that names a company that does not exist falls back
@@ -54,30 +55,12 @@ export default async function PricesPage({ searchParams }: { searchParams: Promi
           <p className="text-sq-body text-sq-ink-muted">
             {selected === undefined
               ? 'Each company’s own prices, applied over the shared book.'
-              : `${selected.name}’s own prices, applied over the shared book.`}
+              : `${companyLabel(selected)}: its own prices, applied over the shared book.`}
           </p>
         </div>
 
         {list.length > 1 && (
-          <nav aria-label="Companies">
-            <ul className="flex flex-wrap gap-sq-2">
-              {list.map((entry) => (
-                <li key={entry.id}>
-                  <a
-                    href={`/prices?company=${encodeURIComponent(entry.id)}`}
-                    className={[
-                      'inline-flex min-h-11 items-center rounded-md border px-sq-2 text-sq-body no-underline',
-                      entry.id === selected?.id
-                        ? 'border-sq-brand bg-sq-brand text-white'
-                        : 'border-sq-line bg-sq-surface text-sq-ink hover:bg-sq-ground',
-                    ].join(' ')}
-                  >
-                    {entry.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <CompanyPicker action="/prices" companies={list} selectedId={selected?.id} />
         )}
 
         {selected === undefined ? (

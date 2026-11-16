@@ -52,3 +52,11 @@ export function matchesCompanyFilter(company: CompanyRow, filter: CompanyFilter)
   if (filter === 'active') return company.status === 'active';
   return companyState(company).needsAttention;
 }
+
+/**
+ * "Name (CODE)" — how a company is named in every picker. Two companies can share a trading name;
+ * the code is unique, so it is what tells them apart.
+ */
+export function companyLabel(company: { name: string; code: string | null }): string {
+  return company.code === null ? company.name : `${company.name} (${company.code})`;
+}

@@ -72,14 +72,8 @@ export function SignInForm({ next }: { next?: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex w-full max-w-sm flex-col gap-sq-3" noValidate>
-      <div>
-        <h1 className="text-sq-title font-semibold">Sign in</h1>
-        <p className="mt-1 text-sq-body text-sq-ink-muted">
-          Sign in with your vendor email address.
-        </p>
-      </div>
-
+    // The page owns the heading: one `h1` per screen, so the form does not bring a second one.
+    <form onSubmit={submit} className="flex w-full flex-col gap-sq-3" noValidate>
       {error !== null && (
         <div
           role="alert"

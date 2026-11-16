@@ -14,12 +14,19 @@
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '@sq/db';
 import { newId, now } from '@sq/db';
-import { companyLimitsRequest, companyStatusRequest, createCompanyRequest, type CompanyRow } from '@sq/contracts';
+import {
+  companyLimitsRequest,
+  companyStatusRequest,
+  createCompanyRequest,
+  type AdminCompanyPeopleView,
+  type CompanyRow,
+} from '@sq/contracts';
 import { pageQuery, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requirePlatformCapability } from '../lib/guard.js';
 import { hashPassword } from '../lib/password.js';
 import { newToken } from '../lib/tokens.js';
 import { createCompany } from '../lib/company.js';
+import { deviceLabel, listDevices, revokeDevice } from '../lib/devices.js';
 import type { ApiConfig } from '../config.js';
 
 /** Write one audit row. Called inside the same transaction as the change it records. */
@@ -283,6 +290,138 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
 
     return sendOk(reply, { seats: body.seats ?? null, subscriptionEndsAt: body.subscriptionEndsAt ?? null });
   });
+
+  // ---------------------------------------------------------------- one company's people
+
+  /**
+   * Who belongs to a company, which browsers hold its seats, and who signed in lately.
+   *
+   * The desktop licence server let the vendor see every key a company held and its sign-in history.
+   * Without the same here, "we are out of seats" could only be answered by the customer's own
+   * administrator. Read-only, so it needs `platform:companies` — support staff can look.
+   */
+  app.get<{ Params: { tenantId: string } }>('/admin/companies/:tenantId/people', async (request, reply) => {
+    const session = requirePlatformCapability(request, reply, 'platform:companies');
+    if (session === null) return;
+
+    const tenantId = request.params.tenantId;
+    const tenant = await db.get<{ seats: number }>('SELECT seats FROM tenants WHERE id = ?', [tenantId]);
+    if (tenant === null) return sendFail(reply, 'not_found', 'That company does not exist.');
+
+    const [members, devices, signIns] = await Promise.all([
+      db.all<{
+        user_id: string;
+        display_name: string;
+        username: string | null;
+        email: string;
+        role: string;
+        status: string;
+        last_sign_in_at: string | null;
+      }>(
+        `SELECT m.user_id, u.display_name, m.username, u.email, m.role, m.status,
+                (SELECT MAX(s.created_at) FROM sessions s
+                  WHERE s.user_id = m.user_id AND s.tenant_id = m.tenant_id) AS last_sign_in_at
+           FROM memberships m
+           JOIN users u ON u.id = m.user_id
+          WHERE m.tenant_id = ?
+          ORDER BY CASE WHEN m.status = 'active' THEN 0 ELSE 1 END, u.display_name`,
+        [tenantId],
+      ),
+      listDevices(db, tenantId),
+      db.all<{
+        id: string;
+        created_at: string;
+        display_name: string;
+        username: string | null;
+        user_agent: string | null;
+        revoked_at: string | null;
+        expires_at: string;
+      }>(
+        `SELECT s.id, s.created_at, u.display_name, m.username, s.user_agent, s.revoked_at, s.expires_at
+           FROM sessions s
+           JOIN users u ON u.id = s.user_id
+           LEFT JOIN memberships m ON m.tenant_id = s.tenant_id AND m.user_id = s.user_id
+          WHERE s.tenant_id = ?
+          ORDER BY s.created_at DESC
+          LIMIT 25`,
+        [tenantId],
+      ),
+    ]);
+
+    const at = now();
+    const view: AdminCompanyPeopleView = {
+      seats: Number(tenant.seats),
+      seatsInUse: devices.filter((device) => device.holdsSeat).length,
+      members: members.map((row) => ({
+        userId: row.user_id,
+        displayName: row.display_name,
+        username: row.username ?? '',
+        email: row.email,
+        role: row.role,
+        status: row.status,
+        lastSignInAt: row.last_sign_in_at,
+      })),
+      devices: devices.map((device) => ({
+        id: device.id,
+        userDisplayName: device.userDisplayName,
+        username: device.username,
+        label: device.label,
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeenAt,
+        holdsSeat: device.holdsSeat,
+      })),
+      recentSignIns: signIns.map((row) => ({
+        id: row.id,
+        at: row.created_at,
+        userDisplayName: row.display_name,
+        username: row.username ?? '',
+        label: deviceLabel(row.user_agent),
+        // ISO-8601 strings in UTC compare correctly as text.
+        state: row.revoked_at === null && row.expires_at > at ? 'active' : 'ended',
+      })),
+    };
+    return sendOk(reply, view);
+  });
+
+  /**
+   * Free one device's seat on the company's behalf — the vendor's "remove key".
+   *
+   * Same effect as the company administrator's Team → Devices → Free seat: the device's sessions end
+   * on their next request and the seat is free at once. A change to what the customer paid for, so it
+   * needs `platform:seats`, and it is audited.
+   */
+  app.delete<{ Params: { tenantId: string; deviceId: string } }>(
+    '/admin/companies/:tenantId/devices/:deviceId',
+    async (request, reply) => {
+      const session = requirePlatformCapability(request, reply, 'platform:seats');
+      if (session === null) return;
+
+      const { tenantId, deviceId } = request.params;
+      const device = await db.get<{ label: string; display_name: string; code: string | null }>(
+        `SELECT d.label, u.display_name, t.code
+           FROM devices d
+           JOIN users u ON u.id = d.user_id
+           JOIN tenants t ON t.id = d.tenant_id
+          WHERE d.id = ? AND d.tenant_id = ? AND d.revoked_at IS NULL`,
+        [deviceId, tenantId],
+      );
+      if (device === null) return sendFail(reply, 'not_found', 'That device is not signed in to this company.');
+
+      const revoked = await revokeDevice(db, { tenantId, deviceId });
+      if (!revoked) return sendFail(reply, 'not_found', 'That device is not signed in to this company.');
+
+      await audit(db, {
+        actorId: session.userId,
+        actorEmail: session.email,
+        action: 'device.revoked',
+        targetType: 'device',
+        targetId: deviceId,
+        summary: `Freed the seat of ${device.display_name}'s ${device.label} in company ${device.code ?? tenantId}.`,
+      });
+
+      return sendOk(reply, { revoked: deviceId });
+    },
+  );
 
   // ---------------------------------------------------------------- audit
   app.get('/admin/audit', async (request, reply) => {

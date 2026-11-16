@@ -315,6 +315,13 @@ Bảng ở `audit/page.tsx`, `SeatManager`, `PriceBookManager`, `PriceOverridesP
 
 ## 7. P2 — Form và lựa chọn
 
+> **ĐÃ SỬA 2026-11-16.**
+> - **Chọn công ty** (`components/CompanyPicker.tsx`, mới): `/prices` dùng select thay cho hàng chip. Mỗi option là "Tên (CODE)" qua `companyLabel()` (`lib/companyState.ts`). Chọn là chuyển trang ngay (`?company=<id>`), có nút Show trong `<noscript>`. Mô tả panel cũng hiện "Tên (CODE)".
+> - **`/seats` chỉ đọc** (theo cách (a)): bỏ ô Seats và nút Save trên từng hàng. Có hai chip lọc "Needs attention" / "All" (`?show=attention`), sắp theo độ gấp, và mỗi hàng có link "Change seats" tới `/company/<id>#limits`. Anchor có `scroll-mt-20` để không bị topbar che.
+> - **`CompanyLimits`** dùng `type="date"`, lưu là cuối ngày theo giờ máy (`endOfDay`). Hint lặp lại ngày bằng `date()` ("Ends at the end of 04 Mar 2027."), vì ô date vẫn vẽ theo thứ tự của trình duyệt.
+> - **Sign-in admin**: một card trắng trên nền navy, chỉ một h1 "Sign in to administration". `SignInForm` không còn heading riêng.
+> - **Đã kiểm:** `/seats` không còn input nào, chip lọc đúng, empty state đúng, không tràn ngang. `#limits` cuộn tới đúng chỗ. Select `/prices` hiện đúng hai "Demo Sheds Pty Ltd (DEMOSHEDS)" / "(E2ESHEDS)" và đổi được công ty. Trang sign-in chỉ có một h1.
+
 - Select công ty ở `/prices` và Template chỉ hiện tên. Có **hai** "Demo Sheds Pty Ltd" (code DEMOSHEDS và
   E2ESHEDS) không phân biệt được trong `/prices`. Luôn hiện "Tên (CODE)", như Template catalogue đã làm.
 - Bảng `/seats`: ô Seats và nút Save trên **mỗi hàng**. Sửa 3 công ty là 3 lần Save, và không biết hàng nào
@@ -325,6 +332,45 @@ Bảng ở `audit/page.tsx`, `SeatManager`, `PriceBookManager`, `PriceOverridesP
   Subscription chỉ cần **ngày**; dùng `type="date"` và hiển thị bằng formatter `date()`.
 - Sign-in admin: tiêu đề "Administration" rồi lại "Sign in" là hai heading chồng nhau. Gộp lại, và đặt
   form trong một card trắng giữa nền navy cho rõ đây là cổng nội bộ.
+
+---
+
+## 7b. So sánh với admin v1 (`smq-code-license/Web/SmartQuoteMgmt`)
+
+v1 là ASP.NET Core MVC, có hai vai trò ADMIN/MANAGER, đăng nhập bằng mã công ty. Đường dẫn bên dưới tính từ `SmartQuote.LicenseMgmt/`. Các file cấu hình/credential của v1 không được mở.
+
+### Thiếu ở v2 — ĐÃ BỔ SUNG 2026-11-16
+
+1. **Hạn thuê bao không được thực thi.** `subscription_ends_at` chỉ được lưu và hiển thị; công ty hết hạn vẫn đăng nhập và làm việc bình thường. v1 chặn ở hai chỗ: `Auth/DesktopSignedRequestAuth.cs:68` ("Company subscription expired.") và `Controllers/AuthenticationController.cs:85` (trả `EAuthenticationStatus.Expired`).
+   - **v2 bây giờ:** `subscriptionEnded()` (`apps/api/src/lib/company.ts:25`).
+   - `/auth/sign-in` trả 403 với câu "This company's subscription has ended…".
+   - `claimAndInsert` (`lib/sessions.ts`) từ chối cấp seat với lý do `ended`, nên đường đăng nhập nào cũng bị chặn, không chỉ một route.
+   - `resolveSession` trả null khi đã hết hạn, nên một tab đang mở cũng dừng ở request kế tiếp. Không phải đợi phiên tự hết.
+   - Gia hạn ngày lại thì phiên cũ dùng được tiếp, vì không phiên nào bị revoke.
+2. **Vendor không thấy người, thiết bị và lịch sử đăng nhập của một công ty.** v1 có `AccountController.Keys` (`Controllers/AccountController.cs:71`: máy, user, phiên bản, ngày xác thực), `RemoveSerialKey` (`:204`) và `UserHistoryController` (`Controllers/UserHistoryController.cs:19-57`). v2 chỉ có số đếm.
+   - **API:** `GET /admin/companies/:tenantId/people` (`platform:companies`, nên support cũng xem được) trả members, devices, seats và 25 lần đăng nhập gần nhất. `DELETE /admin/companies/:tenantId/devices/:deviceId` (`platform:seats`) dùng lại `revokeDevice` và ghi audit `device.revoked`.
+   - **Contract:** `AdminCompanyPeopleView` (`packages/contracts/src/auth.ts`).
+   - **UI:** trang công ty có ba bảng mới: Devices (nút "Free seat" hỏi hai lần), People, Recent sign-ins (`components/CompanyPeople.tsx`).
+   - **Đã kiểm:**
+     - typecheck api và admin pass;
+     - 5 công ty trả đúng số thiết bị và thành viên;
+     - công ty hoặc thiết bị không tồn tại trả 404;
+     - nút Free seat → "Sign out and free" / Cancel hoạt động, không tràn ngang.
+   - **Chưa kiểm:** bấm giải phóng thật. Hai thiết bị đang có là phiên e2e đã lưu và phiên dev của người dùng, nên không đụng tới. Route dùng đúng `revokeDevice` mà Team → Devices của công ty vẫn dùng. Luồng đăng nhập khi hết hạn cũng chưa chạy end-to-end; mới kiểm hàm `subscriptionEnded` với 5 trường hợp.
+
+### Còn thiếu — để sau
+
+- **Vendor sửa thông tin công ty**: tên, email, địa chỉ, điện thoại, ghi chú nội bộ. v1 có ở `AccountController.Edit` (`:648`, `:771`). v2 chỉ có tạo, trạng thái, seat và ngày hết hạn; công ty tự sửa tên, ABN, địa chỉ, điện thoại, email qua `PATCH /settings` (`apps/api/src/routes/settings.ts:36`, `:150`). Cần thêm `PATCH` cho các field này và một cột ghi chú chỉ vendor thấy (migration mới).
+- **CRUD loại template**: v2 có trạng thái và loại template nhưng chưa có màn sửa danh sách loại.
+
+### Không chuyển sang — có lý do
+
+- **Xoá cứng công ty** (`AccountController.DeleteCompany`, `:993`). v2 cố ý dùng Suspend kèm audit, để không mất báo giá và lịch sử.
+- **Gán salesman ShedSafe cho từng key** (`:234-297`). Ở v2 một seat là trình duyệt chứ không phải người. Việc nối ShedSafe nằm phía công ty (`apps/api/src/lib/shedsafe.ts`).
+- **Số ngày tới lần xác thực lại, bật/tắt key end-user** (`:124`, `:142`). v2 thay bằng thiết bị nhàn rỗi `DEVICE_IDLE_DAYS` (D3) và revoke thiết bị.
+- **Quản lý version/DB/link bản desktop** (`VersionMgmt*Controller.cs`). Chỉ dùng cho bản cài desktop; v2 có Releases.
+- **ForgotPwd gửi mật khẩu dạng thô qua email** (`AccountController.cs:936`). Không an toàn. v2 dùng link reset (`/auth/reset/request`).
+- **Buildings** (`BuildingManagementController.cs`, `InternalBuildingController.cs`): code chết, không có view.
 
 ---
 

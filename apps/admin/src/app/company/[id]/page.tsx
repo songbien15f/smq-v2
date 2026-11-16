@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import type { CompanyRow, Page, SessionView } from '@sq/contracts';
+import type { AdminCompanyPeopleView, CompanyRow, Page, SessionView } from '@sq/contracts';
 import { ActionLink, date, Panel, Stat, StatusPill } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { companyState } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
 import { CompanyLimits } from '@/components/CompanyLimits';
 import { CompanyStatus } from '@/components/CompanyStatus';
+import { CompanyPeople } from '@/components/CompanyPeople';
 
 /**
  * One company.
@@ -21,7 +22,8 @@ import { CompanyStatus } from '@/components/CompanyStatus';
  * shape once there are more companies than that; until then this keeps the two pages showing the same
  * numbers. The URL accepts the slug as well as the id, so a link typed by hand works.
  *
- * Members are not listed: the admin API has no route that reads one company's people (only the count).
+ * Below the limits: its devices (with "free seat" for `platform:seats`), its members and its recent
+ * sign-ins — the vendor-side view the desktop licence server had as keys and authentication history.
  */
 /** The company's name in the tab, so three open companies are three tabs a person can tell apart. */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -72,6 +74,9 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const company = companies.data.items.find((entry) => entry.id === wanted || entry.slug === wanted);
   if (company === undefined) notFound();
 
+  const people = await serverFetch<AdminCompanyPeopleView>(
+    `/admin/companies/${encodeURIComponent(company.id)}/people`,
+  );
   const state = companyState(company);
   const canCreate = session.data.capabilities.includes('platform:companies');
   const canEditLimits = session.data.capabilities.includes('platform:seats');
@@ -107,18 +112,29 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
         </div>
       </Panel>
 
-      {canEditLimits ? (
-        <CompanyLimits
-          tenantId={company.id}
-          seats={company.seats}
-          seatsInUse={company.seatsInUse}
-          subscriptionEndsAt={company.subscriptionEndsAt}
-        />
+      {/* `/seats` links here with #limits. scroll-mt clears the sticky top bar. */}
+      <div id="limits" className="scroll-mt-20">
+        {canEditLimits ? (
+          <CompanyLimits
+            tenantId={company.id}
+            seats={company.seats}
+            seatsInUse={company.seatsInUse}
+            subscriptionEndsAt={company.subscriptionEndsAt}
+          />
+        ) : (
+          <Panel title="Seats and subscription">
+            <p className="text-sq-body text-sq-ink-muted">
+              Changing seats or the end date needs the seats capability.
+            </p>
+          </Panel>
+        )}
+      </div>
+
+      {people.ok ? (
+        <CompanyPeople tenantId={company.id} view={people.data} canFreeSeats={canEditLimits} />
       ) : (
-        <Panel title="Seats and subscription">
-          <p className="text-sq-body text-sq-ink-muted">
-            Changing seats or the end date needs the seats capability.
-          </p>
+        <Panel title="People and devices">
+          <p className="text-sq-body text-sq-danger">{people.message}</p>
         </Panel>
       )}
 

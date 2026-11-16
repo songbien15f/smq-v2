@@ -97,6 +97,40 @@ export interface DeviceListView {
 }
 
 /**
+ * The vendor's view of one company's people: who belongs to it, which browsers hold its seats, and
+ * who signed in lately (`GET /admin/companies/:tenantId/people`).
+ *
+ * The desktop licence server showed the vendor every key a company held and its authentication
+ * history; without this, a customer ringing to say "we are out of seats" could not be helped from the
+ * vendor's side. It is read across a tenant by platform staff only, so it carries no `current` flag.
+ */
+export interface AdminCompanyPeopleView {
+  seats: number;
+  seatsInUse: number;
+  members: Array<{
+    userId: string;
+    displayName: string;
+    username: string;
+    email: string;
+    role: string;
+    status: string;
+    /** Newest session this person opened in the company, or null if they never signed in. */
+    lastSignInAt: string | null;
+  }>;
+  devices: Array<Omit<DeviceView, 'current'>>;
+  /** The newest sessions in the company, newest first (at most 25). */
+  recentSignIns: Array<{
+    id: string;
+    at: string;
+    userDisplayName: string;
+    username: string;
+    label: string;
+    /** `active` until it is revoked or expires. */
+    state: 'active' | 'ended';
+  }>;
+}
+
+/**
  * Who the caller is.
  *
  * `capabilities` is derived from `role` by the server and never trusted from a
