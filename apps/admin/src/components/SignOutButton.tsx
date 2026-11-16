@@ -13,7 +13,6 @@ export function SignOutButton() {
     <Button
       variant="ghost"
       loading={busy}
-      className="text-white hover:bg-sq-brand-hover"
       onClick={async () => {
         setBusy(true);
         try {

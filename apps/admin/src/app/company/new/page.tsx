@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { CompanyCreator } from '@/components/CompanyCreator';
+
+export const metadata: Metadata = { title: 'New company' };
 
 /**
  * Creating a company, on a page of its own.
@@ -20,7 +22,7 @@ export default async function NewCompanyPage() {
   const canCreate = session.data.capabilities.includes('platform:companies');
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/company">
+    <ShellFrame session={session.data} current="/company">
       <div className="flex max-w-3xl flex-col gap-sq-4">
         <a href="/company" className="w-fit text-sq-body text-sq-ink-muted no-underline hover:text-sq-ink">
           ‹ Companies

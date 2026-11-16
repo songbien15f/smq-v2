@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { SeatManager } from '@/components/SeatManager';
+
+export const metadata: Metadata = { title: 'Seats' };
 
 /**
  * Seats across every company.
@@ -19,7 +21,7 @@ export default async function SeatsPage() {
   const companies = await serverFetch<Page<CompanyRow>>('/admin/companies?limit=200');
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/seats">
+    <ShellFrame session={session.data} current="/seats">
       <div className="flex flex-col gap-sq-4">
         <div>
           <h1 className="text-sq-title font-semibold">Seats</h1>

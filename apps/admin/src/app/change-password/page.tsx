@@ -1,9 +1,11 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { SessionView } from '@sq/contracts';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
+
+export const metadata: Metadata = { title: 'Change password' };
 
 /**
  * Choosing a password.
@@ -17,7 +19,7 @@ export default async function ChangePasswordPage() {
   if (!session.ok) redirect('/');
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities}>
+    <ShellFrame session={session.data} current="/change-password">
       <div className="flex flex-col gap-sq-4">
         <div>
           <h1 className="text-sq-title font-semibold">Choose a password</h1>

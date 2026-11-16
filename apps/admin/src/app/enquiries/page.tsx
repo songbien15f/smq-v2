@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { Page, SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { EnquiryList, type Enquiry } from '@/components/EnquiryList';
+
+export const metadata: Metadata = { title: 'Enquiries' };
 
 /**
  * The enquiry queue.
@@ -21,8 +23,7 @@ export default async function EnquiriesPage() {
 
   return (
     <ShellFrame
-      account={<SignOutButton />}
-      capabilities={session.data.capabilities}
+      session={session.data}
       current="/enquiries"
     >
       <div className="flex flex-col gap-sq-4">

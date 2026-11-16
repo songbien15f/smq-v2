@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { Page, SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { PriceOverridesPanel } from '@/components/PriceOverridesPanel';
+
+export const metadata: Metadata = { title: 'Company prices' };
 
 /**
  * A company's own prices.
@@ -45,7 +47,7 @@ export default async function PricesPage({ searchParams }: { searchParams: Promi
         );
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/prices">
+    <ShellFrame session={session.data} current="/prices">
       <div className="flex flex-col gap-sq-4">
         <div>
           <h1 className="text-sq-title font-semibold">Prices</h1>

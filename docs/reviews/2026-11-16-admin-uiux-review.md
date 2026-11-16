@@ -147,6 +147,34 @@ Với 5 công ty, trang dài khoảng 5 màn hình. Không có tìm kiếm, lọ
 
 ## 3. P1 — Khung: thiếu tổng quan, nav ngang không mở rộng được (V)
 
+> **ĐÃ SỬA 2026-11-16.**
+> - **Sidebar navy 240px** (`components/ShellFrame.tsx`), chia nhóm: (không nhóm) Overview · **Customers**
+>   Companies, Seats, Enquiries · **Prices** Price books, Company prices · **System** Usage, Audit. Mục đang
+>   mở có vạch vàng bên trái, nền sáng hơn và chữ đậm hơn, nên không chỉ dựa vào màu. Mục nào role không có
+>   capability thì bị ẩn; nhóm rỗng thì ẩn luôn tiêu đề nhóm.
+> - **Dưới 1024px**, sidebar biến thành drawer (`components/NavDrawer.tsx`), mở bằng nút menu trên topbar.
+>   Dùng `<dialog>` + `showModal()` để có sẵn focus trap, phím Escape và làm trơ phần nền phía sau. Ở 580px
+>   header còn 48px (trước khoảng 190px) và trang không cuộn ngang.
+> - **Topbar trắng 48px**, dính khi cuộn: breadcrumb ("Customers › Companies"), tên + vai trò, "Change
+>   password", "Sign out". Không làm menu thả xuống: chỉ có hai hành động, để thẳng nhanh hơn.
+> - Icon SVG 24×24, nét 1.75 (`components/NavIcons.tsx`), không dùng emoji.
+> - **Trang `/` Overview** thay cho redirect (đăng nhập xong và đổi mật khẩu xong đều về `/`):
+>   - 4 Stat: công ty active / tổng; seats dùng / mua (toàn hệ thống); enquiries chưa xử lý; book đang
+>     active (8 ký tự hash, loại, ngày publish).
+>   - "Needs attention", mức nặng nhất lên trước, mỗi dòng dẫn tới trang sửa: công ty hết seat; subscription
+>     đã hết hạn; subscription hết hạn trong 30 ngày; enquiry chờ hơn 2 ngày; không có book nào active.
+>   - 10 dòng audit gần nhất, kèm link sang `/audit`.
+>   - Mỗi phần chỉ gọi API nếu role có capability tương ứng (support không có `platform:pricebooks` nên không
+>     thấy ô price book). Phần nào lỗi thì báo một dòng, các phần còn lại vẫn hiện.
+> - **Tên tab riêng cho từng trang**: "Companies · SmartQuote admin". Trang chi tiết dùng tên công ty
+>   ("Demo Sheds Pty Ltd · SmartQuote admin"). Trang `/` phải ghi tên đầy đủ (`title.absolute`), vì template
+>   của layout chỉ áp cho segment con.
+> - **Chưa làm:** thu sidebar còn 64px chỉ icon (thêm state và chỗ lưu, lợi ích nhỏ khi đã có drawer). Mục
+>   Templates/Releases chưa có trang riêng; vẫn nằm trong Usage (§5).
+> - Đã kiểm: typecheck admin pass. Trên dev server: 1440px và 580px, drawer mở/đóng, mọi trang trả 200 với
+>   đúng tên tab, không lỗi hydration ở các trang đã mở; trang đăng nhập (không cookie) chỉ có thanh brand.
+>   Chưa chạy `next build`, chưa thử bằng tài khoản platform_support.
+
 **Hiện trạng** (`components/ShellFrame.tsx:56-91`)
 - Header navy chứa logo + 7 link + Sign out, `flex-wrap`.
 - Ở bề rộng pane khoảng 580px, nav wrap thành **3 hàng** và "Sign out" đứng một mình một hàng. Header chiếm

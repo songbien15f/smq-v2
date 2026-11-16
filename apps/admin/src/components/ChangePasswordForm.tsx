@@ -50,7 +50,7 @@ export function ChangePasswordForm() {
       return;
     }
 
-    router.push('/company');
+    router.push('/');
     router.refresh();
   }
 

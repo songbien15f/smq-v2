@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { PlatformPage } from '@/components/PlatformPage';
+
+export const metadata: Metadata = { title: 'Usage' };
 
 /**
  * Usage, releases and the template catalogue.
@@ -71,7 +73,7 @@ export default async function PlatformRoute() {
   const forbidden = [usage, releases, templates].every((result) => !result.ok && result.code === 'forbidden');
   if (forbidden) {
     return (
-      <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/platform">
+      <ShellFrame session={session.data} current="/platform">
         <Panel title="Not available to your role">
           <p className="text-sq-body text-sq-ink-muted">
             Usage, releases and templates need a platform role with audit or template access.
@@ -82,7 +84,7 @@ export default async function PlatformRoute() {
   }
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/platform">
+    <ShellFrame session={session.data} current="/platform">
       <div className="flex flex-col gap-sq-4">
         <div>
           <h1 className="text-sq-title font-semibold">Usage and releases</h1>

@@ -1,11 +1,13 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
 import { ActionLink, EmptyState, Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { isCompanyFilter } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { CompanyTable } from '@/components/CompanyTable';
+
+export const metadata: Metadata = { title: 'Companies' };
 
 /**
  * The companies.
@@ -35,7 +37,7 @@ export default async function CompanyPage({
   const canCreate = session.data.capabilities.includes('platform:companies');
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/company">
+    <ShellFrame session={session.data} current="/company">
       <div className="flex flex-col gap-sq-4">
         <div className="flex flex-wrap items-end justify-between gap-sq-2">
           <div>

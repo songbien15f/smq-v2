@@ -1,10 +1,10 @@
+import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
 import { ActionLink, date, Panel, Stat, StatusPill } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { companyState } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { CompanyLimits } from '@/components/CompanyLimits';
 import { CompanyStatus } from '@/components/CompanyStatus';
 
@@ -23,6 +23,19 @@ import { CompanyStatus } from '@/components/CompanyStatus';
  *
  * Members are not listed: the admin API has no route that reads one company's people (only the count).
  */
+/** The company's name in the tab, so three open companies are three tabs a person can tell apart. */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const [{ id }, companies] = await Promise.all([
+    params,
+    serverFetch<Page<CompanyRow>>('/admin/companies?limit=200'),
+  ]);
+  const wanted = decodeURIComponent(id);
+  const company = companies.ok
+    ? companies.data.items.find((entry) => entry.id === wanted || entry.slug === wanted)
+    : undefined;
+  return { title: company?.name ?? 'Company' };
+}
+
 export default async function CompanyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await serverFetch<SessionView>('/auth/session');
   if (!session.ok) redirect('/');
@@ -34,7 +47,7 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const wanted = decodeURIComponent(id);
 
   const frame = (children: React.ReactNode) => (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/company">
+    <ShellFrame session={session.data} current="/company">
       <div className="flex max-w-4xl flex-col gap-sq-4">
         <a href="/company" className="w-fit text-sq-body text-sq-ink-muted no-underline hover:text-sq-ink">
           ‹ Companies

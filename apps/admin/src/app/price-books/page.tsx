@@ -1,10 +1,12 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
 import { PriceBookManager, type BookSummary } from '@/components/PriceBookManager';
+
+export const metadata: Metadata = { title: 'Price books' };
 
 /**
  * Price books.
@@ -20,8 +22,7 @@ export default async function PriceBooksPage() {
 
   return (
     <ShellFrame
-      account={<SignOutButton />}
-      capabilities={session.data.capabilities}
+      session={session.data}
       current="/price-books"
     >
       <div className="flex flex-col gap-sq-4">

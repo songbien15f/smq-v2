@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SmartQuote — licence administration',
+  // Every page names itself ("Companies · SmartQuote admin"), so several open tabs can be told apart;
+  // the sign-in screen, which sets no title, keeps the default.
+  title: { template: '%s · SmartQuote admin', default: 'SmartQuote — licence administration' },
   description: 'Companies, seats, price books and templates.',
   // An administration surface must never be indexed. A crawler that finds this page
   // finds the list of customers.

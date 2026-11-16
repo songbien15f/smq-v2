@@ -1,9 +1,11 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import type { Page, SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
-import { SignOutButton } from '@/components/SignOutButton';
+
+export const metadata: Metadata = { title: 'Audit' };
 
 /**
  * The audit log.
@@ -39,7 +41,7 @@ export default async function AuditPage() {
   const audit = await serverFetch<Page<AuditRow>>('/admin/audit?limit=200');
 
   return (
-    <ShellFrame account={<SignOutButton />} capabilities={session.data.capabilities} current="/audit">
+    <ShellFrame session={session.data} current="/audit">
       <div className="flex flex-col gap-sq-4">
         <div>
           <h1 className="text-sq-title font-semibold">Audit log</h1>
