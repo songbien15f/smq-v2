@@ -74,6 +74,28 @@
   --ease-sq: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/*
+ * The components in this package carry their own Tailwind classes, and every app must
+ * generate them. Tailwind's automatic source detection skips `node_modules`, which is
+ * where a workspace package is linked, so without this line a class used only inside
+ * `@sq/ui` (a button's padding, a card's body, a status pill) never reaches the CSS.
+ * The client hid this by happening to use most of the same classes; the admin did not,
+ * and rendered unpadded buttons and square pills. The path is relative to this file, so
+ * every app that imports the tokens gets the components' classes, with nothing to forget.
+ */
+@source "./";
+
+/*
+ * `--duration-*` is not a Tailwind theme namespace, so `duration-sq-fast` would
+ * otherwise generate nothing and every hover would change colour instantly.
+ */
+@utility duration-sq-fast {
+  transition-duration: var(--duration-sq-fast);
+}
+@utility duration-sq-base {
+  transition-duration: var(--duration-sq-base);
+}
+
 /* Dense table rows. A BOM is read by scanning a column, so the row height and the
    alignment matter more than any decoration. */
 @layer base {

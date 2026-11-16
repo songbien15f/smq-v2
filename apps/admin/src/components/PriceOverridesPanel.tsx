@@ -142,8 +142,8 @@ export function PriceOverridesPanel({ tenantId, initial }: PriceOverridesPanelPr
       >
         {latest === undefined ? (
           <p className="px-sq-3 py-sq-4 text-sq-body text-sq-ink-muted">
-            No overrides. Every material is priced from the shared book. Load a price list from the
-            company&rsquo;s Settings, or add one row below.
+            No overrides. Every material is priced from the shared book. A company loads its own
+            price list from Settings in the workspace.
           </p>
         ) : (
           <div className="overflow-x-auto">

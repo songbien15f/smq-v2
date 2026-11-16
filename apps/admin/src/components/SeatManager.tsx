@@ -11,10 +11,12 @@
  *
  * ## Why the "in use" figure is not the seat count
  *
- * A seat is a **live session**, so a crashed browser holds one until it is revoked or the session
- * expires. That is why a company can be at 5 of 5 with three people at their desks, and why this
- * screen shows both numbers rather than a percentage — `2 / 5` and `5 / 5` mean different things even
- * though only the second is a problem.
+ * A seat belongs to a **device** — one browser profile, for one person (DECISIONS D3) — not to a
+ * session. Signing out keeps it; it comes back when the company revokes the device under Team →
+ * Devices, or when the device goes unused for `DEVICE_IDLE_DAYS` (14 by default). That is why a
+ * company can be at 5 of 5 with three people at their desks — someone on a laptop and a tablet holds
+ * two — and why this screen shows both numbers rather than a percentage: `2 / 5` and `5 / 5` mean
+ * different things even though only the second is a problem.
  */
 
 import { useState } from 'react';
@@ -105,7 +107,7 @@ export function SeatManager({ initial }: { initial: SeatRow[] }) {
         </Panel>
       )}
 
-      <Panel title="Every company" description="Seats are live sessions, so 'in use' can exceed the people at their desks." padded={false}>
+      <Panel title="Every company" description="A seat is one browser of one person, so 'in use' counts devices, not people." padded={false}>
         {rows.length === 0 ? (
           <p className="px-sq-3 py-sq-4 text-sq-body text-sq-ink-muted">
             No companies. This installation has not been provisioned.
@@ -188,8 +190,9 @@ export function SeatManager({ initial }: { initial: SeatRow[] }) {
       </Panel>
 
       <p className="text-sq-micro text-sq-ink-muted">
-        Lowering a seat count never signs anybody out: the seats already held stay held, and the new
-        limit applies from the next sign-in.
+        Lowering a seat count never signs anybody out: devices that already hold a seat keep it, and a
+        new browser is refused until the company is back under its limit. A seat comes back when the
+        company revokes a device under Team → Devices, or after 14 days unused.
       </p>
     </div>
   );

@@ -243,7 +243,7 @@ export function CompanyCreator() {
           id="seats"
           label="Seats"
           required
-          hint="How many people may hold a session at once."
+          hint="How many browsers may be signed in. One person on a laptop and a tablet uses two."
           type="number"
           min="1"
           max="500"

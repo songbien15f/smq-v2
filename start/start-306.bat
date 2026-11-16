@@ -82,7 +82,8 @@ if errorlevel 1 (
   echo.
   echo    - Is PostgreSQL running on port 5432?
   echo    - Have you created the role and database? Run this once, as a superuser:
-  echo        scripts\postgres-setup.sql
+  echo        psql -U postgres -f scripts\postgres-setup.sql
+  echo      (or, with Docker:  docker compose up -d)
   echo.
   echo    Postgres is required: the application database has no SQLite fallback.
   echo.
@@ -140,6 +141,23 @@ if errorlevel 1 (
   echo.
 )
 
+REM ------------------------------------------------------------ ports free?
+REM A window closed without Ctrl+C leaves its Node processes alive. Starting again then
+REM brings up only some of the four (the Next apps answer, the API does not), and the page
+REM shows "fetch failed" with nothing pointing at the real cause. Stop here and say so.
+set BUSY=
+for %%P in (3060 3061 3062 3063) do (
+  netstat -ano | findstr /r /c:"^ *TCP.*:%%P .*LISTENING" >nul && set BUSY=!BUSY! %%P
+)
+if defined BUSY (
+  echo.
+  echo  ERROR: these ports are already in use:!BUSY!
+  echo         A previous run is still alive. Run  start\stop-306.bat  first, then start again.
+  echo.
+  pause
+  exit /b 1
+)
+
 REM ------------------------------------------------------------------ start
 echo.
 echo  ==========================================
@@ -161,8 +179,10 @@ echo    Ctrl+C here stops everything.
 echo.
 
 REM Wait for the client to answer before opening a tab, so the browser does not
-REM land on a connection error and leave the operator reloading by hand.
-start "" cmd /c "timeout /t 12 >nul & start http://localhost:3061"
+REM land on a connection error and leave the operator reloading by hand. It polls rather than
+REM sleeping a fixed time: the first start builds the packages and takes far longer than a
+REM later one. Gives up after about three minutes and opens the tab anyway.
+start "" powershell -NoProfile -WindowStyle Hidden -Command "for($i=0;$i -lt 90;$i++){try{Invoke-WebRequest http://localhost:3061 -UseBasicParsing -TimeoutSec 2 | Out-Null;break}catch{Start-Sleep 2}}; Start-Process http://localhost:3061"
 
 call pnpm dev
 

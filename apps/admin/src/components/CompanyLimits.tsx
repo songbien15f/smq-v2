@@ -86,7 +86,7 @@ export function CompanyLimits({ tenantId, seats, seatsInUse, subscriptionEndsAt 
             max={500}
             value={seatValue}
             onChange={(event) => setSeatValue(event.target.value)}
-            hint={`${seatsInUse} in use right now.`}
+            hint={`${seatsInUse} held by signed-in devices.`}
           />
           <Field
             id="limits-ends"
@@ -100,8 +100,8 @@ export function CompanyLimits({ tenantId, seats, seatsInUse, subscriptionEndsAt 
 
         {lowered && (
           <p className="text-sq-micro text-sq-attention">
-            Fewer seats than are in use. Nobody is signed out — the people already working keep
-            their seats, and the new limit applies from the next sign-in.
+            Fewer seats than are in use. Nobody is signed out — devices that already hold a seat keep
+            it, and a new browser is refused until enough seats come back.
           </p>
         )}
 

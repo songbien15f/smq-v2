@@ -24,7 +24,7 @@ export default async function SeatsPage() {
         <div>
           <h1 className="text-sq-title font-semibold">Seats</h1>
           <p className="text-sq-body text-sq-ink-muted">
-            How many live sessions each company holds, and how many it has paid for.
+            How many devices each company has signed in on, and how many seats it has paid for.
           </p>
         </div>
 

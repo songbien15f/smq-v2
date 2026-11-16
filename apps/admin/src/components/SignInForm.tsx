@@ -12,13 +12,15 @@
  *   invalid field — a message at the top of a form with no focus move is a message a
  *   keyboard user has to hunt for.
  * - The submit button is disabled while a request is in flight, so a double-click is
- *   not two sign-ins. On a seat-limited account that second sign-in would take the
- *   last seat from a colleague.
+ *   not two sign-ins.
+ *
+ * There is no "seats are limited" note, unlike the workspace sign-in: vendor staff sign in
+ * through `/auth/sign-in-platform`, which claims no company seat.
  */
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Field, StatusPill } from '@sq/ui';
+import { Button, Field } from '@sq/ui';
 import type { ApiResult, SessionView } from '@sq/contracts';
 
 export function SignInForm({ next }: { next?: string }) {
@@ -112,11 +114,6 @@ export function SignInForm({ next }: { next?: string }) {
       <Button type="submit" variant="primary" loading={busy}>
         Sign in
       </Button>
-
-      <p className="text-sq-micro text-sq-ink-muted">
-        <StatusPill tone="neutral" label="Seats are limited" /> Signing out releases your seat for a
-        colleague.
-      </p>
     </form>
   );
 }

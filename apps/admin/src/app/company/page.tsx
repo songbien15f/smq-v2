@@ -94,7 +94,7 @@ export default async function CompanyPage() {
                   <Stat
                     label="In use"
                     value={String(company.seatsInUse)}
-                    hint="Live sessions"
+                    hint="Devices holding a seat"
                     tone={saturated ? 'attention' : 'neutral'}
                   />
                   <Stat label="People" value={String(company.memberCount)} />

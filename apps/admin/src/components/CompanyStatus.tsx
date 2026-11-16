@@ -5,7 +5,7 @@
  *
  * ## Why suspending is not "deleting with a flag"
  *
- * The API revokes every seat and every live session in the same transaction. That is the whole
+ * The API frees every seat, revokes every device and ends every live session in the same transaction. That is the whole
  * point: a company that stops paying must stop working now, not when its people next sign in — and
  * a screen that only flipped a status column would look like it had done something while everybody
  * carried on quoting.
@@ -75,7 +75,7 @@ export function CompanyStatus({ tenantId, name, status, seatsInUse }: CompanySta
       tone: 'ok',
       text:
         next === 'suspended'
-          ? `${name} is suspended. Every seat and session has been ended.`
+          ? `${name} is suspended. Every device has been signed out and every seat freed.`
           : `${name} is active again. Its people can sign in.`,
     });
     setReason('');
@@ -98,9 +98,10 @@ export function CompanyStatus({ tenantId, name, status, seatsInUse }: CompanySta
         {!suspended && (
           <>
             <p className="text-sq-body text-sq-ink-muted">
-              Suspending ends <strong className="text-sq-ink">{seatsInUse}</strong>{' '}
-              {seatsInUse === 1 ? 'session' : 'sessions'} and every seat. People mid-quote lose their
-              work in progress; saved revisions and sent documents are untouched.
+              Suspending signs out <strong className="text-sq-ink">{seatsInUse}</strong>{' '}
+              {seatsInUse === 1 ? 'device' : 'devices'} and frees every seat. Reactivating does not
+              bring the devices back: each person signs in again. People mid-quote lose their work in
+              progress; saved revisions and sent documents are untouched.
             </p>
             <Field
               id="suspend-reason"
