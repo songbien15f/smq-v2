@@ -17,7 +17,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Panel, StatusPill } from '@sq/ui';
+import { Button, dateTime, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 export interface Enquiry {
@@ -29,12 +29,6 @@ export interface Enquiry {
   source: string;
   handled: boolean;
   createdAt: string;
-}
-
-function when(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso.slice(0, 16).replace('T', ' ');
-  return parsed.toISOString().slice(0, 16).replace('T', ' ');
 }
 
 export function EnquiryList({ initial }: { initial: Enquiry[] }) {
@@ -105,7 +99,7 @@ export function EnquiryList({ initial }: { initial: Enquiry[] }) {
                   </div>
                   <div className="flex items-center gap-sq-2">
                     <StatusPill tone="info" label={enquiry.source} />
-                    <span className="text-sq-micro text-sq-ink-muted">{when(enquiry.createdAt)}</span>
+                    <span className="text-sq-micro text-sq-ink-muted">{dateTime(enquiry.createdAt)}</span>
                   </div>
                 </div>
                 <p className="whitespace-pre-line text-sq-body text-sq-ink">{enquiry.message}</p>
@@ -129,7 +123,7 @@ export function EnquiryList({ initial }: { initial: Enquiry[] }) {
                 className="flex flex-wrap items-center justify-between gap-sq-2 border-b border-sq-line px-sq-3 py-sq-2 last:border-0"
               >
                 <span className="text-sq-body text-sq-ink-muted">
-                  {enquiry.name} · {enquiry.email} · {when(enquiry.createdAt)}
+                  {enquiry.name} · {enquiry.email} · {dateTime(enquiry.createdAt)}
                 </span>
                 <Button loading={busy === enquiry.id} onClick={() => void toggle(enquiry)}>
                   Put back

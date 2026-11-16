@@ -226,6 +226,29 @@ Seat giờ thuộc **thiết bị**, không thuộc phiên (DECISIONS D3, migrat
 
 ## 5. P1 — `/platform` ("Usage") là ba trang dồn một (V)
 
+> **ĐÃ SỬA 2026-11-16** (một phần).
+> - **Tách trang:** `PlatformPage.tsx` đã bỏ, thay bằng ba trang. `/platform` chuyển hẳn (redirect vĩnh viễn) sang `/usage`.
+>   - `/usage`: server render, không có JS phía client.
+>   - `/releases`: dùng `ReleaseManager`.
+>   - `/templates`: dùng `TemplateCatalogue`; bảng có thêm cột Company.
+> - **Nav:** nhóm "Prices" đổi tên thành "Catalogue" và có thêm Templates. Nhóm System gồm Usage, Releases, Audit.
+> - **Phân quyền:** mỗi trang và mỗi mục nav ứng với đúng capability của route API.
+>   - Usage cần `platform:audit`.
+>   - Releases cần `platform:versions`.
+>   - Templates cần `platform:templates`.
+>   - Thiếu quyền thì hiện "Not available to your role" và không gọi API.
+> - **Form template:**
+>   - Lỗi hiện ngay dưới từng ô: company, code (cùng regex với API), name.
+>   - Ô JSON building nằm trong phần "Building (advanced)", thu gọn mặc định.
+>   - JSON được parse ngay khi gõ, lỗi hiện ngay dưới ô, và nút Add bị khoá cho đến khi JSON hợp lệ.
+> - **Chưa làm:** tạo template bằng cách tải `.sqd` lên trước. Cần một route API đọc `.sqd` thành building cho vendor. Hiện chưa có route này: `/quotes/import/sqd` chỉ nhập file vào danh sách quote của một công ty. Validate zod đầy đủ phía client cũng chưa làm, vì API chấp nhận building thiếu field và tự điền mặc định (`normaliseShedConfig`).
+> - **Đã kiểm:**
+>   - `tsc` admin pass.
+>   - Ba trang trả 200 với title đúng, và `/platform` redirect đúng.
+>   - Lỗi form và lỗi JSON hiện đúng chỗ; History mở được.
+>   - Không tràn ngang ở 1440px và 580px.
+>   - Chưa thử với tài khoản `platform_support`.
+
 `components/PlatformPage.tsx` dài 651 dòng, gồm:
 - bảng Usage;
 - form Releases;
@@ -246,6 +269,32 @@ Seat giờ thuộc **thiết bị**, không thuộc phiên (DECISIONS D3, migrat
 ---
 
 ## 6. P2 — Bảng và số liệu chưa đúng MASTER §5 (V qua code)
+
+> **ĐÃ SỬA 2026-11-16** (trừ lọc/phân trang phía server).
+> - **`DataTable` trong `@sq/ui`** (`packages/ui/src/table.tsx`):
+>   - `thead` sticky, nằm trong hộp cuộn riêng (`max-h-[calc(100dvh-14rem)] overflow-auto`). Cần vậy vì sticky bám vào ancestor cuộn gần nhất, mà wrapper `overflow-x-auto` cũ không bao giờ cuộn dọc.
+>   - Hàng cao 36px, có zebra `bg-sq-ground/40` tính theo chỉ số dữ liệu (không dùng `even:`), nên hàng mở rộng như lịch sử template vẫn cùng màu với hàng cha.
+>   - Cột `numeric` căn phải, `tabular-nums`. Có empty state, kiểu `dense`, và `height="none"` cho bảng lồng.
+>   - Wrapper có `relative` để chữ `sr-only` trong ô không thoát khỏi vùng cắt. Trước đó `/audit` bị rộng hơn trang 5px ở 580px.
+> - **Formatter:** thêm `count()` (`6,217`) và `bytes()` (`901 B`, `12.3 KB`) vào `format.ts`. Mọi chỗ hiển thị đều dùng `money`/`date`/`dateTime`/`count`/`bytes`, và các hàm `when()` riêng đã bỏ. Chỉ còn `toFixed` ở giá trị của ô input sửa giá, vì đó là giá trị để sửa, không phải để hiển thị.
+> - **Đã chuyển sang `DataTable` (10 bảng):** Audit, Usage, Releases, Price books, Company prices, Seats, Companies, Templates cùng bảng lịch sử file, và Recent changes ở Tổng quan.
+>   - Recent changes không sticky vì là bảng ngắn trong card.
+>   - Sửa luôn các ô chữ bị dùng nhầm `sq-numeric`, làm chữ căn phải: nhãn release, engine, mã template. Chúng chuyển sang `font-mono`.
+> - **Audit** (`components/AuditLog.tsx`):
+>   - Ô tìm (summary/id/loại), lọc Who và Action, dòng trạng thái "X of Y shown".
+>   - Nút "Download CSV" xuất đúng các hàng đang hiện: UTF-8 có BOM, xuống dòng CRLF.
+>   - Nút Copy để chép id đầy đủ; id cũng có trong `title` và bản cho screen reader.
+> - **Chưa làm:** lọc và phân trang phía server. `GET /admin/audit` chỉ nhận `limit`, nên trang lọc trên 200 dòng mới nhất và nói rõ hàng cũ hơn không được tải. Làm thật thì cần filter actor/action/khoảng ngày và cursor ở API.
+> - **Đã kiểm:**
+>   - `tsc` của ui và admin pass, build ui pass.
+>   - 10 trang trả 200 với title đúng.
+>   - Header vẫn ở đỉnh hộp sau khi cuộn `/audit` 1500px; zebra đúng.
+>   - Usage hiện `6,217`, supplier codes hiện `1,489`.
+>   - Lọc `company.install` cho "2 of 171 shown". Lọc không khớp hiện "Nothing matches.", Clear trả lại đủ.
+>   - CSV có 172 dòng, header đúng. Copy chép đúng uuid đầy đủ.
+>   - Ở 580px không trang nào tràn ngang: `/`, `/company`, `/seats`, `/audit`, `/usage`, `/price-books`, `/templates`.
+>   - Load lại các trang không thêm lỗi console nào. Các lỗi "Can't resolve '@sq/ui'" trong log có từ lúc tsup đang dọn `dist` khi rebuild.
+>   - Chưa kiểm: `/releases` khi có dữ liệu (DB đang trống), `/prices` khi đã chọn công ty, tài khoản `platform_support`, `next build`.
 
 Bảng ở `audit/page.tsx`, `SeatManager`, `PriceBookManager`, `PriceOverridesPanel`, `PlatformPage`:
 - Không có `sticky top-0` cho `thead`. Audit 200 dòng cuộn là mất tiêu đề cột.

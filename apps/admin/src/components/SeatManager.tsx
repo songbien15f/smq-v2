@@ -20,7 +20,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Panel, StatusPill } from '@sq/ui';
+import { Button, count, DataTable, date, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 export interface SeatRow {
@@ -34,10 +34,13 @@ export interface SeatRow {
   memberCount: number;
 }
 
+function isExpired(row: SeatRow): boolean {
+  return row.subscriptionEndsAt !== null && Date.parse(row.subscriptionEndsAt) < Date.now();
+}
+
 /** A company whose every seat is held, or whose subscription has run out. */
 function needsAttention(row: SeatRow): boolean {
-  if (row.seatsInUse >= row.seats) return true;
-  return row.subscriptionEndsAt !== null && Date.parse(row.subscriptionEndsAt) < Date.now();
+  return row.seatsInUse >= row.seats || isExpired(row);
 }
 
 export function SeatManager({ initial }: { initial: SeatRow[] }) {
@@ -100,7 +103,7 @@ export function SeatManager({ initial }: { initial: SeatRow[] }) {
                 {row.seatsInUse >= row.seats && ` — every one of ${row.seats} seats is held, so a sign-in is refused.`}
                 {row.subscriptionEndsAt !== null &&
                   Date.parse(row.subscriptionEndsAt) < Date.now() &&
-                  ` — the subscription ended on ${row.subscriptionEndsAt.slice(0, 10)}.`}
+                  ` — the subscription ended on ${date(row.subscriptionEndsAt)}.`}
               </li>
             ))}
           </ul>
@@ -108,85 +111,84 @@ export function SeatManager({ initial }: { initial: SeatRow[] }) {
       )}
 
       <Panel title="Every company" description="A seat is one browser of one person, so 'in use' counts devices, not people." padded={false}>
-        {rows.length === 0 ? (
-          <p className="px-sq-3 py-sq-4 text-sq-body text-sq-ink-muted">
-            No companies. This installation has not been provisioned.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sq-body">
-              <thead>
-                <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Company</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">People</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">In use</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Seats</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Subscription</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">State</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const saturated = row.seatsInUse >= row.seats;
-                  const expired = row.subscriptionEndsAt !== null && Date.parse(row.subscriptionEndsAt) < Date.now();
-
-                  return (
-                    <tr key={row.id} className="border-b border-sq-line last:border-0">
-                      <td className="px-sq-3 py-sq-2">
-                        <span className="block font-medium text-sq-ink">{row.name}</span>
-                        <span className="block text-sq-micro text-sq-ink-muted">{row.slug}</span>
-                      </td>
-                      <td className="sq-numeric px-sq-3 py-sq-2 text-right">{row.memberCount}</td>
-                      <td
-                        className={[
-                          'sq-numeric px-sq-3 py-sq-2 text-right',
-                          saturated ? 'font-semibold text-sq-attention' : '',
-                        ].join(' ')}
-                      >
-                        {row.seatsInUse}
-                      </td>
-                      <td className="px-sq-3 py-sq-2 text-right">
-                        <input
-                          aria-label={`Seats for ${row.name}`}
-                          type="number"
-                          min="1"
-                          max="500"
-                          value={drafts[row.id] ?? String(row.seats)}
-                          onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: event.target.value }))}
-                          className="w-20 rounded-md border border-sq-line bg-sq-surface px-sq-1 py-1 text-right text-sq-body"
-                        />
-                      </td>
-                      <td className="px-sq-3 py-sq-2 text-sq-ink-muted">
-                        {row.subscriptionEndsAt === null ? 'No end date' : row.subscriptionEndsAt.slice(0, 10)}
-                        {expired && <span className="block text-sq-micro text-sq-danger">ended</span>}
-                      </td>
-                      <td className="px-sq-3 py-sq-2">
-                        <StatusPill
-                          tone={row.status === 'active' ? (saturated || expired ? 'attention' : 'ok') : 'danger'}
-                          label={
-                            row.status === 'active'
-                              ? saturated
-                                ? 'Full'
-                                : expired
-                                  ? 'Expired'
-                                  : 'Active'
-                              : 'Suspended'
-                          }
-                        />
-                      </td>
-                      <td className="px-sq-3 py-sq-2">
-                        <Button loading={busy === row.id} onClick={() => void save(row)}>
-                          Save
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          rows={rows}
+          rowKey={(row) => row.id}
+          caption="Seats for every company"
+          empty="No companies. This installation has not been provisioned."
+          columns={[
+            {
+              key: 'company',
+              header: 'Company',
+              render: (row) => (
+                <>
+                  <span className="block font-medium text-sq-ink">{row.name}</span>
+                  <span className="block text-sq-micro text-sq-ink-muted">{row.slug}</span>
+                </>
+              ),
+            },
+            { key: 'people', header: 'People', numeric: true, render: (row) => count(row.memberCount) },
+            {
+              key: 'inUse',
+              header: 'In use',
+              numeric: true,
+              render: (row) => count(row.seatsInUse),
+              cellClassName: (row) => (row.seatsInUse >= row.seats ? 'font-semibold text-sq-attention' : ''),
+            },
+            {
+              key: 'seats',
+              header: 'Seats',
+              numeric: true,
+              render: (row) => (
+                <input
+                  aria-label={`Seats for ${row.name}`}
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={drafts[row.id] ?? String(row.seats)}
+                  onChange={(event) => setDrafts((current) => ({ ...current, [row.id]: event.target.value }))}
+                  className="w-20 rounded-md border border-sq-line bg-sq-surface px-sq-1 py-1 text-right text-sq-body"
+                />
+              ),
+            },
+            {
+              key: 'subscription',
+              header: 'Subscription',
+              render: (row) => (
+                <>
+                  {row.subscriptionEndsAt === null ? 'No end date' : date(row.subscriptionEndsAt)}
+                  {isExpired(row) && <span className="block text-sq-micro text-sq-danger">ended</span>}
+                </>
+              ),
+              cellClassName: 'whitespace-nowrap text-sq-ink-muted',
+            },
+            {
+              key: 'state',
+              header: 'State',
+              render: (row) => {
+                const saturated = row.seatsInUse >= row.seats;
+                const expired = isExpired(row);
+                return (
+                  <StatusPill
+                    tone={row.status === 'active' ? (saturated || expired ? 'attention' : 'ok') : 'danger'}
+                    label={
+                      row.status === 'active' ? (saturated ? 'Full' : expired ? 'Expired' : 'Active') : 'Suspended'
+                    }
+                  />
+                );
+              },
+            },
+            {
+              key: 'change',
+              header: 'Change',
+              render: (row) => (
+                <Button loading={busy === row.id} onClick={() => void save(row)}>
+                  Save
+                </Button>
+              ),
+            },
+          ]}
+        />
       </Panel>
 
       <p className="text-sq-micro text-sq-ink-muted">

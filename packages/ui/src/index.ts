@@ -14,12 +14,16 @@ export { Field } from './field.js';
 export type { FieldProps } from './field.js';
 export { Panel, StatusPill, Stat, EmptyState } from './surface.js';
 export type { StatusTone } from './surface.js';
+export { DataTable } from './table.js';
+export type { DataColumn, DataTableProps } from './table.js';
 export {
   money,
   moneyDelta,
   millimetres,
   metres,
   quantity,
+  count,
+  bytes,
   percent,
   date,
   dateTime,

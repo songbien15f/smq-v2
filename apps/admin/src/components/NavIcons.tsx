@@ -15,7 +15,9 @@ export type NavIconName =
   | 'enquiries'
   | 'priceBooks'
   | 'companyPrices'
+  | 'templates'
   | 'usage'
+  | 'releases'
   | 'audit';
 
 const PATHS: Record<NavIconName | 'menu', ReactNode> = {
@@ -58,7 +60,20 @@ const PATHS: Record<NavIconName | 'menu', ReactNode> = {
       <circle cx="7.5" cy="7.5" r="1.5" />
     </>
   ),
+  templates: (
+    <>
+      <path d="M3 11 12 4l9 7" />
+      <path d="M5 9.5V20h14V9.5" />
+      <path d="M10 20v-5h4v5" />
+    </>
+  ),
   usage: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  releases: (
+    <>
+      <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" />
+      <path d="M4 7.5 12 12l8-4.5M12 12v9" />
+    </>
+  ),
   audit: (
     <>
       <path d="M8 3h8l4 4v14H4V3h4Z" />

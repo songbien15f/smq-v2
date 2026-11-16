@@ -24,7 +24,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Panel, StatusPill } from '@sq/ui';
+import { Button, count, DataTable, dateTime, money, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 interface OverrideRow {
@@ -146,69 +146,69 @@ export function PriceOverridesPanel({ tenantId, initial }: PriceOverridesPanelPr
             price list from Settings in the workspace.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sq-body">
-              <thead>
-                <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Material</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Group</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Your price</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {latest.rows.map((row) => {
-                  const key = describeKey(row.rowKey);
-                  const isEditing = editing?.rowKey === row.rowKey;
-
-                  return (
-                    <tr key={row.rowKey} className="border-b border-sq-line last:border-0">
-                      <td className="px-sq-3 py-sq-2">
-                        <span className="block sq-numeric text-sq-micro text-sq-ink-muted">{key.fields}</span>
-                      </td>
-                      <td className="px-sq-3 py-sq-2 text-sq-ink-muted">{key.source}</td>
-                      <td className="sq-numeric px-sq-3 py-sq-2 text-right">
-                        {isEditing ? (
-                          <input
-                            aria-label={`Price for ${key.fields}`}
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={editing.dollars}
-                            onChange={(event) => setEditing({ rowKey: row.rowKey, dollars: event.target.value })}
-                            className="w-24 rounded-md border border-sq-line bg-sq-surface px-sq-1 py-1 text-right text-sq-body"
-                          />
-                        ) : (
-                          `$${(row.unitCostCents / 100).toFixed(2)}`
-                        )}
-                      </td>
-                      <td className="px-sq-3 py-sq-2">
-                        {isEditing ? (
-                          <span className="flex flex-wrap gap-sq-1">
-                            <Button loading={busy === row.rowKey} onClick={() => void setPrice(row.rowKey, editing.dollars)}>
-                              Save
-                            </Button>
-                            <Button onClick={() => setEditing(null)}>Cancel</Button>
-                          </span>
-                        ) : (
-                          <span className="flex flex-wrap gap-sq-1">
-                            <Button
-                              onClick={() => setEditing({ rowKey: row.rowKey, dollars: (row.unitCostCents / 100).toFixed(2) })}
-                            >
-                              Change
-                            </Button>
-                            <Button loading={busy === row.rowKey} onClick={() => void setPrice(row.rowKey, '')}>
-                              Use book price
-                            </Button>
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            rows={latest.rows}
+            rowKey={(row) => row.rowKey}
+            caption={`Price overrides in force, version ${latest.version}`}
+            columns={[
+              {
+                key: 'material',
+                header: 'Material',
+                render: (row) => describeKey(row.rowKey).fields,
+                cellClassName: 'font-mono text-sq-micro text-sq-ink-muted',
+              },
+              {
+                key: 'group',
+                header: 'Group',
+                render: (row) => describeKey(row.rowKey).source,
+                cellClassName: 'text-sq-ink-muted',
+              },
+              {
+                key: 'price',
+                header: 'Your price',
+                numeric: true,
+                render: (row) =>
+                  editing?.rowKey === row.rowKey ? (
+                    <input
+                      aria-label={`Price for ${describeKey(row.rowKey).fields}`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editing.dollars}
+                      onChange={(event) => setEditing({ rowKey: row.rowKey, dollars: event.target.value })}
+                      className="w-24 rounded-md border border-sq-line bg-sq-surface px-sq-1 py-1 text-right text-sq-body"
+                    />
+                  ) : (
+                    money(row.unitCostCents)
+                  ),
+              },
+              {
+                key: 'change',
+                header: 'Change',
+                render: (row) =>
+                  editing?.rowKey === row.rowKey ? (
+                    <span className="flex flex-wrap gap-sq-1">
+                      <Button loading={busy === row.rowKey} onClick={() => void setPrice(row.rowKey, editing.dollars)}>
+                        Save
+                      </Button>
+                      <Button onClick={() => setEditing(null)}>Cancel</Button>
+                    </span>
+                  ) : (
+                    <span className="flex flex-wrap gap-sq-1">
+                      <Button
+                        // The input's starting value, not a display: a number field wants `12.50`, not `$12.50`.
+                        onClick={() => setEditing({ rowKey: row.rowKey, dollars: (row.unitCostCents / 100).toFixed(2) })}
+                      >
+                        Change
+                      </Button>
+                      <Button loading={busy === row.rowKey} onClick={() => void setPrice(row.rowKey, '')}>
+                        Use book price
+                      </Button>
+                    </span>
+                  ),
+              },
+            ]}
+          />
         )}
       </Panel>
 
@@ -221,10 +221,10 @@ export function PriceOverridesPanel({ tenantId, initial }: PriceOverridesPanelPr
                 className="flex flex-wrap items-center justify-between gap-sq-2 border-b border-sq-line px-sq-3 py-sq-2 last:border-0"
               >
                 <span className="flex flex-wrap items-center gap-sq-2">
-                  <span className="sq-numeric text-sq-body font-medium text-sq-ink">v{version.version}</span>
+                  <span className="font-mono text-sq-body font-medium text-sq-ink">v{version.version}</span>
                   {index === 0 && <StatusPill tone="ok" label="In force" />}
                   <span className="text-sq-micro text-sq-ink-muted">
-                    {version.rowCount} row{version.rowCount === 1 ? '' : 's'} · {version.createdAt.slice(0, 16).replace('T', ' ')}
+                    {count(version.rowCount)} row{version.rowCount === 1 ? '' : 's'} · {dateTime(version.createdAt)}
                   </span>
                   {version.note !== null && version.note !== '' && (
                     <span className="text-sq-micro text-sq-ink-muted">— {version.note}</span>

@@ -4,6 +4,7 @@ import type { Page, SessionView } from '@sq/contracts';
 import { Panel } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { ShellFrame } from '@/components/ShellFrame';
+import { AuditLog, type AuditRow } from '@/components/AuditLog';
 
 export const metadata: Metadata = { title: 'Audit' };
 
@@ -18,27 +19,13 @@ export const metadata: Metadata = { title: 'Audit' };
  * here but the rows.
  */
 
-interface AuditRow {
-  id: string;
-  at: string;
-  actorEmail: string;
-  action: string;
-  targetType: string;
-  targetId: string;
-  summary: string;
-}
-
-function when(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso.slice(0, 16).replace('T', ' ');
-  return parsed.toISOString().slice(0, 16).replace('T', ' ');
-}
+const LIMIT = 200;
 
 export default async function AuditPage() {
   const session = await serverFetch<SessionView>('/auth/session');
   if (!session.ok) redirect('/');
 
-  const audit = await serverFetch<Page<AuditRow>>('/admin/audit?limit=200');
+  const audit = await serverFetch<Page<AuditRow>>(`/admin/audit?limit=${LIMIT}`);
 
   return (
     <ShellFrame session={session.data} current="/audit">
@@ -63,34 +50,8 @@ export default async function AuditPage() {
             </p>
           </Panel>
         ) : (
-          <Panel title={`${audit.data.items.length} entries`} padded={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sq-body">
-                <thead>
-                  <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
-                    <th scope="col" className="px-sq-3 py-sq-2 font-medium">When</th>
-                    <th scope="col" className="px-sq-3 py-sq-2 font-medium">Who</th>
-                    <th scope="col" className="px-sq-3 py-sq-2 font-medium">Action</th>
-                    <th scope="col" className="px-sq-3 py-sq-2 font-medium">What</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audit.data.items.map((row) => (
-                    <tr key={row.id} className="border-b border-sq-line last:border-0">
-                      <td className="px-sq-3 py-sq-2 text-sq-ink-muted">{when(row.at)}</td>
-                      <td className="px-sq-3 py-sq-2">{row.actorEmail}</td>
-                      <td className="sq-numeric px-sq-3 py-sq-2 text-sq-ink-muted">{row.action}</td>
-                      <td className="px-sq-3 py-sq-2">
-                        {row.summary}
-                        <span className="block text-sq-micro text-sq-ink-muted">
-                          {row.targetType} · {row.targetId.slice(0, 12)}…
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <Panel padded={false}>
+            <AuditLog rows={audit.data.items} limit={LIMIT} />
           </Panel>
         )}
       </div>

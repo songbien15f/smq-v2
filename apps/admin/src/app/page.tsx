@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { CompanyRow, Page, SessionView } from '@sq/contracts';
-import { date, dateTime, Panel, Stat, StatusPill, type StatusTone } from '@sq/ui';
+import { count, DataTable, date, dateTime, Panel, Stat, StatusPill, type StatusTone } from '@sq/ui';
 import { serverFetch } from '@/lib/api';
 import { companyState } from '@/lib/companyState';
 import { ShellFrame } from '@/components/ShellFrame';
@@ -205,12 +205,12 @@ export default async function AdminHomePage() {
               <>
                 <Stat
                   label="Active companies"
-                  value={String(companyStats.active)}
+                  value={count(companyStats.active)}
                   hint={`of ${companyStats.total} on this installation`}
                 />
                 <Stat
                   label="Seats in use"
-                  value={`${companyStats.inUse} / ${companyStats.seats}`}
+                  value={`${count(companyStats.inUse)} / ${count(companyStats.seats)}`}
                   hint="Devices holding a seat, across every company"
                 />
               </>
@@ -218,7 +218,7 @@ export default async function AdminHomePage() {
             {openEnquiries !== null && (
               <Stat
                 label="Open enquiries"
-                value={String(openEnquiries)}
+                value={count(openEnquiries)}
                 hint={openEnquiries === 0 ? 'Nobody is waiting' : 'Not yet marked handled'}
                 tone={openEnquiries > 0 ? 'attention' : 'neutral'}
               />
@@ -279,37 +279,30 @@ export default async function AdminHomePage() {
         {audit !== null && audit.ok && (
           <Panel
             title="Recent changes"
+            padded={false}
             actions={
               <a href="/audit" className="text-sq-body font-medium text-sq-brand no-underline hover:underline">
                 The whole audit ›
               </a>
             }
           >
-            {audit.data.items.length === 0 ? (
-              <p className="text-sq-body text-sq-ink-muted">Nothing has been changed yet.</p>
-            ) : (
-              <table className="w-full border-collapse text-sq-body">
-                <caption className="sr-only">The ten most recent audited changes</caption>
-                <thead>
-                  <tr className="text-left text-sq-micro text-sq-ink-muted">
-                    <th scope="col" className="py-sq-1 pr-sq-3 font-medium">When</th>
-                    <th scope="col" className="py-sq-1 pr-sq-3 font-medium">Who</th>
-                    <th scope="col" className="py-sq-1 font-medium">What</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audit.data.items.map((row) => (
-                    <tr key={row.id} className="h-9 border-t border-sq-line align-top">
-                      <td className="sq-numeric whitespace-nowrap py-1.5 pr-sq-3 text-left text-sq-ink-muted">
-                        {dateTime(row.at)}
-                      </td>
-                      <td className="max-w-48 truncate py-1.5 pr-sq-3">{row.actorEmail}</td>
-                      <td className="py-1.5">{row.summary || row.action}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <DataTable
+              rows={audit.data.items}
+              rowKey={(row) => row.id}
+              caption="The ten most recent audited changes"
+              empty="Nothing has been changed yet."
+              height="none"
+              columns={[
+                {
+                  key: 'at',
+                  header: 'When',
+                  render: (row) => dateTime(row.at),
+                  cellClassName: 'whitespace-nowrap text-sq-ink-muted',
+                },
+                { key: 'who', header: 'Who', render: (row) => row.actorEmail, cellClassName: 'max-w-48 truncate' },
+                { key: 'what', header: 'What', render: (row) => row.summary || row.action },
+              ]}
+            />
           </Panel>
         )}
       </div>

@@ -54,16 +54,18 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     ],
   },
   {
-    label: 'Prices',
+    label: 'Catalogue',
     items: [
       { href: '/price-books', label: 'Price books', capability: 'platform:pricebooks', icon: 'priceBooks' },
       { href: '/prices', label: 'Company prices', capability: 'platform:companies', icon: 'companyPrices' },
+      { href: '/templates', label: 'Templates', capability: 'platform:templates', icon: 'templates' },
     ],
   },
   {
     label: 'System',
     items: [
-      { href: '/platform', label: 'Usage', capability: 'platform:audit', icon: 'usage' },
+      { href: '/usage', label: 'Usage', capability: 'platform:audit', icon: 'usage' },
+      { href: '/releases', label: 'Releases', capability: 'platform:versions', icon: 'releases' },
       { href: '/audit', label: 'Audit', capability: 'platform:audit', icon: 'audit' },
     ],
   },

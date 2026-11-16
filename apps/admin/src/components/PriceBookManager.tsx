@@ -18,7 +18,7 @@
  */
 
 import { useState } from 'react';
-import { Button, Field, Panel, StatusPill } from '@sq/ui';
+import { Button, count, DataTable, date, Field, Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/adminApi';
 
 export interface BookSummary {
@@ -100,53 +100,49 @@ export function PriceBookManager({ initial, activeHash }: { initial: BookSummary
       </Panel>
 
       <Panel title="Books" description="Every book on this server. The active one prices every quote." padded={false}>
-        {books.length === 0 ? (
-          <p className="px-sq-3 py-sq-4 text-sq-body text-sq-ink-muted">
-            No books yet. Publish one above before any quote can be priced.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sq-body">
-              <thead>
-                <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Hash</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Kind</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Supplier codes</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Published</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Note</th>
-                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {books.map((book) => (
-                  <tr key={book.hash} className="border-b border-sq-line last:border-0">
-                    <td className="sq-numeric px-sq-3 py-sq-2">{book.hash.slice(0, 12)}…</td>
-                    <td className="px-sq-3 py-sq-2">
-                      <StatusPill
-                        tone={book.kind === 'licensed' ? 'info' : 'neutral'}
-                        label={book.kind === 'licensed' ? 'Licensed' : 'Sample'}
-                      />
-                    </td>
-                    <td className="sq-numeric px-sq-3 py-sq-2 text-right">
-                      {book.supplierCodeCount === 0 ? '—' : book.supplierCodeCount}
-                    </td>
-                    <td className="px-sq-3 py-sq-2 text-sq-ink-muted">
-                      {book.publishedAt === null ? '—' : book.publishedAt.slice(0, 10)}
-                    </td>
-                    <td className="px-sq-3 py-sq-2 text-sq-ink-muted">{book.note ?? '—'}</td>
-                    <td className="px-sq-3 py-sq-2">
-                      {book.hash === active ? (
-                        <StatusPill tone="ok" label="Active" />
-                      ) : (
-                        <span className="text-sq-ink-muted">Inactive</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          rows={books}
+          rowKey={(book) => book.hash}
+          caption="Price books on this server"
+          empty="No books yet. Publish one above before any quote can be priced."
+          columns={[
+            {
+              key: 'hash',
+              header: 'Hash',
+              render: (book) => <span title={book.hash}>{book.hash.slice(0, 12)}…</span>,
+              cellClassName: 'font-mono',
+            },
+            {
+              key: 'kind',
+              header: 'Kind',
+              render: (book) => (
+                <StatusPill
+                  tone={book.kind === 'licensed' ? 'info' : 'neutral'}
+                  label={book.kind === 'licensed' ? 'Licensed' : 'Sample'}
+                />
+              ),
+            },
+            {
+              key: 'codes',
+              header: 'Supplier codes',
+              numeric: true,
+              render: (book) => (book.supplierCodeCount === 0 ? '—' : count(book.supplierCodeCount)),
+            },
+            {
+              key: 'published',
+              header: 'Published',
+              render: (book) => (book.publishedAt === null ? '—' : date(book.publishedAt)),
+              cellClassName: 'whitespace-nowrap text-sq-ink-muted',
+            },
+            { key: 'note', header: 'Note', render: (book) => book.note ?? '—', cellClassName: 'text-sq-ink-muted' },
+            {
+              key: 'state',
+              header: 'State',
+              render: (book) =>
+                book.hash === active ? <StatusPill tone="ok" label="Active" /> : <span className="text-sq-ink-muted">Inactive</span>,
+            },
+          ]}
+        />
       </Panel>
     </div>
   );

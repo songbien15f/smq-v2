@@ -64,6 +64,25 @@ export function quantity(value: number, maxFractionDigits = 3): string {
   return new Intl.NumberFormat('en-AU', { maximumFractionDigits: maxFractionDigits }).format(value);
 }
 
+/** A whole-number count — people, seats, quotes, events — with thousands separators: `6,217`. */
+export function count(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  return INT.format(Math.round(value));
+}
+
+const ONE_DECIMAL = new Intl.NumberFormat('en-AU', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/**
+ * A file size. Binary steps (1 KB = 1024 B), because that is what the operating system shows for
+ * the same file, and a size that disagrees with Explorer reads as a corrupted upload.
+ */
+export function bytes(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${INT.format(value)} B`;
+  if (value < 1024 * 1024) return `${ONE_DECIMAL.format(value / 1024)} KB`;
+  return `${ONE_DECIMAL.format(value / (1024 * 1024))} MB`;
+}
+
 /** A percentage the operator typed, e.g. `12.5`. */
 export function percent(value: number, fractionDigits = 1): string {
   if (!Number.isFinite(value)) return '—';

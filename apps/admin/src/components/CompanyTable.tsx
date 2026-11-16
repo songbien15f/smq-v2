@@ -15,7 +15,7 @@
 
 import { useMemo, useState } from 'react';
 import type { CompanyRow } from '@sq/contracts';
-import { date, StatusPill } from '@sq/ui';
+import { count, DataTable, date, StatusPill } from '@sq/ui';
 import {
   COMPANY_FILTERS as FILTERS,
   companyState,
@@ -54,6 +54,10 @@ export interface CompanyTableProps {
   companies: CompanyRow[];
   initialQuery?: string;
   initialFilter?: CompanyFilter;
+}
+
+function companyHref(company: CompanyRow): string {
+  return `/company/${encodeURIComponent(company.id)}`;
 }
 
 export function CompanyTable({ companies, initialQuery = '', initialFilter = 'all' }: CompanyTableProps) {
@@ -139,75 +143,75 @@ export function CompanyTable({ companies, initialQuery = '', initialFilter = 'al
           </button>
         </div>
       ) : (
-        <div className="max-h-[calc(100vh-15rem)] overflow-auto">
-          <table className="w-full border-collapse text-sq-body">
-            <caption className="sr-only">
-              Companies, {visible.length} of {companies.length} shown
-            </caption>
-            <thead className="sticky top-0 z-10 bg-sq-surface shadow-[inset_0_-1px_0_var(--color-sq-line)]">
-              <tr className="text-left text-sq-micro text-sq-ink-muted">
-                <th scope="col" className="px-sq-3 py-sq-2 font-medium">Company</th>
-                <th scope="col" className="px-sq-3 py-sq-2 font-medium">Code</th>
-                <th scope="col" className="px-sq-3 py-sq-2 font-medium">State</th>
-                <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Seats in use</th>
-                <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">People</th>
-                <th scope="col" className="px-sq-3 py-sq-2 text-right font-medium">Quotes</th>
-                <th scope="col" className="px-sq-3 py-sq-2 font-medium">Subscription ends</th>
-                <th scope="col" className="px-sq-3 py-sq-2 font-medium">
-                  <span className="sr-only">Open</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((company) => {
+        <DataTable
+          rows={visible}
+          rowKey={(company) => company.id}
+          caption={`Companies, ${visible.length} of ${companies.length} shown`}
+          columns={[
+            {
+              key: 'company',
+              header: 'Company',
+              render: (company) => (
+                <>
+                  <a href={companyHref(company)} className="font-medium text-sq-ink no-underline hover:underline">
+                    {company.name}
+                  </a>
+                  <span className="ml-sq-2 text-sq-micro text-sq-ink-muted">{company.slug}</span>
+                </>
+              ),
+            },
+            {
+              key: 'code',
+              header: 'Code',
+              render: (company) => company.code ?? '—',
+              cellClassName: 'font-mono text-sq-micro text-sq-ink',
+            },
+            {
+              key: 'state',
+              header: 'State',
+              render: (company) => {
                 const state = companyState(company);
-                const href = `/company/${encodeURIComponent(company.id)}`;
-                return (
-                  <tr
-                    key={company.id}
-                    className="h-9 border-b border-sq-line last:border-0 even:bg-sq-ground/40 hover:bg-sq-brand/5"
-                  >
-                    <td className="px-sq-3 py-1.5">
-                      <a href={href} className="font-medium text-sq-ink no-underline hover:underline">
-                        {company.name}
-                      </a>
-                      <span className="ml-sq-2 text-sq-micro text-sq-ink-muted">{company.slug}</span>
-                    </td>
-                    <td className="px-sq-3 py-1.5 font-mono text-sq-micro text-sq-ink">{company.code ?? '—'}</td>
-                    <td className="px-sq-3 py-1.5 whitespace-nowrap">
-                      <StatusPill tone={state.tone} label={state.label} />
-                    </td>
-                    <td
-                      className={`sq-numeric px-sq-3 py-1.5 whitespace-nowrap ${
-                        state.key === 'full' ? 'font-semibold text-sq-attention' : ''
-                      }`}
-                    >
-                      {company.seatsInUse} / {company.seats}
-                    </td>
-                    <td className="sq-numeric px-sq-3 py-1.5">{company.memberCount}</td>
-                    <td className="sq-numeric px-sq-3 py-1.5">{company.quoteCount}</td>
-                    <td
-                      className={`px-sq-3 py-1.5 whitespace-nowrap ${
-                        state.key === 'ended' ? 'font-medium text-sq-attention' : 'text-sq-ink-muted'
-                      }`}
-                    >
-                      {company.subscriptionEndsAt === null ? 'No end date' : date(company.subscriptionEndsAt)}
-                    </td>
-                    <td className="px-sq-3 py-1.5 text-right">
-                      <a
-                        href={href}
-                        aria-label={`Open ${company.name}`}
-                        className="inline-flex min-h-8 items-center rounded-md px-sq-2 text-sq-body font-medium text-sq-brand no-underline hover:bg-sq-ground"
-                      >
-                        Open ›
-                      </a>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                return <StatusPill tone={state.tone} label={state.label} />;
+              },
+              cellClassName: 'whitespace-nowrap',
+            },
+            {
+              key: 'seats',
+              header: 'Seats in use',
+              numeric: true,
+              render: (company) => `${count(company.seatsInUse)} / ${count(company.seats)}`,
+              cellClassName: (company) =>
+                `whitespace-nowrap ${companyState(company).key === 'full' ? 'font-semibold text-sq-attention' : ''}`,
+            },
+            { key: 'people', header: 'People', numeric: true, render: (company) => count(company.memberCount) },
+            { key: 'quotes', header: 'Quotes', numeric: true, render: (company) => count(company.quoteCount) },
+            {
+              key: 'ends',
+              header: 'Subscription ends',
+              render: (company) =>
+                company.subscriptionEndsAt === null ? 'No end date' : date(company.subscriptionEndsAt),
+              cellClassName: (company) =>
+                `whitespace-nowrap ${
+                  companyState(company).key === 'ended' ? 'font-medium text-sq-attention' : 'text-sq-ink-muted'
+                }`,
+            },
+            {
+              key: 'open',
+              header: 'Open',
+              hideHeader: true,
+              render: (company) => (
+                <a
+                  href={companyHref(company)}
+                  aria-label={`Open ${company.name}`}
+                  className="inline-flex min-h-8 items-center rounded-md px-sq-2 text-sq-body font-medium text-sq-brand no-underline hover:bg-sq-ground"
+                >
+                  Open ›
+                </a>
+              ),
+              cellClassName: 'text-right',
+            },
+          ]}
+        />
       )}
     </section>
   );
