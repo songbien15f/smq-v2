@@ -1,14 +1,17 @@
 /**
  * Opening the application database.
  *
- * Which driver runs is decided by `DB_DRIVER`, and the default is SQLite so a fresh
- * checkout runs without a server. Everything above this function is driver-blind.
+ * **Postgres, everywhere.** The application database used to have a SQLite driver as an offline
+ * fallback; it is gone (DECISIONS, D1). One driver means one set of SQL semantics to reason about,
+ * one place where a concurrent write is handled properly, and no hidden divergence between a
+ * developer's laptop and the server. SQLite still exists in this product, but only as the **file
+ * format of a price book** (`packages/core/src/lib/pricing/sqliteRuntime.ts`) — content-addressed,
+ * read-only, and never the application database.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import type { Db } from './driver.js';
-import { createSqliteDb } from './sqlite.js';
 import { createPostgresDb } from './postgres.js';
 
 /**
@@ -50,53 +53,46 @@ export function resolveFromRoot(value: string): string {
 
 /** What the application needs to know to open a database. */
 export interface DbConfig {
-  driver: 'sqlite' | 'postgres';
-  /** Path for SQLite. */
-  file?: string;
-  /** Connection URL for Postgres. */
+  driver: 'postgres';
+  /** Connection URL. */
   url?: string;
 }
 
 /** Read the configuration from the environment. */
 export function dbConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DbConfig {
-  // Postgres is the target. SQLite is the offline fallback, for a developer box with no
-  // server and for a single-machine install.
   const driver = (env.DB_DRIVER ?? 'postgres').toLowerCase();
 
-  if (driver === 'postgres') {
-    const url = env.DATABASE_URL;
-    if (url === undefined || url.trim() === '') {
-      throw new Error(
-        'DB_DRIVER=postgres needs DATABASE_URL. Nothing was opened. ' +
-          'For a run without Postgres, set DB_DRIVER=sqlite and DB_FILE.',
-      );
-    }
-    return { driver: 'postgres', url };
+  /*
+   * A named refusal, not a generic "unsupported value".
+   *
+   * Someone with an old checkout — or an old deployment note — will set `DB_DRIVER=sqlite` and get a
+   * message that tells them what changed and what to do instead. "DB_DRIVER must be postgres, got
+   * sqlite" would be technically true and useless.
+   */
+  if (driver === 'sqlite') {
+    throw new Error(
+      'DB_DRIVER=sqlite is no longer supported: the application database is Postgres everywhere ' +
+        '(DECISIONS D1). Set DATABASE_URL.',
+    );
   }
 
-  if (driver !== 'sqlite') {
-    // An unrecognised value must not silently pick a driver: a typo in production
-    // would otherwise open a local file and look healthy while serving empty data.
-    throw new Error(`DB_DRIVER must be 'sqlite' or 'postgres', got '${driver}'.`);
+  if (driver !== 'postgres') {
+    // An unrecognised value must not silently pick a default: a typo in production would otherwise
+    // connect to whatever DATABASE_URL happens to say and look healthy while serving other data.
+    throw new Error(`DB_DRIVER must be 'postgres', got '${driver}'.`);
   }
 
-  return {
-    driver: 'sqlite',
-    file: resolveFromRoot(env.DB_FILE ?? './data/app.db'),
-  };
+  const url = env.DATABASE_URL;
+  if (url === undefined || url.trim() === '') {
+    throw new Error(
+      'DATABASE_URL is required: the application database is Postgres (DECISIONS D1). ' +
+        'Nothing was opened.',
+    );
+  }
+  return { driver: 'postgres', url };
 }
 
 /** Open the database described by `config`. */
 export function openDb(config: DbConfig): Db {
-  if (config.driver === 'postgres') {
-    return createPostgresDb({ url: config.url as string });
-  }
-
-  const file = config.file ?? resolveFromRoot('./data/app.db');
-  if (file !== ':memory:') {
-    // SQLite will not create a missing directory, and the failure it gives instead
-    // ("unable to open database file") does not name the directory.
-    mkdirSync(dirname(file), { recursive: true });
-  }
-  return createSqliteDb({ file });
+  return createPostgresDb({ url: config.url as string });
 }

@@ -9,7 +9,7 @@
     "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/server.ts",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "node --env-file-if-exists=../../.env ./node_modules/vitest/vitest.mjs run",
     "clean": "rimraf dist .turbo",
     "seed": "node --env-file-if-exists=../../.env --import tsx scripts/seed.ts",
     "legacy:accounts": "node --env-file-if-exists=../../.env --import tsx scripts/import-legacy-accounts.ts",

@@ -84,9 +84,7 @@ if errorlevel 1 (
   echo    - Have you created the role and database? Run this once, as a superuser:
   echo        scripts\postgres-setup.sql
   echo.
-  echo    To run without Postgres instead, edit .env and set:
-  echo        DB_DRIVER=sqlite
-  echo        DB_FILE=./data/app.db
+  echo    Postgres is required: the application database has no SQLite fallback.
   echo.
   pause
   exit /b 1

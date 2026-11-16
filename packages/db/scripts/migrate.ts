@@ -29,12 +29,11 @@ async function main(): Promise<void> {
   const migrationsDir = resolve(root, 'packages', 'db', 'migrations');
   const config = dbConfigFromEnv();
 
-  process.stdout.write(`Database: ${config.driver}`);
-  process.stdout.write(config.driver === 'sqlite' ? ` (${config.file})\n` : '\n');
+  process.stdout.write(`Database: ${config.driver}\n`);
 
   const db = openDb(config);
   try {
-    const report = await migrate(db, migrationsDir, join(migrationsDir, dialectFolderFor(db.driver)));
+    const report = await migrate(db, migrationsDir, join(migrationsDir, dialectFolderFor()));
 
     for (const version of report.alreadyApplied) {
       process.stdout.write(`  = ${version} (already applied)\n`);

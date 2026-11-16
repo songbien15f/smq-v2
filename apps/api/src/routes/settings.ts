@@ -16,7 +16,8 @@ import type { Db } from '@sq/db';
 import { z } from 'zod';
 import { newId, now } from '@sq/db';
 import { loadSettings, saveSettings, type CompanySettings } from '../lib/settings.js';
-import { inviteRequest } from '@sq/contracts';
+import { inviteRequest, type DeviceListView } from '@sq/contracts';
+import { listDevices, revokeDevice } from '../lib/devices.js';
 import {
   createInvitation,
   revokeLiveInvitations,
@@ -322,6 +323,21 @@ export function registerSettings(
         'UPDATE sessions SET revoked_at = ? WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL',
         [now(), session.tenantId, target.user_id],
       );
+      /*
+       * And their **devices**, which is what holds the seat now (DECISIONS D3). Revoking only the
+       * sessions would leave the seat claimed by a device whose person no longer works here, so the
+       * company would keep paying for a seat nobody can use.
+       */
+      await tx.run(
+        `DELETE FROM device_seats
+          WHERE tenant_id = ?
+            AND device_id IN (SELECT id FROM devices WHERE tenant_id = ? AND user_id = ?)`,
+        [session.tenantId, session.tenantId, target.user_id],
+      );
+      await tx.run(
+        'UPDATE devices SET revoked_at = ? WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL',
+        [now(), session.tenantId, target.user_id],
+      );
     });
 
     return sendOk(reply, { removed: request.params.email });
@@ -506,5 +522,93 @@ export function registerSettings(
     });
 
     return sendOk(reply, { sent: true });
+  });
+
+  /* ---------------------------------------------------------------- devices */
+
+  /**
+   * The devices holding a seat in this company.
+   *
+   * A seat belongs to a device (DECISIONS D3), so "who is using our seats" is a list of browsers, not
+   * a list of sessions — and a person who closed their laptop with a session still live appears here
+   * until their device goes idle. This is the screen an admin needs when somebody cannot sign in.
+   */
+  app.get('/settings/devices', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'members:manage');
+    if (session === null) return;
+
+    const tenantId = session.tenantId as string;
+    const [devices, tenant] = await Promise.all([
+      listDevices(db, tenantId),
+      db.get<{ seats: number }>('SELECT seats FROM tenants WHERE id = ?', [tenantId]),
+    ]);
+
+    const current = (
+      await db.get<{ device_id: string | null }>('SELECT device_id FROM sessions WHERE id = ?', [
+        session.sessionId,
+      ])
+    )?.device_id;
+
+    const view: DeviceListView = {
+      seats: tenant?.seats ?? 0,
+      seatsInUse: devices.filter((device) => device.holdsSeat).length,
+      devices: devices.map((device) => ({
+        id: device.id,
+        userDisplayName: device.userDisplayName,
+        username: device.username,
+        label: device.label,
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeenAt,
+        holdsSeat: device.holdsSeat,
+        current: device.id === current,
+      })),
+    };
+    return sendOk(reply, view);
+  });
+
+  /**
+   * Free one device's seat.
+   *
+   * Allowed on the caller's own device: the sentence is "free this device", and refusing it for the
+   * one device the caller can see would be surprising. The person is signed out on their next request,
+   * which is exactly what they asked for.
+   *
+   * A device belonging to another company answers 404 rather than 403 — same rule as the quote routes,
+   * so a guessed id is not an oracle for whether it exists.
+   */
+  app.delete<{ Params: { deviceId: string } }>('/settings/devices/:deviceId', async (request, reply) => {
+    const session = requireCompanyCapability(request, reply, 'members:manage');
+    if (session === null) return;
+
+    const tenantId = session.tenantId as string;
+    const revoked = await revokeDevice(db, {
+      tenantId,
+      deviceId: request.params.deviceId,
+      exceptSessionId: session.sessionId,
+    });
+    if (!revoked) return sendFail(reply, 'not_found', 'Not found.');
+
+    /*
+     * Recorded, because freeing somebody else's seat is an administrative act about a person: the
+     * question "who signed me out?" should be answerable. Same row shape as the platform admin's own
+     * helper (`routes/admin.ts`), written here rather than shared — that one is private to that file
+     * and this is its second caller, not its tenth.
+     */
+    await db.run(
+      `INSERT INTO audit_events (id, at, actor_id, actor_email, action, target_type, target_id, summary)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        newId(),
+        now(),
+        session.userId,
+        session.email,
+        'device.revoked',
+        'device',
+        request.params.deviceId,
+        `Freed the seat of a device in company ${session.tenantCode ?? tenantId}.`,
+      ],
+    );
+
+    return sendOk(reply, { revoked: request.params.deviceId });
   });
 }

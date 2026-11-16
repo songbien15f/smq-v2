@@ -1,22 +1,79 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createSqliteDb } from '@/sqlite';
+import { createPostgresDb } from '@/postgres';
 import { migrate } from '@/migrate';
 import { toPostgresPlaceholders } from '@/driver';
 import type { Db } from '@/driver';
+import { assertTestDatabase, dropAllTablesForTests, ensureSchema, withSchema } from '@/testing';
 
 /** The migrations ship with the package, next to `src`. */
 const MIGRATIONS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations');
+/** The dialect folder. There is one dialect now (DECISIONS D1). */
+const PG = join(MIGRATIONS, 'pg');
+
+/**
+ * The URL this suite runs against: `TEST_DATABASE_URL`, pinned to its **own schema**.
+ *
+ * `@sq/api` uses the same database's `public` schema; this suite uses `db_suite`. Turborepo runs the
+ * two packages' tests **in parallel** and both drop every table, so sharing a schema means one suite
+ * empties the tables under the other — which looks like a random failure in whichever ran second.
+ *
+ * A schema rather than a second database because the application role deliberately has no
+ * `CREATEDB` (see `scripts/postgres-setup.sql`); it does have the right to create a schema, and that
+ * gives the same isolation without changing what the credential can do to the server.
+ *
+ * Missing `TEST_DATABASE_URL` throws rather than skipping. A suite that silently skips is a suite
+ * whose absence nobody notices.
+ */
+const TEST_SCHEMA = 'db_suite';
+
+function testUrl(): string {
+  const url = process.env.TEST_DATABASE_URL;
+  if (url === undefined || url.trim() === '') {
+    throw new Error(
+      'The @sq/db suite needs TEST_DATABASE_URL (DECISIONS D1: the application database is Postgres ' +
+        'everywhere). Example: postgres://smartquote:…@localhost:5432/smartquote_test — this suite ' +
+        'drops every table in its own schema there.',
+    );
+  }
+  assertTestDatabase(url, 'TEST_DATABASE_URL');
+  return withSchema(url, TEST_SCHEMA);
+}
+
+/**
+ * Open the suite's database and empty its schema.
+ *
+ * The schema is created on the plain URL first (no `search_path` in force yet), then every later
+ * connection sees it through the URL.
+ */
+async function freshDb(): Promise<Db> {
+  const base = process.env.TEST_DATABASE_URL as string;
+  const bootstrap = createPostgresDb({ url: base });
+  try {
+    await ensureSchema(bootstrap, TEST_SCHEMA);
+  } finally {
+    await bootstrap.close();
+  }
+
+  const db = createPostgresDb({ url: testUrl() });
+  await reset(db);
+  return db;
+}
+
+/** Drop everything in this suite's schema, so each `describe` starts from nothing. */
+async function reset(db: Db): Promise<void> {
+  await dropAllTablesForTests(db);
+}
 
 describe('the migration runner', () => {
   let db: Db;
 
   beforeAll(async () => {
-    db = createSqliteDb({ file: ':memory:' });
-    await migrate(db, MIGRATIONS, join(MIGRATIONS, 'sqlite'));
+    db = await freshDb();
+    await migrate(db, MIGRATIONS, PG);
   });
 
   afterAll(async () => {
@@ -31,7 +88,7 @@ describe('the migration runner', () => {
     expect(versions).toContain('001_init');
     // The dialect file is recorded under a namespaced version so it can never
     // collide with the portable file of the same prefix.
-    expect(versions).toContain('001_revision_immutable@sqlite');
+    expect(versions).toContain('001_revision_immutable@postgres');
   });
 
   it('creates the tables the API needs', async () => {
@@ -57,7 +114,7 @@ describe('the migration runner', () => {
       'rate_limits',
     ]) {
       const row = await db.get<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        "SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' AND tablename = ?",
         [table],
       );
       expect(row, `table ${table} should exist`).not.toBeNull();
@@ -65,7 +122,7 @@ describe('the migration runner', () => {
   });
 
   it('is idempotent: a second run applies nothing and does not throw', async () => {
-    const report = await migrate(db, MIGRATIONS, join(MIGRATIONS, 'sqlite'));
+    const report = await migrate(db, MIGRATIONS, PG);
     expect(report.applied).toEqual([]);
     expect(report.alreadyApplied.length).toBeGreaterThan(0);
   });
@@ -75,7 +132,7 @@ describe('the migration runner', () => {
     // matches the file. Two databases would otherwise hold different schemas under
     // one version number.
     await db.run("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = '001_init'");
-    await expect(migrate(db, MIGRATIONS, join(MIGRATIONS, 'sqlite'))).rejects.toThrow(
+    await expect(migrate(db, MIGRATIONS, PG)).rejects.toThrow(
       /has changed since it was applied/,
     );
   });
@@ -85,8 +142,8 @@ describe('a saved revision cannot be changed', () => {
   let db: Db;
 
   beforeAll(async () => {
-    db = createSqliteDb({ file: ':memory:' });
-    await migrate(db, MIGRATIONS, join(MIGRATIONS, 'sqlite'));
+    db = await freshDb();
+    await migrate(db, MIGRATIONS, PG);
 
     const now = new Date().toISOString();
     await db.run(
@@ -139,8 +196,8 @@ describe('transactions', () => {
   let db: Db;
 
   beforeAll(async () => {
-    db = createSqliteDb({ file: ':memory:' });
-    await migrate(db, MIGRATIONS, join(MIGRATIONS, 'sqlite'));
+    db = await freshDb();
+    await migrate(db, MIGRATIONS, PG);
   });
 
   afterAll(async () => {
@@ -206,7 +263,7 @@ describe('migration 009 — company code and per-company username', () => {
   let scratch: string;
 
   beforeAll(async () => {
-    db = createSqliteDb({ file: ':memory:' });
+    db = await freshDb();
     scratch = mkdtempSync(join(tmpdir(), 'sq-m009-'));
 
     // Everything before 009, so the backfill has real rows to work on.
@@ -217,7 +274,7 @@ describe('migration 009 — company code and per-company username', () => {
       }
     }
 
-    await migrate(db, scratch, join(MIGRATIONS, 'sqlite'));
+    await migrate(db, scratch, PG);
 
     await db.run(
       `INSERT INTO tenants (id, name, slug, status, seats, created_at, updated_at)
@@ -246,8 +303,20 @@ describe('migration 009 — company code and per-company username', () => {
   });
 
   it('has neither column before 009 runs', async () => {
-    const tenantCols = (await db.all("SELECT name FROM pragma_table_info('tenants')")) as { name: string }[];
-    const memberCols = (await db.all("SELECT name FROM pragma_table_info('memberships')")) as { name: string }[];
+    /*
+     * Scoped to the connection's own schema. Two suites share this database, told apart by
+     * `search_path`, and `information_schema.columns` is **not** schema-scoped: without the filter it
+     * returns the other suite's `tenants` too — which is how this assertion first failed with
+     * `['seats', 'seats', 'slug', …]`, the same columns twice.
+     */
+    const columnsOf = async (table: string) =>
+      (await db.all<{ name: string }>(
+        `SELECT column_name AS name FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = ?`,
+        [table],
+      )) as { name: string }[];
+    const tenantCols = await columnsOf('tenants');
+    const memberCols = await columnsOf('memberships');
     expect(tenantCols.map((c) => c.name)).not.toContain('code');
     expect(memberCols.map((c) => c.name)).not.toContain('username');
   });
@@ -255,7 +324,7 @@ describe('migration 009 — company code and per-company username', () => {
   it('gives every existing company a code from its slug, and every membership a username', async () => {
     // The production sequence: the portable file, then the dialect extras for the same prefix.
     await db.exec(readFileSync(join(MIGRATIONS, '009_company_code_and_username.sql'), 'utf8'));
-    await db.exec(readFileSync(join(MIGRATIONS, 'sqlite', '009_company_code_and_username.sql'), 'utf8'));
+    await db.exec(readFileSync(join(MIGRATIONS, 'pg', '009_company_code_and_username.sql'), 'utf8'));
 
     const codes = (await db.all('SELECT code FROM tenants ORDER BY code')) as { code: string }[];
     // `demo-sheds` → `DEMOSHEDS`: upper, hyphens dropped, first ten characters.
@@ -267,7 +336,7 @@ describe('migration 009 — company code and per-company username', () => {
 
   it('gives the two people called owner in one company distinct usernames', async () => {
     const rows = (await db.all(
-      "SELECT username FROM memberships WHERE tenant_id = 't-a' ORDER BY rowid",
+      "SELECT username FROM memberships WHERE tenant_id = 't-a' ORDER BY ctid",
     )) as { username: string }[];
 
     // The earliest keeps the plain name; the later one is suffixed, so the unique index can exist.

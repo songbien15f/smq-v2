@@ -18,6 +18,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createLimiter, LimiterTimeoutError, type Limiter } from './limiter.js';
 
 /**
  * The template's own version.
@@ -60,10 +61,60 @@ export class PdfUnavailableError extends Error {
   }
 }
 
+/**
+ * Every render slot was busy for longer than a caller should wait.
+ *
+ * Distinct from `PdfUnavailableError` on purpose: "this server has no Chromium" is a deployment fact
+ * an operator fixes once, and "the server is busy" is a queue that clears by itself. The API answers
+ * 429 for this and 503 for the other, because a person should retry one and not the other.
+ */
+export class PdfBusyError extends Error {
+  constructor(message = 'The server is busy producing other PDFs. Try again in a minute.') {
+    super(message);
+    this.name = 'PdfBusyError';
+  }
+}
+
 export interface RenderOptions {
   /** The Chromium executable, from configuration. */
   executablePath: string | undefined;
   timeoutMs?: number;
+}
+
+/**
+ * How many Chromium instances may run at once.
+ *
+ * Two, matching the default in `.env.example`: each is 200–300 MB, so two fits a small VPS while one
+ * leaves a queue that a normal burst cannot clear. `configurePdfRendering` changes it at boot from
+ * `PDF_CONCURRENCY`.
+ */
+let pdfLimiter: Limiter = createLimiter(2);
+let pdfMaxWaitMs = 60_000;
+
+/**
+ * Set the concurrency limit and how long a queued render may wait.
+ *
+ * Called once at boot. Both are deployment facts — how much RAM the machine has, and how long a
+ * download may hang — not per-request options.
+ */
+export function configurePdfRendering(options: { concurrency?: number; maxWaitMs?: number }): void {
+  if (options.concurrency !== undefined) pdfLimiter.setConcurrency(options.concurrency);
+  if (options.maxWaitMs !== undefined) pdfMaxWaitMs = options.maxWaitMs;
+}
+
+/**
+ * The concurrency limit from `PDF_CONCURRENCY`, or `undefined` when unset.
+ *
+ * Written like `chromePathFromEnv` below: a blank or malformed value means "use the default" rather
+ * than a crash at boot, because a missing variable is not a misconfiguration and the default already
+ * fits a small machine.
+ */
+export function pdfConcurrencyFromEnv(): number | undefined {
+  const raw = process.env.PDF_CONCURRENCY;
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 16) return undefined;
+  return value;
 }
 
 /**
@@ -83,6 +134,20 @@ export async function renderPdf(html: string, options: RenderOptions): Promise<B
 
   const timeoutMs = options.timeoutMs ?? 20_000;
 
+  /*
+   * The executable check happens **before** queueing, so an unconfigured server answers immediately
+   * with the honest reason rather than waiting behind other renders to say the same thing.
+   */
+  try {
+    return await pdfLimiter.run(() => launchAndRender(html, executablePath, timeoutMs), pdfMaxWaitMs);
+  } catch (error) {
+    if (error instanceof LimiterTimeoutError) throw new PdfBusyError();
+    throw error;
+  }
+}
+
+/** The launch, render and close, with the slot already held. */
+async function launchAndRender(html: string, executablePath: string, timeoutMs: number): Promise<Buffer> {
   // `puppeteer-core` is imported lazily so the app starts without it installed;
   // only a PDF request needs it.
   const puppeteer = (await import('puppeteer-core')) as typeof import('puppeteer-core');

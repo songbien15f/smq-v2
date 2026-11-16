@@ -1,80 +1,107 @@
 /**
- * Release every claimed seat.
+ * Free licence seats held by devices that no longer deserve one.
  *
- * ## Why this exists
+ * ## What a seat is now
  *
- * Seats are claimed by **sessions**, not by people: one person signed in on two devices holds two
- * seats. That is deliberate — a second session is a second session — but it means a development
- * machine that signs in repeatedly without signing out fills a five-seat licence in a few minutes and
- * then answers 403 to everything.
+ * A seat belongs to a **device** — one browser profile, for one user, in one company (DECISIONS D3).
+ * A device that is revoked, or that nobody has touched for `DEVICE_IDLE_DAYS`, no longer holds a seat.
+ * The application reclaims those lazily at the next sign-in in that company; this script does the same
+ * thing on demand, which is what an operator needs when somebody is on the phone and cannot get in.
  *
- * A real operator hits the same wall after a browser crash or a closed laptop: the session is still
- * live on the server, so their own seat is gone. This is the script that gives it back, and it is the
- * reason the seat model is defensible rather than merely strict.
+ * ## The modes
  *
- *   pnpm seats:release            # revoke every live session and release its seat
- *   pnpm seats:release -- --tenant demo-sheds
+ * ```
+ * pnpm seats:release                  # reclaim dead devices everywhere (revoked, or idle past cutoff)
+ * pnpm seats:release -- --tenant X    # the same, for one company
+ * pnpm seats:release -- --all         # revoke EVERY device and session and clear every seat
+ * pnpm seats:release -- --all --tenant X
+ * ```
+ *
+ * The default is deliberately the gentle one: it cannot sign anybody out who is using the product,
+ * because a device is only reclaimed when it is revoked or idle past the cutoff. `--all` is the blunt
+ * instrument for a development machine that filled its own licence, and it says what it did.
  */
 
 import { dbConfigFromEnv, now, openDb } from '@sq/db';
+import { loadConfig } from '../src/config.js';
+import { reclaimDeadDevices } from '../src/lib/devices.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  const all = args.includes('--all');
   const slugIndex = args.indexOf('--tenant');
   const slug = slugIndex >= 0 ? args[slugIndex + 1] : undefined;
 
+  const config = loadConfig();
   const db = openDb(dbConfigFromEnv());
 
   try {
-    const before = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tenant_seats');
-    const sessions = await db.get<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM sessions WHERE revoked_at IS NULL',
-    );
-
-    const at = now();
-
-    if (slug === undefined) {
-      await db.transaction(async (tx) => {
-        await tx.run('DELETE FROM tenant_seats');
-        await tx.run('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL', [at]);
-      });
-      process.stdout.write(
-        `Released every seat and revoked ${Number(sessions?.n ?? 0)} live session(s).\n` +
-          `Seats claimed before: ${Number(before?.n ?? 0)}.\n`,
-      );
-    } else {
-      const tenant = await db.get<{ id: string; name: string }>(
-        'SELECT id, name FROM tenants WHERE slug = ?',
-        [slug],
-      );
-      if (tenant === null) {
-        process.stderr.write(`No company with the slug "${slug}".\n`);
-        process.exitCode = 1;
-        return;
-      }
-
-      const released = await db.get<{ n: number }>(
-        'SELECT COUNT(*) AS n FROM tenant_seats WHERE tenant_id = ?',
-        [tenant.id],
-      );
-
-      await db.transaction(async (tx) => {
-        await tx.run('DELETE FROM tenant_seats WHERE tenant_id = ?', [tenant.id]);
-        await tx.run(
-          'UPDATE sessions SET revoked_at = ? WHERE tenant_id = ? AND revoked_at IS NULL',
-          [at, tenant.id],
-        );
-      });
-
-      process.stdout.write(
-        `${tenant.name}: released ${Number(released?.n ?? 0)} seat(s).\n` +
-          'Those people are signed out and will need to sign in again.\n',
-      );
+    const tenant =
+      slug === undefined
+        ? null
+        : await db.get<{ id: string; name: string }>('SELECT id, name FROM tenants WHERE slug = ?', [
+            slug,
+          ]);
+    if (slug !== undefined && tenant === null) {
+      process.stderr.write(`No company with the slug "${slug}".\n`);
+      process.exitCode = 1;
+      return;
     }
 
-    // A leftover row would be a seat nobody can use, so report the count rather than assume zero.
-    const after = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tenant_seats');
-    process.stdout.write(`Seats claimed now: ${Number(after?.n ?? 0)}.\n`);
+    const seatCount = async (): Promise<number> => {
+      const row = await db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM device_seats${tenant === null ? '' : ' WHERE tenant_id = ?'}`,
+        tenant === null ? [] : [tenant.id],
+      );
+      return Number(row?.n ?? 0);
+    };
+
+    const before = await seatCount();
+
+    if (!all) {
+      const released = await reclaimDeadDevices(db, {
+        tenantId: tenant?.id,
+        idleDays: config.deviceIdleDays,
+      });
+      process.stdout.write(
+        `${tenant === null ? 'Every company' : tenant.name}: reclaimed ${released} seat(s) ` +
+          `from devices revoked or idle for more than ${config.deviceIdleDays} day(s).\n` +
+          `Seats claimed before: ${before}; now: ${await seatCount()}.\n`,
+      );
+      return;
+    }
+
+    const at = now();
+    const tenantClause = tenant === null ? '' : ' AND tenant_id = ?';
+    const tenantParams = tenant === null ? [] : [tenant.id];
+
+    const sessions = await db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM sessions WHERE revoked_at IS NULL${tenantClause}`,
+      tenantParams,
+    );
+
+    await db.transaction(async (tx) => {
+      await tx.run(`DELETE FROM device_seats WHERE 1 = 1${tenantClause}`, tenantParams);
+      /*
+       * Revoke the devices as well as clearing their seats. A device left live would take a seat back
+       * on the next sign-in, which would make `--all` look like it had done nothing.
+       */
+      await tx.run(`UPDATE devices SET revoked_at = ? WHERE revoked_at IS NULL${tenantClause}`, [
+        at,
+        ...tenantParams,
+      ]);
+      await tx.run(`UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL${tenantClause}`, [
+        at,
+        ...tenantParams,
+      ]);
+    });
+
+    process.stdout.write(
+      `${tenant === null ? 'Every company' : tenant.name}: released every seat and revoked ` +
+        `${Number(sessions?.n ?? 0)} live session(s).\n` +
+        `Seats claimed before: ${before}.\n` +
+        'Everybody affected is signed out and must sign in again.\n',
+    );
   } finally {
     await db.close();
   }

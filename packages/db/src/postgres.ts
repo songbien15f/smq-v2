@@ -24,8 +24,13 @@ export interface PostgresOptions {
   connectionTimeoutMs?: number;
 }
 
-/** Normalise a bound value into something `pg` accepts. */
-function bind(value: SqlValue): string | number | null {
+/**
+ * Normalise a bound value into something `pg` accepts.
+ *
+ * A `Uint8Array` passes through untouched: `pg` binds it to a `bytea` column, which is how the price
+ * book's bytes are stored (DECISIONS D2). Converting it to a string here would corrupt them.
+ */
+function bind(value: SqlValue): string | number | null | Uint8Array {
   if (typeof value === 'boolean') return value ? 1 : 0;
   return value;
 }

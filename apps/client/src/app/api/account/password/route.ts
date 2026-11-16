@@ -14,6 +14,12 @@ const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
 export async function POST(request: Request): Promise<NextResponse> {
   const cookie = request.headers.get('cookie') ?? '';
   const body = await request.text();
+  /*
+   * The visitor's address, forwarded so the API can rate-limit a password change per person. Without
+   * it every change arrives from this process's loopback address, and one person's attempts would
+   * count against everybody using the app.
+   */
+  const clientAddress = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
 
   const upstream = await fetch(`${API}/auth/password`, {
     method: 'POST',
@@ -21,6 +27,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       'content-type': 'application/json',
       accept: 'application/json',
       ...(cookie === '' ? {} : { cookie }),
+      ...(clientAddress === null || clientAddress === '' ? {} : { 'x-forwarded-for': clientAddress }),
     },
     body,
     cache: 'no-store',

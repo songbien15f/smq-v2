@@ -170,7 +170,7 @@ export function registerSend(app: FastifyInstance, db: Db): void {
           kind: 'mail_sent',
           tenantId,
           userId: session.userId,
-          address: clientIp(request.headers, request.ip),
+          address: clientIp(request),
           sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {

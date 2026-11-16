@@ -14,14 +14,14 @@
  * applied before any module loads, so that day cannot arrive.
  *
  * A missing file is not an error: a deployed container gets its configuration from the
- * environment. Variables already present win, so `DB_DRIVER=sqlite pnpm dev` still overrides
- * the file.
+ * environment. Variables already present win, so `DATABASE_URL=… pnpm dev` still overrides the file.
  */
 
 import { dbConfigFromEnv, openDb } from '@sq/db';
+import { configurePdfRendering, pdfConcurrencyFromEnv } from '@sq/core/documents';
 import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
-import { closeAllBooks } from './lib/priceBook.js';
+import { backfillBookBytes, closeAllBooks } from './lib/priceBook.js';
 import { createSmtpTransport, mailIsConfigured, smtpConfigFromEnv } from './lib/mail/smtp.js';
 import type { TransactionalDeps } from './lib/mail/transactional.js';
 import { settleEnquiryNotifications } from './lib/mail/enquiryMail.js';
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   } catch (error) {
     process.stderr.write(
       `The database is not reachable: ${error instanceof Error ? error.message : String(error)}\n` +
-        'Check DB_DRIVER/DATABASE_URL or DB_FILE, and run `pnpm db:migrate`.\n',
+        'Check DATABASE_URL, and run `pnpm db:migrate`.\n',
     );
     process.exitCode = 1;
     return;
@@ -69,6 +69,37 @@ async function main(): Promise<void> {
         publicOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:3061',
       }
     : null;
+
+  /*
+   * How many PDFs may render at once, decided once at boot.
+   *
+   * Each render launches its own Chromium at roughly 200–300 MB, and nothing used to limit how many
+   * could run: ten simultaneous downloads of an uncached revision started ten browsers. The limit is a
+   * deployment fact (how much RAM the machine has), not a per-request option, so it is set here rather
+   * than inside the render call.
+   */
+  const pdfConcurrency = pdfConcurrencyFromEnv();
+  if (pdfConcurrency !== undefined) configurePdfRendering({ concurrency: pdfConcurrency });
+
+  /*
+   * Copy any published book that exists only on this container's disk into Postgres.
+   *
+   * A deployment that upgrades and never runs a script is the normal case, so this belongs at boot
+   * rather than behind a command nobody remembers. A book whose file is already gone is logged and
+   * skipped: refusing to start because one old book lost its file is worse than starting with the rest
+   * stored, and the route that needs it will say so plainly.
+   */
+  try {
+    const stored = await backfillBookBytes(db);
+    if (stored > 0) {
+      process.stdout.write(`Stored ${stored} price book file(s) in the database.\n`);
+    }
+  } catch (error) {
+    process.stderr.write(
+      `Could not store price book bytes: ${error instanceof Error ? error.message : String(error)}. ` +
+        'The application will start; the books stay on disk only until this is fixed.\n',
+    );
+  }
 
   const app = await buildApp({ db, config, logger: true, mail });
 

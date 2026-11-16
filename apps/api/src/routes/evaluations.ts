@@ -38,7 +38,7 @@ import { clientIp, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { recordUsage } from '../lib/usage.js';
 import { loadOverrides } from '../lib/priceOverrides.js';
 import { requireCompanyCapability } from '../lib/guard.js';
-import { BookMissingError, activeBookHash, canonicalHash, openBook } from '../lib/priceBook.js';
+import { BookMissingError, activeBookHash, canonicalHash, ensureBookOnDisk, openBook } from '../lib/priceBook.js';
 import {
   SaveRefused,
   consumeEvaluation,
@@ -257,6 +257,11 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
 
     let lookup: ReturnType<typeof openBook>['lookup'];
     try {
+      /*
+       * The bytes live in Postgres and disk is a cache (DECISIONS D2), so a lost volume no longer
+       * means "no price book". This restores the file before the synchronous `openBook` needs it.
+       */
+      await ensureBookOnDisk(db, hash);
       lookup = openBook(hash).lookup;
     } catch (error) {
       if (error instanceof BookMissingError) {
@@ -751,7 +756,7 @@ export function registerEvaluations(app: FastifyInstance, db: Db): void {
           kind: result.revision === 1 ? 'quote_created' : 'revision_saved',
           tenantId,
           userId: session.userId,
-          address: clientIp(request.headers, request.ip),
+          address: clientIp(request),
           sessionId: session.sessionId,
           actorEmail: session.email,
           detail: {

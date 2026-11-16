@@ -17,9 +17,9 @@
  * book and no per-tenant activation; the `price_book_active` singleton row is the whole story.
  */
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Db as AppDb } from '@sq/db';
 import { openPublishedBook, publishPriceBook, bookKind, countSupplierCodes } from '@sq/core/pricing';
 import { createLookup } from '@sq/core/pricing';
@@ -122,6 +122,111 @@ export function closeAllBooks(): void {
 }
 
 /**
+ * Copy a book's file into Postgres, so the bytes survive a lost volume.
+ *
+ * Idempotent: `ON CONFLICT DO NOTHING`, because republishing the same dump is the same hash and the
+ * stored bytes cannot change — a book is immutable. A missing file is **not** an error here: the
+ * publish path has just written it, and the boot backfill deliberately tolerates a book whose file
+ * somebody deleted (it logs and moves on, because refusing to start would be worse than a warning).
+ */
+export async function storeBookBytes(db: AppDb, hash: string): Promise<boolean> {
+  const path = join(priceBooksDir(), `${hash}.db`);
+  if (!existsSync(path)) return false;
+
+  const bytes = readFileSync(path);
+  const fileSha256 = createHash('sha256').update(bytes).digest('hex');
+
+  await db.run(
+    `INSERT INTO price_book_files (hash, file_sha256, bytes, size_bytes, stored_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (hash) DO NOTHING`,
+    /*
+     * `new Uint8Array(bytes)` rather than the Buffer itself: under `@types/node` 26 a Buffer is a
+     * `NonSharedBuffer`, which the driver's `SqlValue` does not name. A plain view over the same
+     * memory binds identically and keeps the driver's type honest about what it accepts.
+     */
+    [hash, fileSha256, new Uint8Array(bytes), bytes.length, new Date().toISOString()],
+  );
+  return true;
+}
+
+/**
+ * Make sure a book is on disk, restoring it from Postgres when it is not.
+ *
+ * `openBook` and the engine are synchronous, so this runs **before** they are called, from the routes
+ * that need a book (DECISIONS D2: Postgres is the source of the bytes, disk is a cache).
+ *
+ * Three rules, each earning its place:
+ *
+ * 1. **A file already there is left alone.** Re-writing it on every request would be a 3 MB write per
+ *    evaluation, and the file is immutable — if it exists it is the right file.
+ * 2. **The bytes are verified before they are written.** `file_sha256` is checked against what came
+ *    back from the database, so a corrupted row cannot become a file the engine then trusts. A
+ *    mismatch throws and writes nothing.
+ * 3. **The write is a rename.** `<hash>.db.tmp` then `renameSync`, which is atomic on every platform
+ *    this runs on, so two requests racing cannot leave a half-written book where a complete one is
+ *    expected.
+ */
+export async function ensureBookOnDisk(db: AppDb, hash: string): Promise<void> {
+  const dir = priceBooksDir();
+  const path = join(dir, `${hash}.db`);
+  if (existsSync(path)) return;
+
+  const row = await db.get<{ file_sha256: string; bytes: Uint8Array }>(
+    'SELECT file_sha256, bytes FROM price_book_files WHERE hash = ?',
+    [hash],
+  );
+  if (row === null) {
+    // Same answer the old code gave for a missing file, with the road that leads out of it.
+    throw new BookMissingError(
+      `The active price book (${hash.slice(0, 12)}…) is neither on disk nor stored in the database. ` +
+        'Publish it again.',
+    );
+  }
+
+  const bytes = Buffer.from(row.bytes);
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== row.file_sha256) {
+    throw new BookMissingError(
+      `The stored bytes for the price book (${hash.slice(0, 12)}…) do not match their recorded digest. ` +
+        'Nothing was written to disk. Publish the book again from its dump.',
+    );
+  }
+
+  mkdirSync(dir, { recursive: true });
+  const temp = `${path}.tmp`;
+  writeFileSync(temp, bytes);
+  try {
+    renameSync(temp, path);
+  } catch (error) {
+    // A rename over an existing file fails on Windows; if somebody else won the race, their file is
+    // the same immutable book, so treat that as success rather than an error.
+    if (!existsSync(path)) throw error;
+  }
+}
+
+/**
+ * Copy every published book that is on disk into Postgres.
+ *
+ * Run at boot rather than behind a script: a deployment that upgrades and then never runs the script
+ * is a deployment whose books are still only on the volume. A book whose file is gone is **logged and
+ * skipped**, not thrown — refusing to start because one old book's file was removed is worse than
+ * starting with the rest stored.
+ */
+export async function backfillBookBytes(db: AppDb): Promise<number> {
+  const rows = await db.all<{ hash: string }>(
+    `SELECT b.hash FROM price_books b
+      WHERE NOT EXISTS (SELECT 1 FROM price_book_files f WHERE f.hash = b.hash)`,
+  );
+
+  let stored = 0;
+  for (const row of rows) {
+    if (await storeBookBytes(db, row.hash)) stored += 1;
+  }
+  return stored;
+}
+
+/**
  * Publish a dump directory and make it active.
  *
  * The **dump's own marker** decides `kind`, and the result is checked rather than trusted: a book
@@ -136,6 +241,12 @@ export async function publishAndActivate(
   mkdirSync(dir, { recursive: true });
 
   const published = publishPriceBook(input.dumpDir, dir);
+  /*
+   * The bytes go into Postgres **before** the book is recorded as active. If this fails, the publish
+   * fails: a book that only exists on this container's disk is the state that lost every evaluation
+   * when the volume went away, and the point of this step is that it cannot happen again.
+   */
+  await storeBookBytes(db, published.hash);
   const kind = bookKind(published.hash, dir);
 
   // Scan every column of every table rather than trusting the label. A sample book that carries

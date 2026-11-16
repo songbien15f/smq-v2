@@ -16,7 +16,7 @@ Three things. A backup that takes only the first is a backup that cannot restore
 | What | Where | Why it cannot be reconstructed |
 |---|---|---|
 | **The database** | `$DATABASE_URL` | Every quote, revision, customer, membership and settings version. |
-| **Published price books** | `$PRICE_BOOKS` (default `./data/price-books`) | Content-addressed and immutable: one `.db` file per publication plus `active.json`. A revision records the book's hash, so restoring a DB without the books leaves every document unable to render its own price, and `documents.ts` refuses rather than printing a different one. |
+| **Published price books** | `$PRICE_BOOKS` (default `./data/price-books`) **and** the `price_book_files` table | Content-addressed and immutable: one `.db` file per publication plus `active.json`. Since DECISIONS D2 the **bytes are also stored in Postgres**, and the file is a cache: a `pg_dump` restore puts them back on disk on demand. Keeping the directory in the backup is still worth it — it avoids re-materialising 3 MB per book on first use — but a backup without it now restores a working system. |
 | **Template and logo files** | `$TEMPLATE_FILES` (default `./data/template-files`), `$LOGO_FILE`, `$PDF_CACHE` | A template's `.sqd` **is** the template. A revision stores `logoHash`, so a missing logo prints the text logo — not corrupt, but not what was sent. |
 
 `$PDF_CACHE` is regenerable; back it up only if you care about exact bytes of PDFs already issued.
@@ -80,6 +80,81 @@ are only meaningful next to a date.
   store, not beside the database. Rotating `SESSION_SECRET` signs everybody out, which is the intended
   behaviour and not a failure.
 - **The SMTP password** — same.
+
+## 5a. Reverse proxy, and the client's real address
+
+The API must know the client's address: sign-in, password reset and the enquiry form are rate-limited
+**per address**, and an address that is really the proxy's makes one person's mistakes lock out
+everybody.
+
+```
+browser → reverse proxy (appends the real IP to X-Forwarded-For) → Next app → API
+browser → reverse proxy → API                    (the site's enquiry form calls it directly)
+```
+
+**Deployment requirement: only the proxy's 80/443 is reachable from the Internet.** Ports 3060–3063 are
+internal. If the API is exposed directly, a caller can reach it without a proxy — and although its
+`X-Forwarded-For` will then be ignored (see below), the per-address limits would all count the caller's
+own address, which is correct but means a hostile caller can rotate addresses if they have many.
+
+`TRUST_PROXY` says which peers may set the header:
+
+| Value | Meaning |
+|---|---|
+| unset (default) | `loopback` — one machine; the Next bridges are trusted, everybody else is not |
+| `loopback,uniquelocal` | Docker or a private network between the proxy and the app |
+| `<Cloudflare ranges>` | behind Cloudflare — list its published ranges |
+| `false` | no proxy: ignore `X-Forwarded-For` entirely |
+| `true` | dev only. **Refused in production**, because it honours the header from any caller |
+| a number (`2`) | **refused**: Fastify 5 fails closed on a hop count, so the value would look configured and trust nobody |
+
+The API reads `request.ip` and nothing else (`lib/http.ts` `clientIp`). A header from an untrusted peer
+is ignored by Fastify itself, so a spoofed address cannot move a rate-limit bucket.
+
+## 5b. Seats belong to devices
+
+A licence seat belongs to a **device** — one browser profile, for one user, in one company — not to a
+session (DECISIONS D3).
+
+- **Signing in again on the same browser reuses the seat.** A session expiring does not cost anybody
+  their seat.
+- **A second browser is a second seat.** One person on a laptop and a phone holds two.
+- **A device nobody has used for `DEVICE_IDLE_DAYS` (default 14) gives its seat back**, at the next
+  sign-in in that company. There is no sweeper: the reclaim happens inside the sign-in transaction that
+  needs the seat, so the answer is current at the moment it is asked for.
+- **A company admin can free a device** at Team → Devices, which is the answer to "nobody can sign in
+  and the office is full" without a support call.
+- **Company members must sign in once after upgrading to the version that introduced this.** Sessions
+  created before it have no device and are refused, deliberately: their seat was held by the session,
+  which no longer exists as a concept.
+
+`pnpm seats:release` reclaims dead devices on demand:
+
+```bash
+pnpm seats:release                 # every company: revoked or idle past DEVICE_IDLE_DAYS
+pnpm seats:release -- --tenant X   # one company
+pnpm seats:release -- --all        # blunt: revoke EVERY device and session, clear every seat
+```
+
+The default cannot sign out anybody who is using the product.
+
+## 5c. PDF rendering capacity
+
+Every PDF render launches its own Chromium at roughly 200–300 MB of RAM, and scans are cached per
+revision so only the first render of each is expensive. `PDF_CONCURRENCY` (default 2) limits how many
+run at once; a further request waits in a queue and answers **429** if it waits longer than a minute.
+
+```env
+PDF_CONCURRENCY=1   # 2 GB VPS
+PDF_CONCURRENCY=2   # 4 GB or more
+```
+
+## 5d. Backup now includes the price book
+
+Because the bytes live in `price_book_files` (DECISIONS D2), the single `pg_dump` in section 2 is
+enough to restore a working system: the API materialises each book back to `data/price-books` the first
+time it is needed, verifying a digest before writing. Keep the directory anyway if you can — it saves a
+3 MB write per book on first use — but it is no longer the only copy.
 
 ## 6. Turning analytics off
 

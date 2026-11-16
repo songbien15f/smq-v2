@@ -5,6 +5,7 @@ import {
   seedPlatformAdmin,
   signIn,
   signInPlatform,
+  signInWithDevice,
   testConfig,
   type TestApp,
 } from './helpers';
@@ -145,49 +146,368 @@ describe('sign-in', () => {
   });
 });
 
-describe('seats', () => {
-  it('refuses a session beyond the seat count, and frees the seat on sign-out', async () => {
-    await seedCompany(ctx.db, {
-      name: 'Two Seats Pty',
-      slug: 'two-seats',
-      seats: 2,
-      email: 'boss@two.test',
+describe('device seats', () => {
+  /*
+   * A seat belongs to a **device** (DECISIONS D3): one browser profile, for one user, in one company.
+   * The old rule tied a seat to a session, which meant three people closing their browsers left a
+   * three-seat company unable to sign anybody in the next morning. These tests are the claims that
+   * change makes, plus the admin screen that lets a company fix a stuck seat itself.
+   */
+
+  /** A company with `seats` seats and one administrator. */
+  async function seatCompany(
+    slug: string,
+    seats: number,
+    code: string,
+  ): Promise<{ tenantId: string; username: string }> {
+    const seeded = await seedCompany(ctx.db, {
+      name: `Seats ${slug}`,
+      slug,
+      code,
+      seats,
+      email: `boss@${slug}.test`,
+      password: 'a-long-enough-password',
+      role: 'company_admin',
+    });
+    return { tenantId: seeded.tenantId, username: seeded.username };
+  }
+
+  it('reuses the seat when the same browser signs in again', async () => {
+    const company = await seatCompany('reuse', 1, 'SEATSREUSE');
+
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSREUSE',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(first.statusCode).toBe(200);
+    expect(first.deviceCookie).not.toBeNull();
+
+    /*
+     * The session expires — the state that used to strand a seat. `resolveSession` refuses it, and a
+     * person coming back the next day must not be told the company is full.
+     */
+    await ctx.db.run(
+      "UPDATE sessions SET expires_at = '2020-01-01T00:00:00.000Z' WHERE revoked_at IS NULL",
+    );
+    const stale = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: first.sessionCookie },
+    });
+    expect(stale.statusCode).toBe(401);
+
+    const again = await signInWithDevice(
+      ctx.app,
+      'SEATSREUSE',
+      company.username,
+      'a-long-enough-password',
+      first.deviceCookie as string,
+    );
+    expect(again.statusCode).toBe(200);
+
+    /*
+     * Scoped to this company. The file shares one database across its `describe`s, so an unscoped
+     * count picks up devices seeded by every other test — which is how this assertion first read 4.
+     */
+    const seats = await ctx.db.all<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM device_seats WHERE tenant_id = ?',
+      [company.tenantId],
+    );
+    expect(Number(seats[0]?.n)).toBe(1);
+  });
+
+  it('treats a second browser as a second seat, and refuses it when the company is full', async () => {
+    const company = await seatCompany('second', 1, 'SEATSSECOND');
+
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSSECOND',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(first.statusCode).toBe(200);
+
+    // No device cookie: a different browser, therefore a different device.
+    const second = await signInWithDevice(
+      ctx.app,
+      'SEATSSECOND',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(second.statusCode).toBe(403);
+    expect(second.body).toMatch(/seat/i);
+    expect(second.body).toMatch(/Team → Devices/);
+  });
+
+  it('reclaims an idle device so the seat comes free', async () => {
+    const company = await seatCompany('idle', 1, 'SEATSIDLE');
+
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSIDLE',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(first.statusCode).toBe(200);
+    const firstDevice = await ctx.db.get<{ id: string }>(
+      'SELECT id FROM devices WHERE tenant_id = ? ORDER BY created_at LIMIT 1',
+      [company.tenantId],
+    );
+    const firstDeviceId = firstDevice?.id ?? '';
+
+    // Older than `deviceIdleDays` (14 in `testConfig`).
+    const stale = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    await ctx.db.run('UPDATE devices SET last_seen_at = ? WHERE id = ?', [stale, firstDeviceId]);
+
+    const second = await signInWithDevice(
+      ctx.app,
+      'SEATSIDLE',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(second.statusCode).toBe(200);
+
+    const old = await ctx.db.get<{ revoked_at: string | null }>(
+      'SELECT revoked_at FROM devices WHERE id = ?',
+      [firstDeviceId],
+    );
+    expect(old?.revoked_at).not.toBeNull();
+
+    // And the old browser is signed out, not merely seatless.
+    const oldSession = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: first.sessionCookie },
+    });
+    expect(oldSession.statusCode).toBe(401);
+  });
+
+  it('does not take a live device seat', async () => {
+    const company = await seatCompany('live', 1, 'SEATSLIVE');
+
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSLIVE',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(first.statusCode).toBe(200);
+
+    const second = await signInWithDevice(
+      ctx.app,
+      'SEATSLIVE',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(second.statusCode).toBe(403);
+
+    // The first browser still works: a refused second sign-in must not disturb the person using it.
+    const still = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: first.sessionCookie },
+    });
+    expect(still.statusCode).toBe(200);
+  });
+
+  it('keeps the seat on an ordinary sign-out, and gives it back on request', async () => {
+    const company = await seatCompany('signout', 1, 'SEATSSIGNOUT');
+
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSSIGNOUT',
+      company.username,
+      'a-long-enough-password',
+    );
+    await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-out',
+      headers: { cookie: `${first.sessionCookie}; ${first.deviceCookie}` },
+      payload: {},
+    });
+
+    // The seat is still this browser's: signing back in needs no free seat.
+    const back = await signInWithDevice(
+      ctx.app,
+      'SEATSSIGNOUT',
+      company.username,
+      'a-long-enough-password',
+      first.deviceCookie as string,
+    );
+    expect(back.statusCode).toBe(200);
+
+    // This time, free it.
+    await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-out',
+      headers: { cookie: `${back.sessionCookie}; ${back.deviceCookie}` },
+      payload: { releaseDevice: true },
+    });
+    const seats = await ctx.db.all<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM device_seats WHERE tenant_id = ?',
+      [company.tenantId],
+    );
+    expect(Number(seats[0]?.n)).toBe(0);
+
+    // A different browser can now take the seat.
+    const other = await signInWithDevice(
+      ctx.app,
+      'SEATSSIGNOUT',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(other.statusCode).toBe(200);
+  });
+
+  it('revokes the session even when it had already expired', async () => {
+    const company = await seatCompany('expired-out', 1, 'SEATSEXPIREDOUT');
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSEXPIREDOUT',
+      company.username,
+      'a-long-enough-password',
+    );
+
+    await ctx.db.run("UPDATE sessions SET expires_at = '2020-01-01T00:00:00.000Z'");
+    await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/sign-out',
+      headers: { cookie: first.sessionCookie },
+      payload: {},
+    });
+
+    const row = await ctx.db.get<{ revoked_at: string | null }>(
+      'SELECT revoked_at FROM sessions LIMIT 1',
+    );
+    expect(row?.revoked_at).not.toBeNull();
+  });
+
+  it('lists devices for an admin, frees one, and marks the caller own device', async () => {
+    const company = await seatCompany('admin-devices', 2, 'SEATSADMINDEV');
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSADMINDEV',
+      company.username,
+      'a-long-enough-password',
+    );
+    const second = await signInWithDevice(
+      ctx.app,
+      'SEATSADMINDEV',
+      company.username,
+      'a-long-enough-password',
+    );
+    expect(second.statusCode).toBe(200);
+
+    const list = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/devices',
+      headers: { cookie: second.sessionCookie },
+    });
+    expect(list.statusCode).toBe(200);
+    const view = list.json().data as {
+      seats: number;
+      seatsInUse: number;
+      devices: { id: string; current: boolean; holdsSeat: boolean }[];
+    };
+    expect(view.seats).toBe(2);
+    expect(view.seatsInUse).toBe(2);
+    expect(view.devices).toHaveLength(2);
+    // The browser making the request is identifiable, so the screen can mark it.
+    expect(view.devices.filter((device) => device.current)).toHaveLength(1);
+
+    const target = view.devices.find((device) => !device.current);
+    const freed = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/settings/devices/${target?.id}`,
+      headers: { cookie: second.sessionCookie },
+    });
+    expect(freed.statusCode).toBe(200);
+
+    // The freed browser's session stops working.
+    const evicted = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: first.sessionCookie },
+    });
+    expect(evicted.statusCode).toBe(401);
+  });
+
+  it('answers 404 for a device of another company', async () => {
+    const mine = await seatCompany('dev-a', 2, 'SEATSDEVA');
+    const other = await seatCompany('dev-b', 2, 'SEATSDEVB');
+
+    const otherLogin = await signInWithDevice(
+      ctx.app,
+      'SEATSDEVB',
+      other.username,
+      'a-long-enough-password',
+    );
+    const theirs = await ctx.db.get<{ id: string }>('SELECT id FROM devices LIMIT 1');
+
+    const mineLogin = await signInWithDevice(
+      ctx.app,
+      'SEATSDEVA',
+      mine.username,
+      'a-long-enough-password',
+    );
+    const attempt = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/settings/devices/${theirs?.id}`,
+      headers: { cookie: mineLogin.sessionCookie },
+    });
+    // 404, not 403: a guessed id must not answer "that device exists".
+    expect(attempt.statusCode).toBe(404);
+    // And the other company's session still works.
+    const still = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: otherLogin.sessionCookie },
+    });
+    expect(still.statusCode).toBe(200);
+  });
+
+  it('refuses a company session with no device, which is a row from before the upgrade', async () => {
+    const company = await seatCompany('legacy-row', 1, 'SEATSLEGACY');
+    const first = await signInWithDevice(
+      ctx.app,
+      'SEATSLEGACY',
+      company.username,
+      'a-long-enough-password',
+    );
+
+    // Simulates a session written by the previous version: the seat was held by the session.
+    await ctx.db.run('UPDATE sessions SET device_id = NULL');
+    const after = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: first.sessionCookie },
+    });
+    expect(after.statusCode).toBe(401);
+  });
+
+  it('gives a platform session no device and no seat', async () => {
+    await seedPlatformAdmin(ctx.db, {
+      email: 'vendor@platform.test',
       password: 'a-long-enough-password',
     });
-    await seedCompany(ctx.db, {
-      name: 'Two Seats Pty',
-      slug: 'two-seats-2',
-      seats: 2,
-      email: 'other@two.test',
-      password: 'a-long-enough-password',
-    });
 
-    const first = await signIn(ctx.app, 'boss@two.test', 'a-long-enough-password');
-    expect(first).toContain('sq_session=');
+    const count = async (table: 'devices' | 'device_seats'): Promise<number> => {
+      const row = await ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`);
+      return Number(row?.n ?? 0);
+    };
 
-    // A second session for the same person is a second seat: the seat belongs to a
-    // session, not to a user, or one person signing in on two devices would cost
-    // nothing.
-    const second = await signIn(ctx.app, 'boss@two.test', 'a-long-enough-password');
-    expect(second).toContain('sq_session=');
+    const before = { devices: await count('devices'), seats: await count('device_seats') };
+    const device = await signInPlatform(ctx.app, 'vendor@platform.test', 'a-long-enough-password');
+    expect(device).toContain('sq_session=');
 
-    const refused = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/sign-in',
-      payload: { companyCode: 'TWOSEATS', username: 'boss', password: 'a-long-enough-password' },
-    });
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json().message).toMatch(/seat/i);
-
-    // Signing out must release the seat, or a company would leak capacity all day.
-    await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/sign-out', headers: { cookie: first } });
-
-    const afterRelease = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/sign-in',
-      payload: { companyCode: 'TWOSEATS', username: 'boss', password: 'a-long-enough-password' },
-    });
-    expect(afterRelease.statusCode).toBe(200);
+    /*
+     * Compared before and after rather than against zero: this file shares a database, so other
+     * tests have already created devices. What matters is that a platform sign-in adds none.
+     */
+    expect(await count('devices')).toBe(before.devices);
+    expect(await count('device_seats')).toBe(before.seats);
   });
 });
 

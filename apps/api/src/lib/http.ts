@@ -6,7 +6,7 @@
  * mutually incompatible success shapes of the old server came to exist.
  */
 
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { fail, ok, STATUS_FOR, zodDetails, type ErrorCode } from '@sq/contracts';
 
@@ -51,13 +51,22 @@ export const pageQuery = z.object({
   cursor: z.string().max(200).optional(),
 });
 
-/** Read the client IP, preferring the proxy's forwarded header when present. */
-export function clientIp(headers: Record<string, unknown>, fallback: string | undefined): string {
-  const forwarded = headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    // The first hop is the client; the rest are proxies.
-    const first = forwarded.split(',')[0];
-    if (first !== undefined && first.trim() !== '') return first.trim();
-  }
-  return fallback ?? 'unknown';
+/**
+ * The client's address, as Fastify resolved it under `trustProxy`.
+ *
+ * ## Never read `X-Forwarded-For` here
+ *
+ * This function used to take the header and return its **first** entry. That is the entry the client
+ * writes, so any caller could claim any address: every per-IP limit (`signin:ip`, `reset:ip`,
+ * `enquiry:ip`) became a header you set rather than a limit. On top of that the two sign-in bridges
+ * did not forward the header at all, so every sign-in carried the **Next server's** address — thirty
+ * wrong passwords from one person locked out every company using that app.
+ *
+ * Fastify's `trustProxy` option is the right place for this. With a list of trusted peers it reads
+ * `X-Forwarded-For` from the right, skips the addresses of proxies it trusts, and **ignores the header
+ * entirely** when the connection itself comes from somewhere untrusted. `request.ip` is therefore the
+ * only correct answer, and this function exists to be the single place that says so.
+ */
+export function clientIp(request: FastifyRequest): string {
+  return request.ip === '' ? 'unknown' : request.ip;
 }

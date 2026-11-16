@@ -21,7 +21,7 @@ import type { Db } from '@sq/db';
 import { createSqliteCatalogueSource } from '@sq/core/pricing';
 import { sendFail, sendOk } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
-import { BookMissingError, activeBookHash, openBookDatabase } from '../lib/priceBook.js';
+import { BookMissingError, activeBookHash, ensureBookOnDisk, openBookDatabase } from '../lib/priceBook.js';
 
 /** A published book is named by the SHA-256 of the dump it was built from. */
 const BOOK_HASH = /^[a-f0-9]{64}$/;
@@ -48,6 +48,8 @@ export function registerCatalogues(scope: FastifyInstance, db: Db): void {
     }
 
     try {
+      // Restore the file from Postgres first: disk is a cache (DECISIONS D2).
+      await ensureBookOnDisk(db, hash);
       const catalogue = createSqliteCatalogueSource(openBookDatabase(hash)).load();
       return sendOk(reply, { bookHash: hash, catalogue });
     } catch (error) {

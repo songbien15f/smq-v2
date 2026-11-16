@@ -59,6 +59,16 @@ async function forward(
   const body = request.method === 'GET' || request.method === 'HEAD' ? null : await request.text();
   const hasBody = body !== null && body !== '';
 
+  /*
+   * The visitor's address, forwarded so the API can rate-limit by person rather than by server.
+   *
+   * Every request here reaches the API from this process's loopback address. Without the header, the
+   * API sees one address for every vendor user — so thirty wrong passwords from anybody would lock out
+   * the whole admin app. The API honours this header because this bridge is a trusted peer (see
+   * `TRUST_PROXY` in `apps/api/src/config.ts`).
+   */
+  const clientAddress = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
+
   const upstream = await fetch(`${API}/${joined}${incoming.search}`, {
     method: request.method,
     headers: {
@@ -66,6 +76,7 @@ async function forward(
       ...(request.headers.get('origin') === null ? {} : { origin: request.headers.get('origin') as string }),
       ...(hasBody ? { 'content-type': request.headers.get('content-type') ?? 'application/json' } : {}),
       ...(cookie === '' ? {} : { cookie }),
+      ...(clientAddress === null || clientAddress === '' ? {} : { 'x-forwarded-for': clientAddress }),
     },
     ...(hasBody ? { body } : {}),
     cache: 'no-store',

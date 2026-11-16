@@ -33,6 +33,20 @@ export const signInRequest = z.object({
 export type SignInRequest = z.infer<typeof signInRequest>;
 
 /**
+ * Signing out.
+ *
+ * `releaseDevice` is the difference between the two ways to leave: the ordinary one keeps the seat
+ * with this browser (so signing back in needs no free seat), and this one gives it back — for
+ * somebody at a shared machine, or an admin handing the seat to a colleague.
+ *
+ * Optional, so a client that posts no body still signs out normally.
+ */
+export const signOutRequest = z.object({
+  releaseDevice: z.boolean().optional(),
+});
+export type SignOutRequest = z.infer<typeof signOutRequest>;
+
+/**
  * Licence-vendor staff signing in.
  *
  * They belong to no company, so they have no username and there is nothing to resolve a company
@@ -53,6 +67,33 @@ export interface MembershipView {
   role: (typeof COMPANY_ROLES)[number];
   /** The name this person signs in with inside this company. */
   username: string;
+}
+
+/** One device holding (or able to hold) a seat. */
+export interface DeviceView {
+  id: string;
+  userDisplayName: string;
+  username: string;
+  /** Human label from the User-Agent, e.g. "Chrome on Windows". */
+  label: string;
+  createdAt: string;
+  lastSeenAt: string;
+  /** True while this device occupies a seat. A live device can hold no seat only if the company is full. */
+  holdsSeat: boolean;
+  /** True for the browser making the request, so the screen can mark "This device". */
+  current: boolean;
+}
+
+/**
+ * The devices screen: who is using the company's seats.
+ *
+ * A seat belongs to a device (DECISIONS D3), so this is a list of browsers rather than of sessions.
+ * `seatsInUse` counts devices that hold a seat, which is the number to compare with `seats`.
+ */
+export interface DeviceListView {
+  seats: number;
+  seatsInUse: number;
+  devices: DeviceView[];
 }
 
 /**

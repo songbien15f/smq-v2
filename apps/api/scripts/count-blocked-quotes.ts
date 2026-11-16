@@ -22,7 +22,7 @@ import { normaliseShedConfig } from '@sq/core/domain';
 import type { ShedConfig } from '@sq/core/domain';
 import { createSqliteCatalogueSource } from '@sq/core/pricing';
 import { dbConfigFromEnv, openDb } from '@sq/db';
-import { activeBookHash, closeAllBooks, openBookDatabase } from '../src/lib/priceBook';
+import { activeBookHash, closeAllBooks, ensureBookOnDisk, openBookDatabase } from '../src/lib/priceBook';
 import { bookBounds } from '../../client/src/components/editor/bookBounds';
 import { isBuildingIssue, validateDraft } from '../../client/src/components/editor/validation';
 
@@ -59,6 +59,8 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     }
+    // Disk is a cache of the bytes in Postgres (DECISIONS D2); restore before opening.
+    await ensureBookOnDisk(db, hash);
     const catalogue = createSqliteCatalogueSource(openBookDatabase(hash)).load();
     const book = { nonStandardStructureCodes: catalogue.nonStandardStructureCodes };
 

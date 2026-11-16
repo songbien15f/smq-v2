@@ -15,7 +15,7 @@ import { buildVqu } from '@sq/core/domain';
 import { sendFail } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
 import { loadFrozenRevision, RevisionNotFound } from '../lib/documents.js';
-import { activeBookHash, openBook } from '../lib/priceBook.js';
+import { activeBookHash, ensureBookOnDisk, openBook } from '../lib/priceBook.js';
 
 export function registerVquExport(app: FastifyInstance, db: Db): void {
   app.get<{ Params: { quoteId: string; rev: string } }>(
@@ -63,6 +63,8 @@ export function registerVquExport(app: FastifyInstance, db: Db): void {
       if (hash === null) {
         return sendFail(reply, 'not_configured', 'No price book has been published yet.');
       }
+      // Restore the file from Postgres first: disk is a cache (DECISIONS D2).
+      await ensureBookOnDisk(db, hash);
       const { lookup } = openBook(hash);
 
       const colourName = (hex: string): string => {

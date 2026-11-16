@@ -363,7 +363,14 @@ async function main(): Promise<void> {
           await db.transaction(async (tx) => {
             await tx.run('DELETE FROM memberships WHERE tenant_id = ?', [demo.id]);
             await tx.run('DELETE FROM company_settings WHERE tenant_id = ?', [demo.id]);
-            await tx.run('DELETE FROM tenant_seats WHERE tenant_id = ?', [demo.id]);
+            await tx.run('DELETE FROM device_seats WHERE tenant_id = ?', [demo.id]);
+            // Revoke the devices before the tenant row goes: `ON DELETE CASCADE` would take them, but
+            // an explicit revoke leaves the audit trail readable up to the moment of deletion.
+            await tx.run(
+              'UPDATE devices SET revoked_at = ? WHERE tenant_id = ? AND revoked_at IS NULL',
+              [new Date().toISOString(), demo.id],
+            );
+            await tx.run('DELETE FROM devices WHERE tenant_id = ?', [demo.id]);
             await tx.run('DELETE FROM sessions WHERE tenant_id = ?', [demo.id]);
             await tx.run('DELETE FROM tenants WHERE id = ?', [demo.id]);
           });

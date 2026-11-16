@@ -57,7 +57,16 @@ export interface AppDeps {
 export async function buildApp({ db, config, logger = false, mail = null }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger,
-    trustProxy: true,
+    /*
+     * Which peers may set `X-Forwarded-For`.
+     *
+     * **Not `true`.** With `true`, any caller can claim any address by sending a header, which makes
+     * every per-IP rate limit decorative — and this API has to be reachable from the site's browser
+     * form, so it cannot hide behind a private network alone. `config.trustProxy` defaults to
+     * `loopback`: the Next bridges run on the same machine, so their forwarded header is honoured and
+     * a stranger's is ignored.
+     */
+    trustProxy: config.trustProxy,
     // A body limit, because an unbounded one is a memory exhaustion route. A shed
     // config with 40 options is a few kilobytes; 1 MB is generous.
     bodyLimit: 1024 * 1024,

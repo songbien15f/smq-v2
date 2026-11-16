@@ -64,7 +64,13 @@ export interface CompanyRow {
   code: string | null;
   status: 'active' | 'suspended';
   seats: number;
-  /** Sessions active in the last few minutes. Compared against `seats`. */
+  /**
+   * Seats currently held by a **device** (DECISIONS D3), compared against `seats`.
+   *
+   * This used to count live sessions. It counts devices now, which is the number an operator cares
+   * about: a session that expired while its browser kept the seat would otherwise make a company look
+   * like it had a free seat it did not have.
+   */
   seatsInUse: number;
   subscriptionEndsAt: string | null;
   memberCount: number;

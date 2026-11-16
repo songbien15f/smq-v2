@@ -115,7 +115,7 @@ export function registerEnquiries(
   mail: TransactionalDeps | null = null,
 ): void {
   app.post('/enquiries', async (request, reply) => {
-    const ip = hashIp(clientIp(request.headers as Record<string, unknown>, request.ip));
+    const ip = hashIp(clientIp(request));
 
     // Before the body is even validated: a flood should cost a counter, not a parse.
     const limit = await consume(db, `enquiry:ip:${ip}`, LIMIT, WINDOW_MS);

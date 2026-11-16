@@ -23,7 +23,7 @@ another company's rows unreachable — but a second company is refused. See
 ```
 packages/core        pure: geometry, BOM, pricing, estimating, the .sqd file reader
 packages/contracts   zod schemas + DTOs shared by the API and every front-end
-packages/db          schema, migrations, repositories (Postgres, or SQLite offline)
+packages/db          schema, migrations, repositories (Postgres only)
 packages/ui          design tokens + components
 apps/api             Fastify — the only process that touches a database
 apps/admin           the vendor's control plane for this one company
@@ -36,7 +36,7 @@ quoting engine be tested without infrastructure and reused by all three sites.
 
 ## Requirements
 
-- **Node 22 or newer** — the SQLite fallback is the built-in `node:sqlite`.
+- **Node 22 or newer.**
 - **pnpm 10 or newer.**
 - **Postgres 14+.** Verified on **PostgreSQL 18.1**: three migrations, 27 tables, both
   immutability triggers, and the API suite 42/42.
@@ -83,8 +83,8 @@ Sign in with `owner@demo-sheds.local` / `a-long-enough-password` — the launche
 without Ctrl+C: the four Node processes survive that, and the next start then fails with "address
 already in use".
 
-**No Postgres?** Put `DB_DRIVER=sqlite` and `DB_FILE=./data/app.db` in `.env` and the same launcher
-runs on SQLite. Nothing else changes.
+Postgres is required now: the application database has no SQLite fallback (DECISIONS D1). See
+"Provisioning Postgres once" below.
 
 ## Run it — by hand
 
@@ -102,7 +102,7 @@ PLATFORM_ADMIN_PASSWORD="another-long-password" \
   pnpm install:company
 
 pnpm publish-book    # needs a dump in tools/price-dump/out
-pnpm seats:release   # release seats held by crashed or closed sessions
+pnpm seats:release   # reclaim seats from devices that are revoked or idle (see docs/OPERATIONS.md)
 pnpm dev
 ```
 
@@ -124,27 +124,21 @@ psql -h 127.0.0.1 -U postgres -f scripts/postgres-setup.sql
 It creates the role `smartquote`, the database `smartquote`, and grants the schema. **Change the
 password before anything leaves a laptop.**
 
-### Running the tests against Postgres as well as SQLite
+### Running the tests
 
-The suite defaults to an in-memory SQLite database. It can also run on Postgres, which is the only
-way to know the portable SQL and the adapter work there — **three real defects were found this way
-and none was visible by reading the SQL**:
+The destructive suites (`@sq/api`, `@sq/db`) run on Postgres like everything else, against a
+database whose **name contains `test`** — the suite refuses any other name, because it drops every
+table in it. `scripts/postgres-setup.sql` creates `smartquote_test` and grants the schema.
 
 ```bash
-# A database whose name contains "test": the suite drops every table in it.
-"C:\Program Files\PostgreSQL\18\bin\psql.exe" -h 127.0.0.1 -U postgres \
-  -c "CREATE DATABASE smartquote_test OWNER smartquote;"
+# in .env
+TEST_DATABASE_URL=postgres://smartquote:smartquote@localhost:5432/smartquote_test
 
-cd apps/api
-TEST_DB_DRIVER=postgres \
-TEST_DATABASE_URL=postgres://smartquote:smartquote@127.0.0.1:5432/smartquote_test \
-  pnpm test
+pnpm test          # through turbo; the variable is listed in globalPassThroughEnv
 ```
 
-### Without Postgres
-
-The same migrations run on SQLite, for a single-machine install or a dev box with no server — set
-`DB_DRIVER=sqlite` and `DB_FILE=./data/app.db` in `.env` and use the same commands as above.
+`@sq/api` uses that database directly. `@sq/db` uses its own **schema** inside it (`db_suite`),
+because Turborepo runs the two suites in parallel and both empty their own tables.
 
 **`pnpm db:seed`** is a separate development-only shortcut: it creates a platform administrator and
 a demo company with passwords that are in the repository, and refuses to run with

@@ -27,11 +27,18 @@ import {
   platformSignInRequest,
   resetRequestRequest,
   signInRequest,
+  signOutRequest,
   type MembershipView,
   type SessionView,
 } from '@sq/contracts';
 import type { ApiConfig } from '../config.js';
 import { burnVerificationTime, hashPassword, verifyPassword } from '../lib/password.js';
+import {
+  DEVICE_COOKIE,
+  DEVICE_COOKIE_MAX_AGE,
+  looksLikeDeviceToken,
+  revokeDevice,
+} from '../lib/devices.js';
 import {
   createInvitation,
   resolveInvitation,
@@ -186,7 +193,7 @@ export function registerAuth(
       ]);
     }
 
-    const ip = clientIp(request.headers, request.ip);
+    const ip = clientIp(request);
     const ipHash = hashIp(ip);
 
     // Two limits: one per account (stops one target being hammered) and one per address (stops
@@ -255,7 +262,7 @@ export function registerAuth(
     const body = parseBody(platformSignInRequest, request.body, reply);
     if (body === null) return;
 
-    const ipHash = hashIp(clientIp(request.headers, request.ip));
+    const ipHash = hashIp(clientIp(request));
     const perAccount = `signin:acct:${hashToken(body.email)}`;
 
     const accountLimit = await rateLimit.consume(db, perAccount, SIGNIN_LIMIT, SIGNIN_WINDOW_MS);
@@ -331,7 +338,7 @@ export function registerAuth(
       );
     }
 
-    const ipHash = hashIp(clientIp(request.headers, request.ip));
+    const ipHash = hashIp(clientIp(request));
     const perAccount = `reset:acct:${hashToken(`${body.companyCode.toUpperCase()}:${body.email}`)}`;
 
     const accountLimit = await rateLimit.consume(db, perAccount, RESET_LIMIT, SIGNIN_WINDOW_MS);
@@ -510,17 +517,26 @@ export function registerAuth(
   }): Promise<FastifyReply> {
     const { request, reply } = input;
 
+    // The browser's own device, so signing in again on this computer reuses its seat rather than
+    // needing a free one (DECISIONS D3). A junk cookie is treated as absent, and a fresh one is issued.
+    const sentDevice = request.cookies[DEVICE_COOKIE];
+
     const issued = await createSession(db, config, {
       userId: input.userId,
       tenantId: input.tenantId,
-      ip: hashIp(clientIp(request.headers, request.ip)),
+      ip: hashIp(clientIp(request)),
       userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+      deviceToken: looksLikeDeviceToken(sentDevice) ? sentDevice : null,
     });
 
     if (!issued.ok) {
       // A distinct code, because "the company is out of seats" is a call to the account manager,
-      // not a wrong password.
-      return sendFail(reply, 'forbidden', 'Every seat in this company is in use. Close a session or ask for another seat.');
+      // not a wrong password. The sentence names where the fix is, because it is in their own hands.
+      return sendFail(
+        reply,
+        'forbidden',
+        'Every seat in this company is in use. Ask your company admin to free a device under Team → Devices.',
+      );
     }
 
     // A correct password clears the counter an attacker was filling.
@@ -536,6 +552,21 @@ export function registerAuth(
       maxAge: Math.floor((Date.parse(issued.session.expiresAt) - Date.now()) / 1000),
     });
 
+    /*
+     * Set the device cookie **every** successful sign-in, not only when one was minted: re-setting it
+     * is what rolls its 400-day life forward, so a browser used once a month never mints a new device
+     * (and therefore never needs a second seat).
+     */
+    if (issued.deviceToken !== null) {
+      reply.setCookie(DEVICE_COOKIE, issued.deviceToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: config.production,
+        path: '/',
+        maxAge: DEVICE_COOKIE_MAX_AGE,
+      });
+    }
+
     const session = await resolveSession(db, config, issued.session.token);
     if (session === null) {
       return sendFail(reply, 'internal', 'The session could not be created.');
@@ -545,11 +576,39 @@ export function registerAuth(
     return sendOk(reply, toSessionView(session, memberships));
   }
 
+  /**
+   * Sign out.
+   *
+   * **The session is found by its token hash directly, not through `resolveSession`.** An expired
+   * session — which `resolveSession` reports as `null` — is exactly the one a person tries to sign out
+   * of when they come back to a stale tab, and leaving it un-revoked keeps a row that looks live in
+   * every admin query.
+   *
+   * `releaseDevice` is the deliberate act of giving the seat back. Ordinary sign-out keeps it: a
+   * person who signs out and back in on the same computer must not need a free seat twice, which is
+   * the defect this change exists to remove.
+   */
   app.post('/auth/sign-out', async (request, reply) => {
+    const body = parseBody(signOutRequest, request.body ?? {}, reply);
+    if (body === null) return;
+
     const token = request.cookies[SESSION_COOKIE];
     if (typeof token === 'string' && token !== '') {
-      const session = await resolveSession(db, config, token);
-      if (session !== null) await revokeSession(db, session.sessionId);
+      const row = await db.get<{ id: string; tenant_id: string | null; device_id: string | null }>(
+        'SELECT id, tenant_id, device_id FROM sessions WHERE token_hash = ? AND revoked_at IS NULL',
+        [hashToken(token)],
+      );
+      if (row !== null) {
+        if (body.releaseDevice === true && row.device_id !== null && row.tenant_id !== null) {
+          await revokeDevice(db, {
+            tenantId: row.tenant_id,
+            deviceId: row.device_id,
+            exceptSessionId: row.id,
+          });
+          reply.clearCookie(DEVICE_COOKIE, { path: '/' });
+        }
+        await revokeSession(db, row.id);
+      }
     }
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return sendOk(reply, { signedOut: true });

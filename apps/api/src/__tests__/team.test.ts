@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeTestApp, seedCompany, signIn, testConfig, type TestApp } from './helpers';
+import { makeTestApp, seedCompany, signIn, signInWithDevice, testConfig, type TestApp } from './helpers';
 import type { OutboundMail } from '../lib/mail/transport';
 import type { TransactionalDeps } from '../lib/mail/transactional';
 import { createInvitation, INVITE_TTL_MS } from '../lib/invitations';
@@ -299,6 +299,81 @@ describe('an internal failure never reaches a browser as text', () => {
     });
     // The whole point: no SQL, no table name, no stack.
     expect(response.body).not.toMatch(/invitations|SQLITE|constraint|at Object/i);
+    await ctx.close();
+  });
+});
+
+describe('removing a member frees their seat', () => {
+  it('revokes the member device, so the company gets the seat back', async () => {
+    /*
+     * A seat belongs to a device (DECISIONS D3). Removing a person must revoke their devices: revoking
+     * only their sessions would leave the seat claimed by a browser whose owner no longer works here,
+     * so the company would keep paying for it and could not give it to anybody else.
+     */
+    const { ctx } = await appWithMail();
+    const seeded = await seedCompany(ctx.db, {
+      name: 'Removal Co',
+      slug: 'removal-co',
+      code: 'REMOVALCO',
+      seats: 2,
+      username: 'owner',
+      email: 'owner@removal.test',
+      password: 'a-long-enough-password',
+      role: 'company_admin',
+    });
+
+    // A second member with their own device and seat.
+    const member = await seedCompany(ctx.db, {
+      name: 'Removal Co',
+      slug: 'removal-co-2',
+      code: 'REMOVALCO2',
+      seats: 2,
+      username: 'jo',
+      email: 'jo@removal.test',
+      password: 'a-long-enough-password',
+      role: 'estimator',
+    });
+    // Move the second member into the first company, which is what an invite would have produced.
+    await ctx.db.run('UPDATE memberships SET tenant_id = ? WHERE user_id = ?', [
+      seeded.tenantId,
+      member.userId,
+    ]);
+    await ctx.db.run('UPDATE memberships SET tenant_id = ?, username = ? WHERE user_id = ?', [
+      seeded.tenantId,
+      'jo',
+      member.userId,
+    ]);
+
+    const admin = await signInWithDevice(ctx.app, 'REMOVALCO', 'owner', 'a-long-enough-password');
+    const jo = await signInWithDevice(ctx.app, 'REMOVALCO', 'jo', 'a-long-enough-password');
+    expect(jo.statusCode).toBe(200);
+
+    const before = await ctx.db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM device_seats WHERE tenant_id = ?',
+      [seeded.tenantId],
+    );
+    expect(Number(before?.n)).toBe(2);
+
+    const removed = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/team/jo%40removal.test',
+      headers: { cookie: admin.sessionCookie },
+    });
+    expect(removed.statusCode).toBe(200);
+
+    const after = await ctx.db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM device_seats WHERE tenant_id = ?',
+      [seeded.tenantId],
+    );
+    expect(Number(after?.n)).toBe(1);
+
+    // And the removed person's session stops working.
+    const gone = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/session',
+      headers: { cookie: jo.sessionCookie },
+    });
+    expect(gone.statusCode).toBe(401);
     await ctx.close();
   });
 });

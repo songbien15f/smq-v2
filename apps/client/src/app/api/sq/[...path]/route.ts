@@ -155,11 +155,12 @@ async function forward(
    * to travel in a header.
    *
    * Forwarded, not invented: Next's own `request.headers` already carries `x-forwarded-for` when the
-   * deployment sits behind a proxy. Overwriting it would make the API's `trustProxy: true` a lie —
-   * the last hop would be the only address, and the last hop is this bridge.
+   * deployment sits behind a proxy. Overwriting it would throw away the address the proxy recorded.
    *
-   * A caller could forge the left end of that list. That is why the API hashes it with a salt and why
-   * nothing authorises on it: it counts distinct visitors, it is not a credential.
+   * The API does **not** trust this header from an arbitrary peer — it trusts it only because this
+   * bridge connects from loopback and `TRUST_PROXY` names `loopback` as trusted (see
+   * `apps/api/src/config.ts`). A direct caller cannot use that route: their connection is not from a
+   * trusted peer, so their header is ignored and `request.ip` is their own address.
    */
   const clientAddress = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
 

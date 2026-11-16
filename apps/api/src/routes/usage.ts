@@ -78,7 +78,7 @@ export function registerUsage(app: FastifyInstance, db: Db): void {
        * "how many different people" count possible at all — this row is the only one that happens on
        * every visit, so it is the only place the count can come from.
        */
-      address: clientIp(request.headers, request.ip),
+      address: clientIp(request),
       sessionId: session.sessionId,
       actorEmail: session.email,
       detail: { route },

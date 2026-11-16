@@ -19,7 +19,7 @@
     "build": "rimraf dist && tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "node --env-file-if-exists=../../.env ./node_modules/vitest/vitest.mjs run",
     "migrate": "node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts",
     "clean": "rimraf dist .turbo"
   },

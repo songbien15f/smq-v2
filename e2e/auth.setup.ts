@@ -5,11 +5,11 @@ import { expect, test as setup } from '@playwright/test';
  *
  * ## Why this is a setup project rather than the first test
  *
- * A seat is claimed by a **session**, not by a person (`apps/api/scripts/release-seats.ts` says so,
- * and a five-seat company answers 403 once they are gone). Playwright gives every test its own
- * browser context, so six tests that each signed in would take six seats — the suite would fill the
- * licence by its second run and then fail with "every seat in this company is in use", which is what
- * happened on the first attempt.
+ * A seat belongs to a **device** — one browser profile, for one user, in one company (DECISIONS D3).
+ * Playwright gives every test its own browser context, and each context is a new device, so six tests
+ * that each signed in would take six seats and fill a small licence. (Under the older rule the seat
+ * was held by a session, which produced the same failure by a different route: the suite filled the
+ * licence on its second run.) Signing in once and reusing the cookies costs one seat for the run.
  *
  * Signing in here and saving the cookies costs one seat for the whole run, and it still exercises the
  * form: this is the real three-field sign-in, not a shortcut through the API.

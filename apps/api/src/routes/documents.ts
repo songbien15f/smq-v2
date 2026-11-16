@@ -19,7 +19,14 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Db } from '@sq/db';
-import { renderQuoteHtml, renderPdf, readCachedPdf, writeCachedPdf, PdfUnavailableError } from '@sq/core/documents';
+import {
+  renderQuoteHtml,
+  renderPdf,
+  readCachedPdf,
+  writeCachedPdf,
+  PdfBusyError,
+  PdfUnavailableError,
+} from '@sq/core/documents';
 import { toCustomerDocument } from '@sq/core/documents';
 import { clientIp, sendFail } from '../lib/http.js';
 import { requireCompanyCapability } from '../lib/guard.js';
@@ -126,6 +133,14 @@ export function registerDocuments(app: FastifyInstance, db: Db): void {
         if (error instanceof PdfUnavailableError) {
           // A deployment fact, not a bad request: the operator fixes it by installing Chromium.
           return sendFail(reply, 'not_configured', error.message);
+        }
+        if (error instanceof PdfBusyError) {
+          /*
+           * 429, not 503: the queue clears by itself, so the honest instruction is "try again in a
+           * minute". A `not_configured` answer would send the operator looking for a missing Chromium
+           * that is right where it should be.
+           */
+          return sendFail(reply, 'rate_limited', error.message);
         }
         throw error;
       }

@@ -67,7 +67,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
       quote_count: number;
     }>(
       `SELECT t.id, t.name, t.slug, t.code, t.status, t.seats, t.subscription_ends_at, t.created_at,
-              (SELECT COUNT(*) FROM tenant_seats s WHERE s.tenant_id = t.id) AS seats_in_use,
+              (SELECT COUNT(*) FROM device_seats s WHERE s.tenant_id = t.id) AS seats_in_use,
               (SELECT COUNT(*) FROM memberships m WHERE m.tenant_id = t.id AND m.status = 'active') AS member_count,
               (SELECT COUNT(*) FROM quotes q WHERE q.tenant_id = t.id) AS quote_count
          FROM tenants t
@@ -171,9 +171,17 @@ export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): 
       if (changed.changes === 0) throw new NotFound();
 
       if (body.status === 'suspended') {
-        // Revoking the sessions is the point of suspending: a company that stops
-        // paying must stop working now, not when its people next sign in.
-        await tx.run('DELETE FROM tenant_seats WHERE tenant_id = ?', [request.params.tenantId]);
+        /*
+         * Revoking the sessions is the point of suspending: a company that stops paying must stop
+         * working now, not when its people next sign in. Its **devices** go too — a device left live
+         * would re-take a seat the moment the company was reinstated, and would otherwise sit in the
+         * admin's device list for a company that is on hold.
+         */
+        await tx.run('DELETE FROM device_seats WHERE tenant_id = ?', [request.params.tenantId]);
+        await tx.run(
+          'UPDATE devices SET revoked_at = ? WHERE tenant_id = ? AND revoked_at IS NULL',
+          [at, request.params.tenantId],
+        );
         await tx.run(
           "UPDATE sessions SET revoked_at = ? WHERE tenant_id = ? AND revoked_at IS NULL",
           [at, request.params.tenantId],

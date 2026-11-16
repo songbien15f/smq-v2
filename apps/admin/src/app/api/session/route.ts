@@ -21,12 +21,26 @@ const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
 
 const COOKIE = 'sq_session';
 
+/**
+ * The visitor's address, forwarded so the API can rate-limit per person. Without it every request
+ * arrives from this server's own address and one person's wrong passwords count against everybody
+ * using the app. The API only honours the header from a peer named in `TRUST_PROXY`.
+ */
+function forwardedFor(request: Request): Record<string, string> {
+  const address = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip');
+  return address === null || address === '' ? {} : { 'x-forwarded-for': address };
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const body = await request.text();
 
   const upstream = await fetch(`${API}/auth/sign-in-platform`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+      ...forwardedFor(request),
+    },
     body,
     cache: 'no-store',
   });
@@ -78,7 +92,11 @@ async function proxy(request: Request, path: string, method: string): Promise<Ne
 
   const upstream = await fetch(`${API}${path}`, {
     method,
-    headers: { accept: 'application/json', ...(cookie === '' ? {} : { cookie }) },
+    headers: {
+      accept: 'application/json',
+      ...(cookie === '' ? {} : { cookie }),
+      ...forwardedFor(request),
+    },
     cache: 'no-store',
   });
 

@@ -33,8 +33,14 @@
  *   savepoint is how a partial write looks like a complete one.
  */
 
-/** A value that may be bound as a parameter. */
-export type SqlValue = string | number | null | boolean;
+/**
+ * A value that may be bound as a parameter.
+ *
+ * `Uint8Array` is here for `BYTEA`: the price book's bytes live in Postgres (DECISIONS D2), which is
+ * the one place this product stores binary data. A `Buffer` is a `Uint8Array`, so the caller passes
+ * one directly and `pg` binds it to a `bytea` column.
+ */
+export type SqlValue = string | number | null | boolean | Uint8Array;
 
 /** The result of a statement that changes rows. */
 export interface RunResult {
@@ -42,9 +48,10 @@ export interface RunResult {
   changes: number;
 }
 
-/** The database, whichever driver is behind it. */
+/** The database. */
 export interface Db {
-  readonly driver: 'sqlite' | 'postgres';
+  /** Kept as a field rather than assumed, because health and boot logs print it. */
+  readonly driver: 'postgres';
 
   /** Every row the query returns. */
   all<T = Record<string, unknown>>(sql: string, params?: readonly SqlValue[]): Promise<T[]>;

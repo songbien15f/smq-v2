@@ -51,14 +51,16 @@ function checksumOf(text: string): string {
 /**
  * The folder holding a driver's dialect-specific migrations.
  *
- * `postgres` → `pg`, because the folder is named for the dialect the SQL is written in rather
- * than for the driver identifier the application uses. Keeping both names meant a `postgres`
- * folder that does not exist, and the first run against a real Postgres refused to start with
- * "no migrations directory" — a message about the filesystem for a problem that was a naming
- * mismatch.
+ * **Always `pg`.** The application database is Postgres everywhere (DECISIONS D1), so the SQLite
+ * folder is gone. The function stays because callers already pass its result, and a second
+ * `join(MIGRATIONS, 'pg')` in each of them would be the same string spelled in four places.
+ *
+ * The version recorded for a dialect migration is `…@postgres` (see below), and that spelling must
+ * not change: a database that has already applied those rows would otherwise see them as new and
+ * try to run them twice.
  */
-export function dialectFolderFor(driver: 'sqlite' | 'postgres'): string {
-  return driver === 'postgres' ? 'pg' : 'sqlite';
+export function dialectFolderFor(): string {
+  return 'pg';
 }
 
 /** Read every `.sql` file in `dir`, sorted by filename. */

@@ -5,9 +5,11 @@
  *
  * ## Two things this screen is honest about
  *
- * 1. **A seat is a live session, not a person.** One person signed in on a laptop and a phone holds
- *    two seats, and an operator who does not know that will read the count as wrong. So the seat
- *    column says "in the workspace now", not "enabled", and the header says what the number means.
+ * 1. **A seat belongs to a device, not to a person and not to a session.** One person signed in on a
+ *    laptop and a phone holds two seats, and an operator who does not know that will read the count as
+ *    wrong — so the Devices panel names the browser and the last time it was used, and the header says
+ *    what the number means. A session expiring does **not** free its seat (DECISIONS D3): the device
+ *    keeps it, which is why signing back in on the same computer always works.
  * 2. **Your own role cannot leave the company unadministrable.** A change that would remove the last
  *    administrator is refused by the API, and this screen shows why rather than failing silently.
  *
@@ -20,6 +22,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Field, Panel, StatusPill } from '@sq/ui';
+import type { DeviceListView } from '@sq/contracts';
 import { api } from '@/lib/sq';
 
 interface Member {
@@ -58,6 +61,22 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
   });
   const [inviteErrors, setInviteErrors] = useState<Record<string, string>>({});
 
+  /**
+   * The devices holding this company's seats.
+   *
+   * A separate load from the member list, because they answer different questions and one can fail
+   * while the other works — a company whose device list is unreadable should still see its people.
+   */
+  const [devices, setDevices] = useState<DeviceListView | null>(null);
+
+  const loadDevices = async (): Promise<void> => {
+    if (!canManage) return;
+    const result = await api<DeviceListView>('settings/devices');
+    if (result.ok) setDevices(result.data);
+    // Silent on failure: the people list is the reason the page exists, and an unreadable device
+    // list should not replace it with an error.
+  };
+
   const load = async (): Promise<void> => {
     const result = await api<{ items: Member[] }>('team');
     if (result.ok) setMembers(result.data.items);
@@ -67,6 +86,12 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
 
   useEffect(() => {
     void load();
+    void loadDevices();
+    // The seat count is stale the moment somebody signs in elsewhere; refreshing it on focus is
+    // cheaper than polling and accurate at the moment an admin looks.
+    const onFocus = (): void => void loadDevices();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   const changeRole = async (email: string, role: string): Promise<void> => {
@@ -90,8 +115,9 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
       setMessage({ tone: 'danger', text: result.message });
       return;
     }
-    setMessage({ tone: 'ok', text: `${email} has been removed and their sessions ended.` });
+    setMessage({ tone: 'ok', text: `${email} has been removed and their seat freed.` });
     await load();
+    await loadDevices();
   };
 
   const inviteMember = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -120,6 +146,26 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
     setInvite({ email: '', displayName: '', username: '', role: 'estimator' });
     setInviting(false);
     await load();
+  };
+
+  /** Free one device's seat. Confirmed first: the person is signed out on their next click. */
+  const freeDevice = async (device: { id: string; label: string; userDisplayName: string }): Promise<void> => {
+    const ok = window.confirm(
+      `Free the seat held by ${device.userDisplayName}'s ${device.label}?
+
+` +
+        'That browser is signed out on its next request and will need to sign in again.',
+    );
+    if (!ok) return;
+
+    setMessage(null);
+    const result = await api(`settings/devices/${encodeURIComponent(device.id)}`, { method: 'DELETE' });
+    if (!result.ok) {
+      setMessage({ tone: 'danger', text: result.message });
+      return;
+    }
+    setMessage({ tone: 'ok', text: `Freed the seat held by ${device.userDisplayName}'s ${device.label}.` });
+    await loadDevices();
   };
 
   const resetMember = async (email: string): Promise<void> => {
@@ -235,9 +281,69 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
         </Panel>
       )}
 
+      {canManage && devices !== null && (
+        <Panel
+          title="Devices"
+          description={`${devices.seatsInUse} of ${devices.seats} seat${devices.seats === 1 ? '' : 's'} held. A device keeps its seat until it is freed or unused for two weeks.`}
+          padded={false}
+        >
+          {devices.devices.length === 0 ? (
+            <p className="px-sq-3 py-sq-3 text-sq-micro text-sq-ink-muted">
+              No devices have signed in yet.
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-sq-body">
+              <thead>
+                <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
+                  <th scope="col" className="px-sq-3 py-sq-2 font-medium">Person</th>
+                  <th scope="col" className="px-sq-2 py-sq-2 font-medium">Device</th>
+                  <th scope="col" className="px-sq-2 py-sq-2 font-medium">Last used</th>
+                  <th scope="col" className="px-sq-2 py-sq-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.devices.map((device) => (
+                  <tr key={device.id} className="border-b border-sq-line last:border-0">
+                    <td className="px-sq-3 py-sq-2">
+                      <span className="font-medium text-sq-ink">{device.userDisplayName}</span>
+                      <span className="block text-sq-micro text-sq-ink-muted">{device.username}</span>
+                    </td>
+                    <td className="px-sq-2 py-sq-2">
+                      <span className="text-sq-ink">{device.label}</span>
+                      {device.current && (
+                        <span className="ml-sq-2 align-middle">
+                          <StatusPill tone="info" label="This device" />
+                        </span>
+                      )}
+                      {!device.holdsSeat && (
+                        <span className="ml-sq-2 align-middle">
+                          <StatusPill tone="neutral" label="no seat" />
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-sq-2 py-sq-2 text-sq-micro text-sq-ink-muted">
+                      {relativeTime(device.lastSeenAt)}
+                    </td>
+                    <td className="px-sq-2 py-sq-2">
+                      <Button
+                        variant="ghost"
+                        onClick={() => void freeDevice(device)}
+                        aria-label={`Free the seat held by ${device.userDisplayName}'s ${device.label}`}
+                      >
+                        Free seat
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Panel>
+      )}
+
       <Panel
         title="People"
-        description="A seat is a live session, so one person on two devices holds two of them."
+        description="A seat belongs to a device: one person on two browsers holds two of them."
         padded={false}
       >
         <table className="w-full border-collapse text-sq-body">
@@ -245,7 +351,7 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
             <tr className="border-b border-sq-line text-left text-sq-micro text-sq-ink-muted">
               <th scope="col" className="px-sq-3 py-sq-2 font-medium">Person</th>
               <th scope="col" className="px-sq-2 py-sq-2 font-medium">Role</th>
-              <th scope="col" className="px-sq-2 py-sq-2 font-medium">In the workspace now</th>
+              <th scope="col" className="px-sq-2 py-sq-2 font-medium">Seat</th>
               {canManage && <th scope="col" className="px-sq-2 py-sq-2 font-medium">Actions</th>}
             </tr>
           </thead>
@@ -279,9 +385,9 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
                 </td>
                 <td className="px-sq-2 py-sq-2">
                   {member.active ? (
-                    <StatusPill tone="ok" label="holding a seat" />
+                    <StatusPill tone="ok" label="active member" />
                   ) : (
-                    <StatusPill tone="neutral" label="signed out" />
+                    <StatusPill tone="neutral" label="pending" />
                   )}
                 </td>
                 {canManage && (
@@ -317,4 +423,26 @@ export function TeamPage({ canManage }: { canManage: boolean }) {
       </p>
     </div>
   );
+}
+
+/**
+ * "3 minutes ago", from an ISO timestamp.
+ *
+ * Hand-written rather than a date library: this is one label, and `Intl.RelativeTimeFormat` would need
+ * a unit choice and a locale for each call. Coarse on purpose — an admin needs "recently" versus
+ * "last month", not seconds.
+ */
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return iso;
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 90) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 31) return `${days} day${days === 1 ? '' : 's'} ago`;
+  const months = Math.round(days / 30);
+  return `${months} month${months === 1 ? '' : 's'} ago`;
 }

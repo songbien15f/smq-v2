@@ -9,13 +9,18 @@
   // these changes the artefact a task produces.
   //
   // Listed explicitly because Turbo filters the environment by default, and the failure is
-  // silent and misleading: `DB_DRIVER=sqlite pnpm dev` reached the app as *unset*, so it fell
-  // back to the default (Postgres), and the API refused to start with a message about
-  // DATABASE_URL — pointing at a setting that was never the problem.
+  // silent and misleading: a variable omitted here reaches the task as *unset*, and the app then
+  // fails with a message about a different setting — pointing at the wrong thing to fix.
+  //
+  // `TEST_DATABASE_URL` is here because `pnpm test` runs the suites through Turbo: without it the
+  // destructive suites see no test database and refuse to start.
   "globalPassThroughEnv": [
     "DB_DRIVER",
-    "DB_FILE",
     "DATABASE_URL",
+    "TEST_DATABASE_URL",
+    "DEVICE_IDLE_DAYS",
+    "TRUST_PROXY",
+    "PDF_CONCURRENCY",
     "API_PORT",
     "API_HOST",
     "API_BASE_URL",

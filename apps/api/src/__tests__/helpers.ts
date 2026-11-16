@@ -4,18 +4,27 @@
  * Migrations run for real rather than a hand-built schema, so a test cannot pass against a
  * table definition that production does not have.
  *
- * **Which database**: SQLite by default — `:memory:`, so each file gets a clean one with no
- * cleanup step that can be forgotten. Set `TEST_DB_DRIVER=postgres` and the suite runs against
- * a real Postgres instead, which is the only way to know the portable SQL and the driver
- * adapter actually work there. That run **drops every table in the target database between
- * files**, so it refuses a URL whose database name does not contain `test` — a mistyped URL
- * must not empty a developer's development database.
+ * **Which database**: Postgres, always (DECISIONS D1 — the application database is Postgres
+ * everywhere, so a test on SQLite would be testing a driver the product no longer has).
+ * `TEST_DATABASE_URL` is where it points; `DATABASE_URL` is deliberately **not** a fallback, because
+ * a missing test variable must not quietly aim a destructive suite at the development database.
+ *
+ * That run **drops every table in the target database between files**, so it refuses a URL whose
+ * database name does not contain `test` — a mistyped URL must not empty a company's data.
  */
 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { createPostgresDb, createSqliteDb, dialectFolderFor, migrate, newId, now } from '@sq/db';
+import {
+  assertTestDatabase,
+  createPostgresDb,
+  dialectFolderFor,
+  dropAllTablesForTests,
+  migrate,
+  newId,
+  now,
+} from '@sq/db';
 import type { Db } from '@sq/db';
 import type { ApiConfig } from '../config.js';
 import { buildApp } from '../app.js';
@@ -46,8 +55,16 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     sessionSecret: 'test-secret-that-is-long-enough-to-be-accepted',
     sessionTtlHours: 8,
     sessionIdleHours: 1,
+    // Short, so a device-idle test can move a timestamp a few days back rather than weeks.
+    deviceIdleDays: 14,
     allowedOrigins: ['http://localhost:3061'],
     production: false,
+    /*
+     * `loopback`, and `app.inject()` connects from `127.0.0.1`, so a test may set
+     * `X-Forwarded-For` and have it honoured — which is exactly what the client-IP tests need. A
+     * remote address in a test is still untrusted, which is the other half of what those tests prove.
+     */
+    trustProxy: 'loopback',
     ...overrides,
   };
 }
@@ -58,43 +75,29 @@ export interface TestApp {
   close: () => Promise<void>;
 }
 
-/** The Postgres URL to test against, or `null` for SQLite. */
-function postgresUrl(): string | null {
-  if ((process.env.TEST_DB_DRIVER ?? '').toLowerCase() !== 'postgres') return null;
-
-  const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+/**
+ * The Postgres URL this suite runs against.
+ *
+ * Required, never defaulted. There is no SQLite branch to fall back to (DECISIONS D1), and
+ * `DATABASE_URL` is not consulted: the development database is not a test database, and a missing
+ * `TEST_DATABASE_URL` must fail loudly rather than empty it.
+ */
+function postgresUrl(): string {
+  const url = process.env.TEST_DATABASE_URL;
   if (url === undefined || url.trim() === '') {
-    throw new Error('TEST_DB_DRIVER=postgres needs TEST_DATABASE_URL (or DATABASE_URL).');
-  }
-
-  // A suite that drops tables, pointed at a real database, is a destructive accident waiting
-  // for a typo. The database name has to say `test`.
-  const databaseName = url.split('/').pop()?.split('?')[0] ?? '';
-  if (!/test/i.test(databaseName)) {
     throw new Error(
-      `Refusing to run the destructive suite against a database named "${databaseName}". ` +
-        'Point TEST_DATABASE_URL at a database whose name contains "test".',
+      'The API suite needs TEST_DATABASE_URL (DECISIONS D1: the application database is Postgres ' +
+        'everywhere). It drops every table in the target database between files, so the name must ' +
+        'contain "test". Example: postgres://smartquote:…@localhost:5432/smartquote_test',
     );
   }
-
+  assertTestDatabase(url, 'TEST_DATABASE_URL');
   return url;
 }
 
-/**
- * Drop every table, so a file starts from nothing the way `:memory:` does.
- *
- * `CASCADE` takes dependent objects with their table, including the `quote_revisions` trigger
- * function, which the migration recreates.
- */
+/** Drop every table, so a file starts from nothing. Shared with `@sq/db`'s suite. */
 async function resetPostgres(db: Db): Promise<void> {
-  const rows = await db.all<{ tablename: string }>(
-    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
-  );
-  if (rows.length > 0) {
-    const list = rows.map((row) => `"public"."${row.tablename}"`).join(', ');
-    await db.exec(`DROP TABLE IF EXISTS ${list} CASCADE`);
-  }
-  await db.exec('DROP FUNCTION IF EXISTS quote_revisions_refuse_write() CASCADE');
+  await dropAllTablesForTests(db);
 }
 
 /** Build an app over a fresh database. */
@@ -110,11 +113,11 @@ export async function makeTestApp(
   mail: TransactionalDeps | null = null,
 ): Promise<TestApp> {
   const url = postgresUrl();
-  const db = url === null ? createSqliteDb({ file: ':memory:' }) : createPostgresDb({ url });
+  const db = createPostgresDb({ url });
 
-  if (url !== null) await resetPostgres(db);
+  await resetPostgres(db);
 
-  await migrate(db, MIGRATIONS, join(MIGRATIONS, dialectFolderFor(db.driver)));
+  await migrate(db, MIGRATIONS, join(MIGRATIONS, dialectFolderFor()));
 
   const app = await buildApp({ db, config, mail });
   DB_BY_APP.set(app, db);
@@ -286,6 +289,45 @@ export async function signIn(
 }
 
 /** Sign in as licence-vendor staff, who belong to no company. */
+/**
+ * Sign in and return **both** cookies the API set.
+ *
+ * The device cookie is what makes the seat model testable at all: signing in again on the same
+ * browser must reuse the seat, and the only way to say "same browser" in a test is to send the same
+ * `sq_device` back (DECISIONS D3).
+ *
+ * `body` may be a device cookie from a previous call, and is forwarded as the request's `cookie`
+ * header — which is exactly what a browser does.
+ */
+export async function signInWithDevice(
+  app: FastifyInstance,
+  companyCode: string,
+  username: string,
+  password: string,
+  previousDeviceCookie?: string,
+): Promise<{ sessionCookie: string; deviceCookie: string | null; statusCode: number; body: string }> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/sign-in',
+    payload: { companyCode, username, password },
+    ...(previousDeviceCookie === undefined ? {} : { headers: { cookie: previousDeviceCookie } }),
+  });
+
+  const raw = response.headers['set-cookie'];
+  const cookies = (Array.isArray(raw) ? raw : [raw ?? '']) as string[];
+  const pairOf = (name: string): string | null => {
+    const found = cookies.find((value) => value.startsWith(`${name}=`));
+    return found === undefined ? null : (found.split(';')[0] ?? null);
+  };
+
+  return {
+    sessionCookie: pairOf('sq_session') ?? '',
+    deviceCookie: pairOf('sq_device'),
+    statusCode: response.statusCode,
+    body: response.body,
+  };
+}
+
 export async function signInPlatform(
   app: FastifyInstance,
   email: string,
