@@ -1,0 +1,10 @@
+node_modules/
+.next/
+media/
+.env
+test-results/
+playwright-report/
+backups/
+*.tsbuildinfo
+.ui-shots/
+Start/PUBLIC-URL.txt

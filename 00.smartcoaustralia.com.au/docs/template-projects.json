@@ -1,0 +1,128 @@
+{
+  "warehouse-newcastle": {
+    "title": "Distribution Warehouse",
+    "loc": "Newcastle, NSW",
+    "state": "NSW",
+    "sector": "Industrial",
+    "structure": "Large-span warehouse frame",
+    "img": "24-project-warehouse-newcastle.jpg",
+    "alt": "Completed large steel warehouse with multiple roller-door loading bays under a clear sky",
+    "intro": "A large-span distribution warehouse for Newcastle — the full structural package fabricated, inspected and shipped door to door from Vietnam.",
+    "overview": [
+      "Distribution warehouses live or die on clear spans and erection speed. For this Newcastle project, the complete structural package — primary frame, secondary steel and connections — was modelled in Tekla by our Ho Chi Minh City drafting office, then fabricated in a Vietnamese factory matched to the project tonnage.",
+      "Our own QC inspectors followed the work through the workshop, and the steel was packed, containerised and shipped door to door, arriving on site ready to erect with its full QA documentation pack."
+    ],
+    "scope": [
+      "Tekla shop drawings for the full structural package",
+      "Primary and secondary steel fabrication",
+      "In-process workshop inspection and dimensional checks",
+      "Protective packing and optimised container loading",
+      "Door-to-door shipping and delivery to the Newcastle site"
+    ]
+  },
+  "feedlot-bega": {
+    "title": "Feed Lot",
+    "loc": "Bega, NSW",
+    "state": "NSW",
+    "sector": "Agricultural",
+    "structure": "Agricultural feed lot structure",
+    "img": "25-project-feedlot-bega.jpg",
+    "alt": "Crane lifting a roof truss into place over the steel frame of a large agricultural feed lot building",
+    "intro": "An agricultural feed lot structure for the Bega Valley — connections trial-assembled in the factory so erection on a working rural site went straight up.",
+    "overview": [
+      "Agricultural structures are erected fast, often far from fabrication support — there is no room for connections that do not fit. This feed lot structure for Bega was fabricated in Vietnam with trial assembly of its connections before shipping, proving the fit in the factory rather than on site.",
+      "The erected result in the Bega Valley shows the frame standing as modelled: roof trusses lifted straight into place over the completed steelwork."
+    ],
+    "scope": [
+      "Structural steel fabrication for the feed lot frame and roof",
+      "Trial assembly of connections at the factory",
+      "Welding to AS/NZS 1554.1 with qualified welders",
+      "Full QA documentation pack",
+      "Door-to-door delivery to the Bega Valley site"
+    ]
+  },
+  "manufacturing-sa": {
+    "title": "Manufacturing Facility",
+    "loc": "South Australia",
+    "state": "SA",
+    "sector": "Industrial",
+    "structure": "Heavy industrial plant frame",
+    "img": "26-project-manufacturing-sa.jpg",
+    "alt": "Two cranes erecting the white steel frame of a manufacturing facility against a blue sky",
+    "intro": "A heavy industrial frame for a South Australian manufacturing plant — fabricated to AS/NZS standards and delivered ready to erect.",
+    "overview": [
+      "Manufacturing plants carry heavier loads, tighter interfaces with equipment and less tolerance for rework than standard sheds. This South Australian frame was fabricated to AS/NZS standards under our inspection regime, with dimensional and weld visual checks against the Tekla model before dispatch.",
+      "Delivered ready to erect, the frame went up under two cranes exactly as drawn — the outcome the inspection process is designed to guarantee."
+    ],
+    "scope": [
+      "Heavy industrial frame fabrication",
+      "Tekla shop drawings and connection detailing",
+      "Dimensional and weld visual inspection reports",
+      "Surface treatment inspection before dispatch",
+      "Door-to-door delivery, erection-ready"
+    ]
+  },
+  "church-esperance": {
+    "title": "Church",
+    "loc": "Esperance, WA",
+    "state": "WA",
+    "sector": "Community",
+    "structure": "Exposed architectural steel, long-span trusses",
+    "img": "27-project-church-esperance.jpg",
+    "alt": "A modern A-frame church building with exposed steel trusses and a tall glazed gable",
+    "intro": "Architectural steel for a community church in Esperance — long spans and exposed structure, fabricated in Vietnam and shipped across the country to WA.",
+    "overview": [
+      "When the structure is the architecture, every member is on display. This Esperance church uses exposed steel trusses and a tall glazed gable, so finish quality and connection detailing mattered as much as strength.",
+      "The steel was fabricated and finish-inspected in Vietnam, then shipped across the country to Western Australia — proof that distance is no barrier when the QA system travels with the steel."
+    ],
+    "scope": [
+      "Architectural exposed-steel fabrication",
+      "Long-span truss fabrication and detailing",
+      "Surface and finish inspection",
+      "Protective packing for long-distance shipping",
+      "Delivery to site in Esperance, WA"
+    ]
+  },
+  "warehouse-brisbane": {
+    "title": "Warehouse & Super Awning",
+    "loc": "Brisbane, QLD",
+    "state": "QLD",
+    "sector": "Industrial",
+    "structure": "Warehouse frame with oversized awning",
+    "img": "28-project-warehouse-brisbane.jpg",
+    "alt": "Completed industrial building with loading docks and a covered canopy area",
+    "intro": "A Brisbane warehouse with an oversized super awning — one fabrication package, one shipment, one erection program.",
+    "overview": [
+      "Combining the warehouse frame and its oversized super awning into a single fabrication package kept this Brisbane project simple: one Tekla model, one factory, one shipment and one erection program.",
+      "Loading docks and the covered canopy area were delivered as part of the same inspected package, with the complete QA documentation set handed over on delivery."
+    ],
+    "scope": [
+      "Warehouse frame and super awning in one package",
+      "Tekla shop drawings across both structures",
+      "Workshop inspection and QA documentation",
+      "Single-shipment packing and logistics",
+      "Door-to-door delivery to Brisbane"
+    ]
+  },
+  "industrial-newcastle": {
+    "title": "Industrial Building",
+    "loc": "Newcastle, NSW",
+    "state": "NSW",
+    "sector": "Industrial",
+    "structure": "Multi-bay industrial frame",
+    "img": "29-project-industrial-newcastle.jpg",
+    "alt": "Aerial view of a very large multi-bay industrial steel frame under construction",
+    "intro": "A multi-bay industrial building in Newcastle at full erection — the repeatable scale our partner factories are set up for, bay after bay.",
+    "overview": [
+      "Large multi-bay industrial buildings reward a fabrication partner set up for repetition: identical bays, modelled once in Tekla and produced consistently across a long run of steel.",
+      "This Newcastle building, photographed from the air at full erection, shows that scale — bay after bay standing true, delivered through the same inspected, door-to-door process as every Smart Solutions Australia project."
+    ],
+    "scope": [
+      "Multi-bay industrial frame fabrication",
+      "Repeatable bay production from a single Tekla model",
+      "Staged inspection across the production run",
+      "Programmed packing and shipping in erection sequence",
+      "Door-to-door delivery to Newcastle"
+    ]
+  }
+}

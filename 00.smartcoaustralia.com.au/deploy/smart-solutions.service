@@ -1,0 +1,57 @@
+[Unit]
+Description=Smart Solutions Australia website (Next.js + Payload CMS)
+Documentation=file:///opt/smart-solutions/README.md
+# If PostgreSQL runs on the same host, keep the service ordered behind it.
+# Drop `postgresql.service` from After= when the database is a managed
+# instance elsewhere.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+
+# PLACEHOLDER — the directory holding package.json, .next/, media/ and .env.
+WorkingDirectory=/opt/smart-solutions
+
+# PLACEHOLDER — absolute path to the production environment file. It must
+# define DATABASE_URI, PAYLOAD_SECRET, NEXT_PUBLIC_SERVER_URL, ADMIN_EMAIL,
+# ADMIN_PASSWORD and the optional MAIL_*/SMTP_* values. Keep it mode 0600,
+# owned by User above.
+EnvironmentFile=/opt/smart-solutions/.env
+
+# Runtime settings. `npm run start` pins the port (`next start -p 3065`); PORT is
+# set for anything that reads it, and must match the port the reverse proxy uses.
+Environment=NODE_ENV=production
+Environment=PORT=3065
+Environment=NEXT_TELEMETRY_DISABLED=1
+
+# PLACEHOLDER — adjust the node and npm paths to the target host
+# (`command -v node` / `command -v npm`). nvm and Volta installs are usually
+# under the deploying user's home, not /usr/bin.
+ExecStartPre=/usr/bin/npm run migrate
+ExecStart=/usr/bin/npm run start
+
+# systemd restarts `next start` if it exits unexpectedly.
+Restart=on-failure
+RestartSec=5s
+
+# Reasonable hardening for a single-purpose web process.
+# ProtectHome=true assumes the app and its node_modules live outside /home;
+# remove it if Node was installed with nvm in the deploying user's home.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The only paths the app writes to: uploads, backups, and Next's runtime cache.
+ReadWritePaths=/opt/smart-solutions/media
+ReadWritePaths=/opt/smart-solutions/backups
+ReadWritePaths=/opt/smart-solutions/.next/cache
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smart-solutions
+
+[Install]
+WantedBy=multi-user.target

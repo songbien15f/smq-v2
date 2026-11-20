@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+backups
+test-results
+playwright-report
+media
+docs
+.superpowers
+*.tsbuildinfo
+npm-debug.log*
+.env
+.env.local
+.env.*.local
+Start

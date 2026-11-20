@@ -1,0 +1,64 @@
+# Smart Solutions Australia — self-hosted stack.
+#
+#   app  Next.js in standalone mode, port 3065
+#   db   PostgreSQL 18 with a named volume
+#
+# The app reaches the database through the compose network hostname `db`, so
+# DATABASE_URI is overridden below even though `.env` points at 127.0.0.1 for
+# local (non-Docker) development.
+#
+# First-run sequence — see README → "Docker" for the full explanation:
+#   docker compose build
+#   docker compose run --rm app npm run migrate
+#   docker compose run --rm app npm run seed
+#   docker compose up -d
+
+services:
+  app:
+    build:
+      context: .
+      # robots.txt and the sitemap are prerendered at build time, so the public
+      # origin must be known then. Change NEXT_PUBLIC_SERVER_URL in .env to the
+      # real domain before the first production build.
+      args:
+        NEXT_PUBLIC_SERVER_URL: ${NEXT_PUBLIC_SERVER_URL:-http://localhost:3065}
+    image: smart-solutions-australia:latest
+    env_file: .env
+    environment:
+      # Compose networking: the database is a service, not localhost.
+      DATABASE_URI: postgresql://postgres:${POSTGRES_PASSWORD:-123456}@db:5432/smartcoa
+      NODE_ENV: production
+      PORT: '3065'
+      NEXT_TELEMETRY_DISABLED: '1'
+    ports:
+      - '3065:3065'
+    volumes:
+      # Uploads written by Payload's media collection.
+      - ./media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: smartcoa
+      POSTGRES_USER: postgres
+      # Local default only; production must set POSTGRES_PASSWORD in .env.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+    volumes:
+      # PostgreSQL 18 images keep PGDATA at /var/lib/postgresql/18/docker and
+      # declare /var/lib/postgresql as the volume root. Mounting the older
+      # /var/lib/postgresql/data path on 18+ does NOT persist the data.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d smartcoa']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  pgdata:

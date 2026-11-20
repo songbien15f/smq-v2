@@ -1,0 +1,265 @@
+{
+  "images": [
+    {
+      "index": 1,
+      "file": "01-favicon.png",
+      "mime": "image/png",
+      "width": 364,
+      "height": 360,
+      "alt": "",
+      "bytes": 67044
+    },
+    {
+      "index": 2,
+      "file": "02-smart-solutions-australia.png",
+      "mime": "image/png",
+      "width": 1280,
+      "height": 360,
+      "alt": "Smart Solutions Australia",
+      "bytes": 303276
+    },
+    {
+      "index": 3,
+      "file": "03-image-03.jpg",
+      "mime": "image/jpeg",
+      "width": 2400,
+      "height": 1350,
+      "alt": "",
+      "bytes": 903826
+    },
+    {
+      "index": 4,
+      "file": "04-smart-solutions-australia-leadership-in.jpg",
+      "mime": "image/jpeg",
+      "width": 800,
+      "height": 600,
+      "alt": "Smart Solutions Australia leadership in hi-vis and hard hats standing in front of a steel frame during a trial assembly in Vietnam",
+      "bytes": 101375
+    },
+    {
+      "index": 5,
+      "file": "05-completed-large-steel-warehouse-with-mul.jpg",
+      "mime": "image/jpeg",
+      "width": 1400,
+      "height": 933,
+      "alt": "Completed large steel warehouse with multiple roller-door loading bays under a clear sky",
+      "bytes": 130954
+    },
+    {
+      "index": 6,
+      "file": "06-inside-a-large-modern-fabrication-worksh.jpg",
+      "mime": "image/jpeg",
+      "width": 1800,
+      "height": 900,
+      "alt": "Inside a large modern fabrication workshop: stacked structural I-beams in the foreground and a welder at work on a steel member",
+      "bytes": 305523
+    },
+    {
+      "index": 7,
+      "file": "07-the-smart-solutions-australia-drafting-o.jpg",
+      "mime": "image/jpeg",
+      "width": 800,
+      "height": 600,
+      "alt": "The Smart Solutions Australia drafting office in Ho Chi Minh City, with detailers modelling a steel structure on screen",
+      "bytes": 90701
+    },
+    {
+      "index": 8,
+      "file": "08-close-up-of-a-bolted-structural-steel-co.jpg",
+      "mime": "image/jpeg",
+      "width": 533,
+      "height": 799,
+      "alt": "Close-up of a bolted structural steel connection, fabricated and finished to Australian standards",
+      "bytes": 60247
+    },
+    {
+      "index": 9,
+      "file": "09-completed-large-steel-warehouse-with-mul.jpg",
+      "mime": "image/jpeg",
+      "width": 1400,
+      "height": 933,
+      "alt": "Completed large steel warehouse with multiple roller-door loading bays under a clear sky",
+      "bytes": 130954
+    },
+    {
+      "index": 10,
+      "file": "10-completed-large-steel-warehouse-with-mul.jpg",
+      "mime": "image/jpeg",
+      "width": 1400,
+      "height": 933,
+      "alt": "Completed large steel warehouse with multiple roller-door loading bays under a clear sky",
+      "bytes": 130954
+    },
+    {
+      "index": 11,
+      "file": "11-crane-lifting-a-roof-truss-into-place-ov.jpg",
+      "mime": "image/jpeg",
+      "width": 768,
+      "height": 1024,
+      "alt": "Crane lifting a roof truss into place over the steel frame of a large agricultural feed lot building",
+      "bytes": 104235
+    },
+    {
+      "index": 12,
+      "file": "12-two-cranes-erecting-the-white-steel-fram.jpg",
+      "mime": "image/jpeg",
+      "width": 1500,
+      "height": 1000,
+      "alt": "Two cranes erecting the white steel frame of a manufacturing facility against a blue sky",
+      "bytes": 265144
+    },
+    {
+      "index": 13,
+      "file": "13-a-modern-a-frame-church-building-with-ex.jpg",
+      "mime": "image/jpeg",
+      "width": 678,
+      "height": 1132,
+      "alt": "A modern A-frame church building with exposed steel trusses and a tall glazed gable",
+      "bytes": 140114
+    },
+    {
+      "index": 14,
+      "file": "14-completed-industrial-building-with-loadi.jpg",
+      "mime": "image/jpeg",
+      "width": 800,
+      "height": 370,
+      "alt": "Completed industrial building with loading docks and a covered canopy area",
+      "bytes": 64944
+    },
+    {
+      "index": 15,
+      "file": "15-aerial-view-of-a-very-large-multi-bay-in.jpg",
+      "mime": "image/jpeg",
+      "width": 1600,
+      "height": 688,
+      "alt": "Aerial view of a very large multi-bay industrial steel frame under construction",
+      "bytes": 375007
+    },
+    {
+      "index": 16,
+      "file": "16-portrait-of-lionel-trotman-standing-in-f.jpg",
+      "mime": "image/jpeg",
+      "width": 621,
+      "height": 799,
+      "alt": "Portrait of Lionel Trotman standing in front of a port with a cargo ship behind him",
+      "bytes": 82091
+    },
+    {
+      "index": 17,
+      "file": "17-two-engineers-in-hard-hats-and-hi-vis-re.jpg",
+      "mime": "image/jpeg",
+      "width": 1329,
+      "height": 886,
+      "alt": "Two engineers in hard hats and hi-vis reviewing drawings in front of an erected steel frame",
+      "bytes": 122235
+    },
+    {
+      "index": 18,
+      "file": "18-map-of-central-sydney-with-a-pin-at-66-g.png",
+      "mime": "image/png",
+      "width": 1520,
+      "height": 920,
+      "alt": "Map of central Sydney with a pin at 66 Goulburn Street, near Museum station",
+      "bytes": 255902
+    },
+    {
+      "index": 19,
+      "file": "19-map-of-binh-thanh-district-ho-chi-minh-c.png",
+      "mime": "image/png",
+      "width": 1520,
+      "height": 920,
+      "alt": "Map of Binh Thanh District, Ho Chi Minh City with a pin on Nguyen Huu Canh Street",
+      "bytes": 271184
+    },
+    {
+      "index": 20,
+      "file": "20-smart-solutions-australia.png",
+      "mime": "image/png",
+      "width": 1280,
+      "height": 360,
+      "alt": "Smart Solutions Australia",
+      "bytes": 303276
+    },
+    {
+      "index": 21,
+      "file": "21-detailers-modelling-a-steel-structure-in.jpg",
+      "mime": "image/jpeg",
+      "width": 800,
+      "height": 600,
+      "alt": "Detailers modelling a steel structure in Tekla in the Ho Chi Minh City drafting office",
+      "bytes": 90701
+    },
+    {
+      "index": 22,
+      "file": "22-inside-a-fabrication-workshop-with-stack.jpg",
+      "mime": "image/jpeg",
+      "width": 1800,
+      "height": 900,
+      "alt": "Inside a fabrication workshop with stacked structural beams and a welder at work",
+      "bytes": 305523
+    },
+    {
+      "index": 23,
+      "file": "23-close-up-of-a-bolted-structural-steel-co.jpg",
+      "mime": "image/jpeg",
+      "width": 533,
+      "height": 799,
+      "alt": "Close-up of a bolted structural steel connection finished to specification",
+      "bytes": 60247
+    },
+    {
+      "index": 24,
+      "file": "24-project-warehouse-newcastle.jpg",
+      "mime": "image/jpeg",
+      "width": 1400,
+      "height": 933,
+      "alt": "Completed large steel warehouse with multiple roller-door loading bays under a clear sky",
+      "bytes": 130954
+    },
+    {
+      "index": 25,
+      "file": "25-project-feedlot-bega.jpg",
+      "mime": "image/jpeg",
+      "width": 768,
+      "height": 1024,
+      "alt": "Crane lifting a roof truss into place over the steel frame of a large agricultural feed lot building",
+      "bytes": 104235
+    },
+    {
+      "index": 26,
+      "file": "26-project-manufacturing-sa.jpg",
+      "mime": "image/jpeg",
+      "width": 1500,
+      "height": 1000,
+      "alt": "Two cranes erecting the white steel frame of a manufacturing facility against a blue sky",
+      "bytes": 265144
+    },
+    {
+      "index": 27,
+      "file": "27-project-church-esperance.jpg",
+      "mime": "image/jpeg",
+      "width": 678,
+      "height": 1132,
+      "alt": "A modern A-frame church building with exposed steel trusses and a tall glazed gable",
+      "bytes": 140114
+    },
+    {
+      "index": 28,
+      "file": "28-project-warehouse-brisbane.jpg",
+      "mime": "image/jpeg",
+      "width": 800,
+      "height": 370,
+      "alt": "Completed industrial building with loading docks and a covered canopy area",
+      "bytes": 64944
+    },
+    {
+      "index": 29,
+      "file": "29-project-industrial-newcastle.jpg",
+      "mime": "image/jpeg",
+      "width": 1600,
+      "height": 688,
+      "alt": "Aerial view of a very large multi-bay industrial steel frame under construction",
+      "bytes": 375007
+    }
+  ]
+}
