@@ -7,9 +7,9 @@
  */
 
 import { NextResponse } from 'next/server';
-import type { ApiResult } from '@sq/contracts';
+import { resolveApiBaseUrl, type ApiResult } from '@sq/contracts';
 
-const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+const API = resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 
 export async function POST(request: Request): Promise<NextResponse> {
   const cookie = request.headers.get('cookie') ?? '';

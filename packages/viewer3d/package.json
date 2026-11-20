@@ -1,0 +1,49 @@
+{
+  "name": "@sq/viewer3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsup",
+    "dev": "tsup --watch",
+    "build:inc": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@sq/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.186.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "rimraf": "6.1.2",
+    "three": "0.186.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

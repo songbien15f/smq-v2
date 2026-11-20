@@ -46,14 +46,14 @@ describe('roof sheeting geometry', () => {
     expect(roof.massKg).toBeCloseTo(123.2, 6);
   });
 
-  it('gives a skillion one slope, falling along the length', () => {
+  it('gives a skillion one slope, falling across the span', () => {
     const skillion = build(plainShed({ structureType: 'skillion' }));
     const roof = line(skillion, 'sheeting', /roof/i)!;
-    // A skillion falls along the length, so a sheet runs the 10 m length plus the
-    // 80 mm allowance, and the sheets are counted across the 6 m span: 6 sheets
-    // x 10.08 m = 60.48 m at $10/m.
-    expect(roof.quantity).toBeCloseTo(60.48, 6);
-    expect(roof.amount).toBe(60_480);
+    // A skillion falls across the span, as the desktop builds it, so a sheet runs the
+    // 6 m span plus the 80 mm allowance, and the sheets are counted along the 10 m
+    // length: 10 sheets x 6.08 m = 60.8 m at $10/m.
+    expect(roof.quantity).toBeCloseTo(60.8, 6);
+    expect(roof.amount).toBe(60_800);
   });
 
   it('adds a sheet for a run that is not a whole multiple of the cover', () => {

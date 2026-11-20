@@ -17,7 +17,9 @@
     "install:company": "node --env-file-if-exists=../../.env --import tsx scripts/install.ts",
     "publish-book": "node --env-file-if-exists=../../.env --import tsx scripts/publish-book.ts",
     "seats:release": "node --env-file-if-exists=../../.env --import tsx scripts/release-seats.ts",
-    "quotes:blocked": "node --env-file-if-exists=../../.env --import tsx scripts/count-blocked-quotes.ts"
+    "quotes:blocked": "node --env-file-if-exists=../../.env --import tsx scripts/count-blocked-quotes.ts",
+    "ratelimits:prune": "node --env-file-if-exists=../../.env --import tsx scripts/prune-rate-limits.ts",
+    "assistant:prune": "node --env-file-if-exists=../../.env --import tsx scripts/prune-assistant.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.5",

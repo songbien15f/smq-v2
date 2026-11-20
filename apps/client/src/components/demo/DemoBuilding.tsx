@@ -13,9 +13,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { buildWallGeometries, openingParts, structureParts } from '@sq/core/domain';
 import type { DimensionedShed, Opening, WallSide } from '@sq/core/domain';
-import { buildWallShape } from '@/components/editor/Shed3D';
-import { AnyPart } from '@/components/three/PartMesh';
-import { useSheetingTexture } from '@/components/three/useSheetingTexture';
+import { buildWallShape, AnyPart, useSheetingTexture } from '@sq/viewer3d';
 
 /** Wall thickness, mm — the same value the editor extrudes. */
 const WALL_DEPTH = 50;

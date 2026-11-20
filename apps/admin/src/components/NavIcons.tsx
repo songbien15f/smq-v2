@@ -13,9 +13,11 @@ export type NavIconName =
   | 'companies'
   | 'seats'
   | 'enquiries'
+  | 'guestRequests'
   | 'priceBooks'
   | 'companyPrices'
   | 'templates'
+  | 'guestTypes'
   | 'usage'
   | 'releases'
   | 'audit';
@@ -48,6 +50,12 @@ const PATHS: Record<NavIconName | 'menu', ReactNode> = {
       <path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z" />
     </>
   ),
+  guestRequests: (
+    <>
+      <path d="M4 4h16v12H8l-4 4Z" />
+      <path d="M8 8h8M8 12h5" />
+    </>
+  ),
   priceBooks: (
     <>
       <path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6.5A2.5 2.5 0 0 0 4 21.5v-2Z" />
@@ -65,6 +73,17 @@ const PATHS: Record<NavIconName | 'menu', ReactNode> = {
       <path d="M3 11 12 4l9 7" />
       <path d="M5 9.5V20h14V9.5" />
       <path d="M10 20v-5h4v5" />
+    </>
+  ),
+  /*
+   * Guest building types: a house card with a small "list" mark — the catalogue a visitor picks from,
+   * as against `templates` (a building a company clones) and `priceBooks` (a bound book).
+   */
+  guestTypes: (
+    <>
+      <path d="M3 10.5 12 4l9 6.5" />
+      <path d="M5 9.5V20h14V9.5" />
+      <path d="M9 13h6M9 16.5h6" />
     </>
   ),
   usage: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,

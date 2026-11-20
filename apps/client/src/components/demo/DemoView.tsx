@@ -14,8 +14,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { useContainerSize } from '@/hooks/useContainerSize';
-import { StudioEnvironment } from '@/components/three/StudioEnvironment';
+import { useContainerSize } from '@sq/viewer3d';
+import { StudioEnvironment } from '@sq/viewer3d';
 import { DEMO_SHED } from './fixture';
 import { DemoBuilding } from './DemoBuilding';
 

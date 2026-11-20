@@ -30,13 +30,18 @@ import { registerPriceImport } from './routes/priceImport.js';
 import { registerPriceOverrides } from './routes/priceOverrides.js';
 import { registerQuoteFile } from './routes/quoteFile.js';
 import { registerEnquiries } from './routes/enquiries.js';
+import { registerGuest } from './routes/guest.js';
+import { registerGuestAccount } from './routes/guestAccount.js';
 import { registerPlaces } from './routes/places.js';
+import type { PlacesTransport } from './lib/places.js';
 import { registerShedSafe } from './routes/shedsafe.js';
 import { registerPlatform } from './routes/platform.js';
 import { registerTemplateFiles } from './routes/templateFiles.js';
 import { registerUsage } from './routes/usage.js';
 import { registerSettings } from './routes/settings.js';
 import { registerAdmin } from './routes/admin.js';
+import { registerGuestTypesAdmin } from './routes/guestTypesAdmin.js';
+import { registerGuestRequestsAdmin } from './routes/guestRequestsAdmin.js';
 import { registerVendor } from './routes/vendor.js';
 
 export interface AppDeps {
@@ -51,10 +56,21 @@ export interface AppDeps {
    * rather than accepting a request and quietly sending nothing.
    */
   mail?: TransactionalDeps | null;
+  /**
+   * The Guest page's Places transport. Omitted, it is built from `GOOGLE_PLACES_API_KEY`; a test
+   * passes a fake so no call reaches Google.
+   */
+  guestPlacesTransport?: () => PlacesTransport | null;
 }
 
 /** Build the API. The caller owns the database and closes it. */
-export async function buildApp({ db, config, logger = false, mail = null }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({
+  db,
+  config,
+  logger = false,
+  mail = null,
+  guestPlacesTransport,
+}: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger,
     /*
@@ -181,14 +197,18 @@ export async function buildApp({ db, config, logger = false, mail = null }: AppD
        * somebody sees it, and until now nothing did.
        */
       registerEnquiries(scope, db, mail);
+      registerGuest(scope, db, mail, { config: config.guestPlaces, transport: guestPlacesTransport });
+      registerGuestAccount(scope, db);
       registerPlaces(scope);
       registerShedSafe(scope, db);
       registerPlatform(scope, db);
       registerTemplateFiles(scope, db);
       registerUsage(scope, db);
       registerSettings(scope, db, mail);
-      registerShares(scope, db, process.env.SITE_ORIGIN ?? 'http://localhost:3063');
+      registerShares(scope, db, config.origins.site);
       registerAdmin(scope, db, config);
+      registerGuestTypesAdmin(scope, db, config);
+      registerGuestRequestsAdmin(scope, db);
       /*
        * The vendor dashboard. No session: it is the operator's own page behind one password, and he
        * may not be a member of any company. See `routes/vendor.ts` for why it is not `/admin/usage`.

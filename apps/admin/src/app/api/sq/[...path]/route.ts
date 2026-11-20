@@ -1,3 +1,4 @@
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { NextResponse } from 'next/server';
 
 /**
@@ -17,7 +18,7 @@ import { NextResponse } from 'next/server';
  * through it failed; the header is forwarded here only when a body actually exists.
  */
 
-const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+const API = resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 
 /** What a browser component in this app may ask for. Prefixes, so a nested path needs no change. */
 const ALLOWED_PREFIXES = [
@@ -28,6 +29,11 @@ const ALLOWED_PREFIXES = [
   'admin/audit',
   'admin/releases',
   'admin/templates',
+  // The Guest page's building types (plan admin-guest-building-types). A platform catalogue, like
+  // templates, so it is listed here rather than reached through a generic `admin/*` prefix.
+  'admin/guest-types',
+  // Requests sent from the Guest page: the status change on one request's page.
+  'admin/guest-requests',
   'admin/usage',
   'auth/session',
   'auth/password',

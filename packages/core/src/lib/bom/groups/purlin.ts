@@ -31,6 +31,7 @@ import type { OptimisedFrame } from '../types';
 import { safeCall } from '../safe';
 import { isOpenStructure } from './sheeting';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
+import { fallsToBothSides } from '@/domain/types';
 
 /*
  * The lap allowances and the run end inset are **factory rules**: how much stock a
@@ -168,7 +169,7 @@ export function purlinLines(
 
   // Roof purlins: one run per slope. A gable has two, a skillion one.
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+    !fallsToBothSides(shed.structureType);
   const roofRuns = fallsAlongLength ? 1 : 2;
   lines.push(
     ...purlinLine(

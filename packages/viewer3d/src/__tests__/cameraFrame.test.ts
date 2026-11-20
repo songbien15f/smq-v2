@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { TEST_SHED } from '@sq/core/domain';
 import type { DimensionedShed } from '@sq/core/domain';
-import { cameraFrameFor } from '../Render3D';
+import { cameraFrameFor } from '../camera';
 
 /**
  * Where the 3D camera stands, asserted as arithmetic.

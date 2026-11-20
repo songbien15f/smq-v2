@@ -25,6 +25,7 @@
 
 import type { DimensionedShed } from './types';
 import { fallsToBothSides } from './types';
+import { skillionRiseMm } from './roof';
 import { bayWidthsFor, positionsFromWidths } from './bays';
 import type { OpeningPart } from './openings3d';
 
@@ -118,14 +119,16 @@ export function roofParts(shed: DimensionedShed, roof: RoofGeometry): StructureP
   const z = shed.length / 2;
 
   if (!hasRidge(shed)) {
-    const fall = Math.tan((shed.roofPitchDeg * Math.PI) / 180) * shed.length;
+    // One plane falling across the span: low wall at x = 0, high wall at x = span.
+    const rise = skillionRiseMm(shed);
+    const angle = (shed.roofPitchDeg * Math.PI) / 180;
     return [
       {
         kind: 'roof-single',
         shape: 'box',
-        position: [shed.span / 2, shed.height + fall / 2, z],
-        size: [shed.span + EAVE * 2, ROOF_SHEET, roof.depth],
-        rotation: [Math.atan2(fall, shed.length), 0, 0],
+        position: [shed.span / 2, shed.height + rise / 2, z],
+        size: [(shed.span + EAVE * 2) / Math.cos(angle), ROOF_SHEET, roof.depth],
+        rotation: [0, 0, angle],
         color: colours.roof,
         finish: 'sheet',
       },
@@ -187,6 +190,21 @@ export function gableEndParts(
   );
   if (alreadyBuilt) return [];
   const z = end === 'front' ? thickness / 2 : shed.length - thickness / 2;
+  if (!hasRidge(shed)) {
+    // A skillion's end is a right-angled wedge above the low wall, rising to the high side.
+    const wedge = skillionRiseMm(shed);
+    return [
+      {
+        kind: `gable-end-${end}`,
+        shape: 'box',
+        position: [shed.span / 2, shed.height + wedge / 2, z],
+        size: [shed.span, wedge, thickness],
+        triangle: { base: shed.span, rise: wedge, rightAngle: true },
+        color: shed.colors.wall,
+        finish: 'sheet',
+      },
+    ];
+  }
   const rise = roof.ridgeY - shed.height;
   return [
     {
@@ -202,6 +220,19 @@ export function gableEndParts(
   ];
 }
 
+/** How far in from each end of a gutter its downpipe drops, mm. */
+export const DOWNPIPE_INSET = 500;
+
+/**
+ * Where each downpipe drops: the long wall it stands on (`left` is x = 0, `right` is x = span) and
+ * its distance along the length. One at each end of each gutter, and a skillion has one gutter, on
+ * its low side. The 3D model and the drawing sheets both read this, so they cannot disagree.
+ */
+export function downpipeStations(shed: DimensionedShed): { wall: 'left' | 'right'; y: number }[] {
+  const walls: ('left' | 'right')[] = hasRidge(shed) ? ['left', 'right'] : ['left'];
+  return walls.flatMap((wall) => [DOWNPIPE_INSET, shed.length - DOWNPIPE_INSET].map((y) => ({ wall, y })));
+}
+
 /**
  * Gutter along each eave, with a downpipe at each end of each side.
  *
@@ -213,7 +244,9 @@ export function gutterParts(shed: DimensionedShed, roof: RoofGeometry): Structur
   const y = shed.height - roof.eaveDrop - 20;
   const run = shed.length + EAVE * 2;
 
-  for (const x of [-EAVE + 70, shed.span + EAVE - 70]) {
+  // A skillion sheds water to its low side only, so it has one gutter.
+  const gutterXs = hasRidge(shed) ? [-EAVE + 70, shed.span + EAVE - 70] : [-EAVE + 70];
+  for (const x of gutterXs) {
     parts.push({
       kind: `gutter-${x < 0 ? 'left' : 'right'}`,
       shape: 'cylinder',
@@ -224,7 +257,8 @@ export function gutterParts(shed: DimensionedShed, roof: RoofGeometry): Structur
       color: shed.colors.gutter,
       finish: 'metal',
     });
-    for (const z of [500, shed.length - 500]) {
+    const side = x < 0 ? 'left' : 'right';
+    for (const z of downpipeStations(shed).filter((s) => s.wall === side).map((s) => s.y)) {
       parts.push({
         kind: `downpipe-${x < 0 ? 'left' : 'right'}-${z}`,
         shape: 'cylinder',
@@ -303,6 +337,8 @@ export function frameParts(shed: DimensionedShed, roof: RoofGeometry): Structure
    */
   const inset = WALL_DEPTH + FRAME_SECTION / 2;
   const plateHalf = FRAME_SECTION * 0.8;
+  // The right-hand column of a skillion stands to the high side of the roof.
+  const colHeight = (x: number) => (x > shed.span / 2 ? shed.height + skillionRiseMm(shed) : shed.height);
 
   for (const bayZ of bayPositions) {
     const z = clamp(bayZ, inset, shed.length - inset);
@@ -310,8 +346,8 @@ export function frameParts(shed: DimensionedShed, roof: RoofGeometry): Structure
       parts.push({
         kind: 'column',
         shape: 'box',
-        position: [x, shed.height / 2, z],
-        size: [FRAME_SECTION, shed.height, FRAME_SECTION],
+        position: [x, colHeight(x) / 2, z],
+        size: [FRAME_SECTION, colHeight(x), FRAME_SECTION],
         color: '#8d9499',
         finish: 'metal',
       });
@@ -355,8 +391,9 @@ export function frameParts(shed: DimensionedShed, roof: RoofGeometry): Structure
       parts.push({
         kind: 'rafter-single',
         shape: 'box',
-        position: [shed.span / 2, shed.height - 90, z],
-        size: [shed.span, 180, 90],
+        position: [shed.span / 2, shed.height + skillionRiseMm(shed) / 2 - 90, z],
+        size: [Math.hypot(shed.span, skillionRiseMm(shed)), 180, 90],
+        rotation: [0, 0, Math.atan2(skillionRiseMm(shed), shed.span)],
         color: '#8d9499',
         finish: 'metal',
       });
@@ -417,12 +454,13 @@ export function purlinAndGirtParts(
       // A skillion falls along the length, so its rows step down `z` at one x each… except a
       // purlin still runs along z, so its rows step in *x*. Sitting them at the wall height is the
       // honest approximation: the slope is under 15° and the row positions are the book's count.
-      for (const [index, x] of evenPositions(
+      for (const x of evenPositions(
         layout.purlinRows,
         WALL_DEPTH + PURLIN_SECTION / 2,
         shed.span - WALL_DEPTH - PURLIN_SECTION / 2,
-      ).entries()) {
-        const y = shed.height + (index === 0 ? 0 : 40);
+      )) {
+        // Rows follow the roof plane up from the low wall to the high wall.
+        const y = shed.height + skillionRiseMm(shed) * (x / shed.span);
         parts.push({
           kind: 'purlin',
           shape: 'box',
@@ -441,11 +479,13 @@ export function purlinAndGirtParts(
    */
   for (const y of evenPositions(layout.girtRows, PURLIN_SECTION, shed.height - PURLIN_SECTION)) {
     for (const x of [WALL_DEPTH + PURLIN_SECTION / 2, shed.span - WALL_DEPTH - PURLIN_SECTION / 2]) {
+      // The high wall of a skillion is taller, so its rows are spread over the extra height.
+      const girtY = x > shed.span / 2 ? y * ((shed.height + skillionRiseMm(shed)) / shed.height) : y;
       parts.push({
         kind: 'girt-side',
         shape: 'box',
         // Runs between the end walls, so its ends are not coplanar with their outside faces.
-        position: [x, y, shed.length / 2],
+        position: [x, girtY, shed.length / 2],
         size: [PURLIN_SECTION, PURLIN_SECTION, shed.length - WALL_DEPTH * 2],
         color: '#a3aaae',
         finish: 'metal',

@@ -24,10 +24,11 @@
  * the end of the interaction.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { useState } from 'react';
 import { Button, Field } from '@sq/ui';
 
-const API = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3060/api/v1';
+const API = process.env.NEXT_PUBLIC_API_BASE ?? resolveApiBaseUrl(undefined, process.env.NEXT_PUBLIC_API_PORT);
 
 type State =
   | { kind: 'idle' }

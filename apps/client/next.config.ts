@@ -35,7 +35,16 @@ const nextConfig: NextConfig = {
    * **domain** subpath only: the pricing and documents entry points touch `node:sqlite` and
    * ExcelJS and must never reach a browser bundle.
    */
-  transpilePackages: ['@sq/ui', '@sq/contracts', '@sq/core'],
+  transpilePackages: ['@sq/ui', '@sq/contracts', '@sq/core', '@sq/viewer3d'],
+
+  /*
+   * Cloudflare quick tunnels (scripts/tunnel.mjs) reach this dev server under a
+   * `*.trycloudflare.com` host. Next blocks cross-origin requests to its own dev assets unless the
+   * host is named, so a QA link would render a page with no JavaScript and no explanation. Only the
+   * project's own tunnel domain is allowed: naming the whole of trycloudflare.com would let any other
+   * tunnel load this app's dev assets.
+   */
+  allowedDevOrigins: ['*.trycloudflare.com'],
   experimental: {
     // A quote editor is a long-lived page; keeping the router state alive avoids a full reload
     // when moving between the list and the editor.

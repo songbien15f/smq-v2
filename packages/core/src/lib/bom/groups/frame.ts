@@ -21,6 +21,7 @@ import { fallsToBothSides } from '@/domain/types';
 import type { FrameSchedule, PriceLookup } from '@/lib/pricing/types';
 import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { buildInfillColumns, type InfillColumns } from '../infill';
+import { skillionRiseMm } from '@/domain/roof';
 import { buildDoorFrameMembers, type DoorFrameMember } from '../doorFrames';
 import { buildingSlidingDoors } from '../slidingDoors';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
@@ -100,11 +101,64 @@ function carryBeamsOn(shed: DimensionedShed, wall: WallSide): ShedOption[] {
  * side wall that has an opening.
  */
 function mainMemberCount(shed: DimensionedShed): number {
-  const beams = carryBeamsOn(shed, 'front').length + carryBeamsOn(shed, 'back').length;
+  const { low, high } = mainColumnsBySide(shed);
+  return Math.max(0, low + high);
+}
+
+/**
+ * The main columns on each long wall, low side first.
+ *
+ * This file names walls the desktop's way: `front`/`back` are the long walls (the desktop's
+ * FrontWall/RearWall, where a carry beam replaces a column) and an opening on `left`/`right` opens an
+ * end. The desktop counts each long wall on its own (`SkillionBuildingQuote.cs:54-80`): `bays - 1`,
+ * less that wall's carry beams, plus one column per open end. On a skillion the front is the low
+ * wall and the rear the high one (`computeHeightAwning`). The two always sum to the count this
+ * function's callers used before it was split.
+ */
+function mainColumnsBySide(shed: DimensionedShed): { low: number; high: number } {
   const leftJamb = openingsOn(shed, 'left').length > 0 ? 2 : 0;
   const rightJamb = openingsOn(shed, 'right').length > 0 ? 2 : 0;
-  const count = (shed.bays - 1) * 2 - beams + leftJamb + rightJamb;
-  return Math.max(0, count);
+  const perSideJambs = (leftJamb + rightJamb) / 2;
+  const side = (wall: 'front' | 'back'): number =>
+    Math.max(0, shed.bays - 1 - carryBeamsOn(shed, wall).length + perSideJambs);
+  return { low: side('front'), high: side('back') };
+}
+
+/**
+ * The end-wall columns, low side first: each end has a column at its low corner and one at its high
+ * corner (the desktop prices the two at their own lengths, `SkillionBuildingQuote.cs:180-195`).
+ */
+function endColumnsBySide(shed: DimensionedShed): { low: number; high: number } {
+  const perSide = endMemberCount(shed) / 2;
+  return { low: perSide, high: perSide };
+}
+
+/**
+ * The rafters: a gable frame has two (one per slope, meeting at the ridge); a single-slope frame has
+ * **one** that runs the whole span from the low wall to the high wall.
+ *
+ * The desktop orders one main rafter per internal frame (`(bays - 1 + open ends) x type`,
+ * `SkillionBuildingQuote.cs:238-244`) and one end rafter per closed end (`:278-283`). Until
+ * 2026-11-20 v2 used the column counts here, which on a skillion is two full-span rafters per
+ * frame: double the steel.
+ */
+function rafterCounts(shed: DimensionedShed): { main: number; end: number } {
+  const main = mainMemberCount(shed);
+  const end = endMemberCount(shed);
+  if (!singleSlope(shed)) return { main, end };
+  const leftJamb = openingsOn(shed, 'left').length > 0 ? 2 : 0;
+  const rightJamb = openingsOn(shed, 'right').length > 0 ? 2 : 0;
+  // One end rafter per closed end, as the desktop counts it.
+  const closedEnds = (leftJamb > 0 ? 0 : 1) + (rightJamb > 0 ? 0 : 1);
+  return {
+    main: Math.max(0, shed.bays - 1) + (leftJamb + rightJamb) / 2,
+    end: end > 0 ? closedEnds : 0,
+  };
+}
+
+/** Whether this roof is a single slope, so its columns are priced as a low and a high line. */
+function singleSlope(shed: DimensionedShed): boolean {
+  return !fallsToBothSides(shed.structureType);
 }
 
 /**
@@ -254,7 +308,6 @@ export function frameLines(
   rules: BomRules = DEFAULT_BOM_RULES,
 ): BomLine[] {
   const main = mainMemberCount(shed);
-  const end = endMemberCount(shed);
   const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
   const section = schedule?.mainColumn ?? FALLBACK_SIZE;
   const endSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
@@ -264,8 +317,31 @@ export function frameLines(
   // used when there is no schedule at all, where the brace is assumed present.
   const braceSection = schedule === undefined ? FALLBACK_SIZE : schedule.kneeBrace;
   const footing = footingFor(shed, lookup);
-
   const column = columnLength(shed, schedule?.embedment ?? null, footing, rules);
+  const rafters = rafterCounts(shed);
+
+  /*
+   * A skillion's high-side columns stand `tan(pitch) × span` taller than its low-side ones. The
+   * desktop orders the two as separate lines: front at `Height + footing`, rear at
+   * `computeHeightAwning + footing` (`SkillionBuildingQuote.cs:54-80`, end columns `:180-195`). So
+   * v2 does too, rather than one line at an average length.
+   */
+  const columnLines = (label: string, low: number, high: number, sectionName: string): BomLine[] =>
+    singleSlope(shed)
+      ? [
+          ...memberLine('frame', `${label} (low side)`, column, low, lookup, sectionName),
+          ...memberLine(
+            'frame',
+            `${label} (high side)`,
+            Math.round(column + skillionRiseMm(shed)),
+            high,
+            lookup,
+            sectionName,
+          ),
+        ]
+      : memberLine('frame', label, column, low + high, lookup, sectionName);
+  const mainSides = mainColumnsBySide(shed);
+  const endSides = endColumnsBySide(shed);
 
   /*
    * The infill columns, priced.
@@ -281,14 +357,14 @@ export function frameLines(
   const infillSection = schedule?.infill?.section ?? null;
 
   return [
-    ...memberLine('frame', MEMBER.mainColumn, column, main, lookup, section),
-    ...memberLine('frame', MEMBER.endWallColumn, column, end, lookup, endSection),
-    ...memberLine('frame', MEMBER.mainRafter, rafterLength(shed, rules), main, lookup, rafterSection),
+    ...columnLines(MEMBER.mainColumn, mainSides.low, mainSides.high, section),
+    ...columnLines(MEMBER.endWallColumn, endSides.low, endSides.high, endSection),
+    ...memberLine('frame', MEMBER.mainRafter, rafterLength(shed, rules), rafters.main, lookup, rafterSection),
     ...memberLine(
       'frame',
       MEMBER.endWallRafter,
       rafterLength(shed, rules),
-      end,
+      rafters.end,
       lookup,
       endRafterSection,
     ),
@@ -406,7 +482,7 @@ function doorFrameLines(
  * uses to decide whether this quote rests on a fixed section. Sharing it is what
  * keeps the two answers consistent.
  */
-function scheduleFor(
+export function scheduleFor(
   shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
@@ -474,7 +550,6 @@ export function frameMemberSchedule(
   rules: BomRules = DEFAULT_BOM_RULES,
 ): FrameMember[] {
   const main = mainMemberCount(shed);
-  const end = endMemberCount(shed);
   const schedule = safeCall(() => scheduleFor(shed, frame, lookup));
   const assumed = schedule === undefined;
   /*
@@ -482,7 +557,11 @@ export function frameMemberSchedule(
    * somebody cuts to, and 500 mm per column is not a rounding difference.
    */
   const column = columnLength(shed, schedule?.embedment ?? null, footingFor(shed, lookup), rules);
+  const highColumn = Math.round(column + skillionRiseMm(shed));
   const rafter = rafterLength(shed, rules);
+  const rafters = rafterCounts(shed);
+  const mainSides = mainColumnsBySide(shed);
+  const endSides = endColumnsBySide(shed);
 
   /** The section's cross-section, so the connector tables can be asked for it. */
   const geometry = (section: string): { web: number | null; depth: number | null } => {
@@ -495,41 +574,51 @@ export function frameMemberSchedule(
   const endColumnSection = schedule?.endWallColumn ?? FALLBACK_SIZE;
   const endRafterSection = schedule?.endWallRafter ?? FALLBACK_SIZE;
 
-  const members: FrameMember[] = [
-    {
-      item: 'main_column',
-      label: MEMBER.mainColumn,
-      section: mainColumnSection,
+  /*
+   * A single-slope building cuts its columns at two lengths, so the cut list carries a low and a
+   * high entry under the same item. The order prices them as two lines (`frameLines`), and a cut
+   * list that said one length would be a list nobody can cut to. The low entry comes first, so a
+   * reader that takes the first `main_column` (the punching sheet) sees the column it always did.
+   */
+  const columnMembers = (
+    item: 'main_column' | 'end_column',
+    label: string,
+    sectionName: string,
+    sides: { low: number; high: number },
+  ): FrameMember[] => {
+    const entry = (suffix: string, lengthMm: number, quantity: number): FrameMember => ({
+      item,
+      label: `${label}${suffix}`,
+      section: sectionName,
       assumed,
-      lengthMm: column,
-      quantity: main,
-      ...geometry(mainColumnSection),
-    },
+      lengthMm,
+      quantity,
+      ...geometry(sectionName),
+    });
+    return singleSlope(shed)
+      ? [entry(' (low side)', column, sides.low), entry(' (high side)', highColumn, sides.high)]
+      : [entry('', column, sides.low + sides.high)];
+  };
+
+  const members: FrameMember[] = [
+    ...columnMembers('main_column', MEMBER.mainColumn, mainColumnSection, mainSides),
     {
       item: 'main_rafter',
       label: MEMBER.mainRafter,
       section: mainRafterSection,
       assumed,
       lengthMm: rafter,
-      quantity: main,
+      quantity: rafters.main,
       ...geometry(mainRafterSection),
     },
-    {
-      item: 'end_column',
-      label: MEMBER.endWallColumn,
-      section: endColumnSection,
-      assumed,
-      lengthMm: column,
-      quantity: end,
-      ...geometry(endColumnSection),
-    },
+    ...columnMembers('end_column', MEMBER.endWallColumn, endColumnSection, endSides),
     {
       item: 'end_rafter',
       label: MEMBER.endWallRafter,
       section: endRafterSection,
       assumed,
       lengthMm: rafter,
-      quantity: end,
+      quantity: rafters.end,
       ...geometry(endRafterSection),
     },
   ];
@@ -747,8 +836,19 @@ export function buildingDoorFrames(
  * columns" and "how many end-wall columns", so the rule that answers that must
  * exist once. Recomputing it in three modules is how the groups drift apart.
  */
-export function frameCounts(shed: DimensionedShed): { main: number; end: number } {
-  return { main: mainMemberCount(shed), end: endMemberCount(shed) };
+export function frameCounts(shed: DimensionedShed): {
+  main: number;
+  end: number;
+  mainRafters: number;
+  endRafters: number;
+} {
+  const rafters = rafterCounts(shed);
+  return {
+    main: mainMemberCount(shed),
+    end: endMemberCount(shed),
+    mainRafters: rafters.main,
+    endRafters: rafters.end,
+  };
 }
 
 /** Every wall a frame member can sit on, exported for the groups that need it. */

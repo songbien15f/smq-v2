@@ -23,30 +23,12 @@ import {
 } from '@sq/contracts';
 import { pageQuery, parseBody, sendFail, sendOk } from '../lib/http.js';
 import { requirePlatformCapability } from '../lib/guard.js';
+import { audit } from '../lib/audit.js';
 import { hashPassword } from '../lib/password.js';
 import { newToken } from '../lib/tokens.js';
 import { createCompany } from '../lib/company.js';
 import { deviceLabel, listDevices, revokeDevice } from '../lib/devices.js';
 import type { ApiConfig } from '../config.js';
-
-/** Write one audit row. Called inside the same transaction as the change it records. */
-async function audit(
-  tx: Db,
-  input: {
-    actorId: string;
-    actorEmail: string;
-    action: string;
-    targetType: string;
-    targetId: string;
-    summary: string;
-  },
-): Promise<void> {
-  await tx.run(
-    `INSERT INTO audit_events (id, at, actor_id, actor_email, action, target_type, target_id, summary)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [newId(), now(), input.actorId, input.actorEmail, input.action, input.targetType, input.targetId, input.summary],
-  );
-}
 
 export function registerAdmin(app: FastifyInstance, db: Db, config: ApiConfig): void {
   // ---------------------------------------------------------------- companies

@@ -34,6 +34,7 @@ import {
 import { resolveOptions, type ResolvedOption } from './options';
 import { placementToPlanRect, resolveOpeningPlacement } from './placement';
 import { roundUpTo50 } from './units';
+import { fallsToBothSides } from './types';
 
 /**
  * The technical-drawing primitives that draw one opening, in plan millimetres.
@@ -139,8 +140,8 @@ function midpoint(a: { x: number; y: number }, b: { x: number; y: number }): { x
 }
 
 /** Roof types whose fall runs along the length rather than across the span. */
-function fallsAlongLength(shed: DimensionedShed): boolean {
-  return shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+function isSingleSlope(shed: DimensionedShed): boolean {
+  return !fallsToBothSides(shed.structureType);
 }
 
 /** A rectangle primitive of an opening symbol. */
@@ -385,9 +386,10 @@ export function buildPlanGeometry(shed: DimensionedShed): PlanGeometry {
     });
   }
 
-  // Gable ridge runs across the span (along x); a skillion falls along the length.
-  const roofArrow = fallsAlongLength(shed)
-    ? { x1: span / 2, y1: 0, x2: span / 2, y2: length }
+  // Both roofs fall across the span (along x). A skillion's arrow points down its one slope,
+  // from the high wall at x = span to the low wall at x = 0, as the 3D builds it.
+  const roofArrow = isSingleSlope(shed)
+    ? { x1: span, y1: length / 2, x2: 0, y2: length / 2 }
     : { x1: 0, y1: length / 2, x2: span, y2: length / 2 };
 
   const warnings: string[] = [];

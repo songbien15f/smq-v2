@@ -33,6 +33,19 @@
  */
 
 import type { ShedConfig, DimensionedShed } from './types';
+import { fallsToBothSides } from './types';
+
+/**
+ * How much higher a skillion's high wall stands than its low wall, in millimetres; 0 for a gable.
+ *
+ * A skillion falls **across the span** — the desktop cuts the rafter over the full width
+ * (`SkillionBuildingQuote.cs:242`) and sizes the high column as height + width × tan(pitch)
+ * (`SkillionBuildingQuote.cs:74`). The high side is the right wall (x = span).
+ */
+export function skillionRiseMm(shed: Pick<DimensionedShed, 'structureType' | 'span' | 'roofPitchDeg'>): number {
+  if (fallsToBothSides(shed.structureType)) return 0;
+  return Math.tan((shed.roofPitchDeg * Math.PI) / 180) * shed.span;
+}
 
 /**
  * True when the structure is a single-slope roof.
@@ -44,7 +57,8 @@ import type { ShedConfig, DimensionedShed } from './types';
  * the values its list contains.
  */
 function isSkillion(shed: Pick<DimensionedShed, 'structureType'>): boolean {
-  return shed.structureType === 'skillion';
+  // The desktop's `Contains("skillion")` also matches the skillion carport.
+  return !fallsToBothSides(shed.structureType);
 }
 
 /**

@@ -70,7 +70,8 @@ export function TrianglePart({ part }: { part: OpeningPart }) {
             const shape = new THREE.Shape();
             shape.moveTo(-base / 2, -rise / 2);
             shape.lineTo(base / 2, -rise / 2);
-            shape.lineTo(0, rise / 2);
+            // A right-angled wedge (a skillion end) peaks over its high side, not the middle.
+            shape.lineTo(part.triangle?.rightAngle === true ? base / 2 : 0, rise / 2);
             shape.lineTo(-base / 2, -rise / 2);
             return shape;
           })(),

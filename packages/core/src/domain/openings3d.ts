@@ -57,7 +57,7 @@ export interface OpeningPart {
    * For a triangular face (a gable end): base and rise, so a renderer builds a prism rather than a
    * box. The box's `size` still describes the bounding volume, so a bounding-box reader works too.
    */
-  triangle?: { base: number; rise: number };
+  triangle?: { base: number; rise: number; rightAngle?: boolean };
   /** Hex colour, from the shed's ten colour roles. */
   color: string;
   finish: PartFinish;

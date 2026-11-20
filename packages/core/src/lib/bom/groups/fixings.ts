@@ -26,10 +26,12 @@
  */
 
 import type { ShedConfig, DimensionedShed } from '@/domain/types';
+import { fallsToBothSides } from '@/domain/types';
 import type { PackRow, PriceLookup } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
 import { frameCounts } from './frame';
+import { bargeMetres } from './gutter';
 import { sheetCounts } from './sheeting';
 import { safeCall } from '../safe';
 import { DEFAULT_BOM_RULES, type BomRules } from '../rules';
@@ -89,10 +91,11 @@ function packLine(
 }
 
 /** Flashing metres, which the flashing screw count needs. */
-function flashingMetres(shed: DimensionedShed): number {
+function flashingMetres(shed: DimensionedShed, rules: BomRules): number {
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
-  const barge = (shed.span / 1000) * (fallsAlongLength ? 1 : 2);
+    !fallsToBothSides(shed.structureType);
+  // The same barge pieces the flashing lines price (`bargePieces`), so the screws follow the steel.
+  const barge = bargeMetres(shed, rules);
   const eave = (shed.length / 1000) * (fallsAlongLength ? 1 : 2);
   // Four corners at roughly a wall height each.
   const corners = (4 * shed.height) / 1000;
@@ -117,7 +120,7 @@ export function fixingLines(
   // Walls: the same shape, over both long walls and both ends.
   const wallScrews = (frame.girtRows + 1) * rules.screwsPerCrossing * (sheets.side + sheets.end);
   // Flashing: two a metre, plus the 10% allowance for cut ends.
-  const flashingScrews = Math.ceil(flashingMetres(shed) * rules.flashingScrewsPerMetre);
+  const flashingScrews = Math.ceil(flashingMetres(shed, rules) * rules.flashingScrewsPerMetre);
 
   const withAllowance = (count: number) => Math.ceil(count * (1 + rules.screwAllowance));
 

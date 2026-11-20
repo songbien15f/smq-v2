@@ -165,7 +165,11 @@ export function registerDocuments(app: FastifyInstance, db: Db): void {
           quoteId: request.params.quoteId,
           revision: revisionNumber,
         });
-        const html = await renderFrozenPlan(frozen);
+        const html = await renderFrozenPlan(frozen, {
+          db,
+          tenantId: session.tenantId as string,
+          quoteId: request.params.quoteId,
+        });
         return reply
           .status(200)
           .header('content-type', 'text/html; charset=utf-8')

@@ -51,6 +51,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       { href: '/company', label: 'Companies', capability: 'platform:companies', icon: 'companies' },
       { href: '/seats', label: 'Seats', capability: 'platform:companies', icon: 'seats' },
       { href: '/enquiries', label: 'Enquiries', capability: 'platform:enquiries', icon: 'enquiries' },
+      { href: '/guest-requests', label: 'Guest requests', capability: 'platform:enquiries', icon: 'guestRequests' },
     ],
   },
   {
@@ -59,6 +60,12 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       { href: '/price-books', label: 'Price books', capability: 'platform:pricebooks', icon: 'priceBooks' },
       { href: '/prices', label: 'Company prices', capability: 'platform:companies', icon: 'companyPrices' },
       { href: '/templates', label: 'Templates', capability: 'platform:templates', icon: 'templates' },
+      {
+        href: '/guest-types',
+        label: 'Guest building types',
+        capability: 'platform:templates',
+        icon: 'guestTypes',
+      },
     ],
   },
   {

@@ -32,6 +32,7 @@ import {
   MIN_QUERY_LENGTH,
   createGooglePlacesTransport,
   placesConfigured,
+  withTimeout,
   type PlacesTransport,
 } from '../lib/places.js';
 import { sendFail, sendOk } from '../lib/http.js';
@@ -116,21 +117,4 @@ export function registerPlaces(app: FastifyInstance): void {
       );
     }
   });
-}
-
-/**
- * Reject after `ms`, so a hung upstream does not hold the operator's field open.
- *
- * `AbortSignal.timeout` would be tidier but the transport takes a `fetch` implementation, and a
- * promise race is what can be applied to any transport — including the fake one a test injects.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      const timer = setTimeout(() => reject(new Error('the lookup timed out')), ms);
-      // Do not keep the process alive for a timer whose answer nobody is waiting for any more.
-      if (typeof timer === 'object' && 'unref' in timer) timer.unref();
-    }),
-  ]);
 }

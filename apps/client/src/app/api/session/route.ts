@@ -23,11 +23,12 @@
  * point.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { NextResponse } from 'next/server';
 import type { ApiResult } from '@sq/contracts';
 
 /** Where the API lives. Server-side only; never exposed to the browser. */
-const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+const API = resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 
 const SESSION_COOKIE = 'sq_session';
 const DEVICE_COOKIE = 'sq_device';

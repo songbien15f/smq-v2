@@ -29,6 +29,7 @@ import { frameScheduleQuery, subCodeFor } from '@/lib/pricing/structure';
 import { DEFAULT_BOM_RULES, type BomRules } from './rules';
 import type { OptimisedFrame } from './types';
 import { safeCall } from './safe';
+import { fallsToBothSides } from '@/domain/types';
 
 /** The standard bay lengths the span table is indexed by. */
 const STANDARD_BAYS = [3000, 3250, 3500, 3750, 4000, 4500, 5000, 5500, 6000] as const;
@@ -93,7 +94,7 @@ function roofSpanFor(shed: DimensionedShed): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
   const slope = shed.span / Math.cos(pitch);
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+    !fallsToBothSides(shed.structureType);
   return fallsAlongLength ? slope : slope / 2;
 }
 

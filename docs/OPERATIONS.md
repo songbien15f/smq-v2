@@ -177,3 +177,218 @@ pnpm quotes:blocked -- --list             # name each blocked quote and why
 ```
 
 It runs the editor's own validator against the current revision of each quote, so the numbers match what a salesperson will see. See `docs/reviews/2026-11-13-quote-editor-overview.md` item 7.
+
+## 8. The Guest page's address search (Google Places)
+
+The public Guest page (`apps/site` `/quote`) can suggest real addresses as a guest types. It is a page anyone on the internet can open, so every call it makes is Google money spent on behalf of a stranger. The API holds the key; the browser never sees it. The application caps itself (below), but the caps that cannot be bypassed by a bug are the ones in Google Cloud — set both.
+
+### Turning it on
+
+In the API's environment (`.env` locally):
+
+| Variable | Value |
+|---|---|
+| `GUEST_PLACES_ENABLED` | `1` (on). `0` or unset = off: the page offers the price book's suburb list instead. |
+| `GOOGLE_PLACES_API_KEY` | The server key. The same key the editor's own address field uses. |
+| `GUEST_PLACES_SESSION_SECRET` | 32+ random characters. **Required in production** when the switch is on; in development a random one is made at each start (sessions then end at a restart, which is harmless). |
+| `GUEST_PLACES_DAILY_AUTOCOMPLETE_CAP` / `_DETAILS_CAP` | System-wide calls per UTC day (defaults 2000 / 300). Past either, the page falls back to the suburb list and one warning mail a day goes to `GUEST_NOTIFY_TO` (or the enquiry recipients). |
+
+Restart the API, then check it against Google once:
+
+```bash
+node scripts/probe-guest-places.mjs
+```
+
+It sends one session, three autocomplete requests and one details request through the API, prints what came back and the call count, and never prints the key. It spends real calls — run it by hand, never in a loop or in CI. The E2E suite does **not** call Google: `e2e/guestQuote.spec.ts` stubs the page's Places routes in the browser to exercise the suburb fallback.
+
+### Restricting the key (Google Cloud console → APIs & Services → Credentials)
+
+- **API restriction:** allow only **Places API (New)** — the API calls `places.googleapis.com/v1/places:autocomplete` and `/v1/places/{id}`. A key that can call every Maps API is a key that can be spent on every Maps API.
+- **Application restriction: IP addresses**, set to the server's outbound address. The calls come from the API process, not from the browser, so an **HTTP referrer** restriction does not apply to this key and would make every call fail. If a browser-side Maps key is ever added, it is a separate key restricted by referrer to the site's domain.
+
+### Quota and budget (the limits that hold even if the app's caps fail)
+
+- **Daily quota:** APIs & Services → Places API (New) → Quotas. Set the per-day request quota a little above the app's two daily caps combined (with the defaults, about 2,500). Google then refuses past it; the page sees an upstream failure and offers the suburb list.
+- **Budget alert:** Billing → Budgets & alerts → a monthly budget on the project with alerts at 50 %, 90 % and 100 %, sent to someone who reads mail. An alert does not stop spending — the quota does — but it says something is wrong before the invoice does.
+
+### The application's own limits
+
+Per guest IP (hashed) and per session, from `GUEST_PLACES_LIMITS` in `apps/api/src/lib/guestPlaces.ts`: 10 sessions an hour; 60 autocomplete an hour and 200 a day; 12 autocomplete and 1 details per three-minute session; 20 details a day. Sending a request is limited to 5 an hour per IP and 3 a day per email address (`apps/api/src/routes/guest.ts`). A guest past a limit sees "That is a lot of requests from one place…" and the page keeps working with the suburb list.
+
+### The Guest page's building types (admin, `/guest-types`)
+
+The cards on `/quote` ① are a **platform catalogue**, not a company one: one list for every visitor.
+They live in `guest_building_types` and are edited in the admin app at `/guest-types`
+(`docs/plans/admin-guest-building-types.md`).
+
+**The first save copies the six code defaults into the database.** While the table is empty the API
+answers `GUEST_DEFAULT_TYPES` from `@sq/core`; the moment any row exists the database is the only
+source. The seeding exists so that editing one type does not make the other five vanish.
+
+| What the operator can do | Where |
+|---|---|
+| Switch a type off / on | The row's button. The Guest page stops offering it immediately. |
+| Reorder | The ↑ / ↓ buttons, written as one transaction (`10, 20, 30…`). |
+| Edit a type | The name link: six sections — general · roof · limits · starting design · doors · colours. |
+| Add a type | "Add a type", starting from the Garage's configuration. |
+
+**Nothing is ever deleted.** A sent request stores `typeId`, and a guest's browser keeps it in
+`localStorage`, so a type is switched off instead. The **id cannot change** either: it is in deep links
+(`?type=…`), in saved drafts and in leads.
+
+**Limits beyond the price book are allowed.** The form shows an amber note ("Beyond the price book…")
+and requests designed outside it carry `review_flags` for the estimator. Nothing blocks the save.
+
+**If a type is switched off while a guest has a draft of it**, their draft is cleared on the next visit
+and ① says so in one line. The address goes with it, because the address is stored inside the design.
+
+**Restoring a type that was switched off:** open it and press "Switch on". There is no undo and no
+delete, so nothing else is needed. **Restoring the six defaults after editing them** means editing them
+back — the code defaults are not a button, deliberately: a "reset to code defaults" would silently
+discard an operator's own limits.
+
+### Guest requests (admin, `/guest-requests`)
+
+Every request sent from the Guest page is stored in `guest_requests` whether or not the notification
+mail went out, and **Customers › Guest requests** is where it is read (capability
+`platform:enquiries`, the same as Enquiries). The list opens on **New**; a request's own page shows
+the contact, the design, the additional request, the server's estimate and "check" flags (internal —
+the guest's email never carries them) and the assistant conversation, if any.
+
+On that page a request can be **declined** (with an optional reason, kept on the row), **marked as
+spam**, or **put back to new**. Each change is an audit event (`guest_request.status`). Nothing is
+deleted. `transferred` cannot be set here: it belongs to handing the request to a company, which is
+not built yet.
+
+### Guest accounts (optional sign-in on the Guest page)
+
+A guest may create an account (email + password) or keep sending requests anonymously — both
+work, and nothing on the page requires the account (DECISIONS D4). Three tables hold it:
+`guest_accounts` (one per normalised email, password as a scrypt hash), `guest_account_sessions`
+(only a hash of the `sq_guest` token; 90 days, extended on use) and `guest_drafts` (unfinished
+designs, at most 20 per account, no contact details). A request sent while signed in carries
+`guest_requests.account_id`; anonymous requests keep it NULL.
+
+Limits, counted in `rate_limits` like the rest: sign-in 10 per 15 minutes per address and per
+email, sign-up 5 per hour per address, draft saves 120 per 10 minutes per account.
+
+Expired sessions are refused when read but not deleted. Remove them at any time:
+
+```sql
+DELETE FROM guest_account_sessions WHERE expires_at < to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+```
+
+There is no password reset by mail yet: a guest who forgets the password creates a new account
+under another email, or the operator deletes the account. Its sessions and drafts go with the row
+(`ON DELETE CASCADE`); its sent requests do not, so detach them first or the delete is refused:
+
+```sql
+UPDATE guest_requests SET account_id = NULL WHERE account_id = '<account id>';
+DELETE FROM guest_accounts WHERE id = '<account id>';
+```
+
+### The Guest assistant (optional, off by default)
+
+The Guest page can offer a "Shed Assistant": a chat box that turns a sentence ("6 by 9 garage with two
+roller doors") into design operations. It costs money per message, so it is **off unless two things
+are true**: `GUEST_ASSISTANT_ENABLED=1` **and** `VILAO_API_KEY` is set. With either missing, the route
+answers 503 `not_configured` and the page shows "the assistant is unavailable — the designer still
+works".
+
+| Setting | Meaning |
+|---|---|
+| `GUEST_ASSISTANT_ENABLED` | `1` to offer the assistant. Anything else is off. |
+| `VILAO_BASE_URL` | OpenAI-compatible gateway. Defaults to `https://api.vilao.ai/v1`. |
+| `VILAO_API_KEY` | The key. **A server secret**: it stays in `.env`, never `NEXT_PUBLIC_*`, never in a commit. |
+| `VILAO_MODEL` | Chat model. Defaults to `wiki`. |
+| `VILAO_STT_MODEL` | Speech-to-text model, used only if a microphone is added. Defaults to `mgr/grok-stt`. |
+| `GUEST_ASSISTANT_DAILY_TURNS` | Platform-wide ceiling per UTC day. Defaults to 200. |
+| `NEXT_PUBLIC_SQ_ASSISTANT` | `1` renders the panel for everyone. `?assistant=1` turns it on for one visit. |
+
+**What a turn costs and who stops it.** One model call, or two when the first reply wrote an
+operation with key names that do not exist (the gateway does not enforce the JSON schema): the
+server asks once more with the exact shape and keeps the reply that lost fewer operations. Three
+counters are consumed *before* the call: 60 a day per IP, 40 per conversation, and the daily ceiling
+above — they count turns, not calls. A refusal answers "unavailable" and the designer keeps working.
+
+**What the model never sees.** The contact details (name, email, mobile, street address) are not in
+the request — the route's schema has no field for them. The sentence itself is redacted first: email
+addresses, Australian mobiles and street addresses become `[email]`, `[mobile]`, `[address]` before
+the prompt is built.
+
+**What it cannot do.** Only design operations, and each is re-checked against the building type on
+the server (`applyGuestOps`). A suggestion outside the book — a 40 m span, a 9 m bay, a colour the
+type does not offer — is refused and the guest is told why. It has no tool that sends a request,
+touches the database or quotes a price. The sentence shown is corrected to what really happened: if
+nothing was applied it says so instead of "Done", and a partial change says "please check the plan".
+
+**What it will not talk about.** Its scope is what the guest can edit on the page (size, roof, slab,
+knee brace, cladding, colours, doors and windows) and the Design-check items on screen. It is given
+only the type's limits, the design's numbers and those findings — never a BOM, a price or the price
+book. Asked about parts, steel sections, footings, calculations or its own instructions, it answers
+with one sentence pointing to the "Additional Request" box. `guardMessage` enforces this without
+relying on the model: a reply mentioning money becomes the pricing sentence, and one mentioning
+internals (parts list, BOM, purlins, girts, C/Z sections, price book, its prompt) becomes the scope
+sentence. Either replacement is logged as `assistant reply mentioned money or internals`.
+
+**The conversation travels with the lead.** When a request is sent, the whole conversation is
+**copied** onto the lead (`guest_requests.assistant_transcript_json`) and the notification mail to the
+estimator quotes its last ten turns. The lead keeps its copy; `assistant_session_id` is only a trace of
+where it came from.
+
+**Cleaning up.** Sessions expire 30 days after the last visit:
+
+```bash
+pnpm assistant:prune
+```
+
+Run it daily, like `pnpm ratelimits:prune`. It deletes expired sessions (their turns cascade), and
+first nulls `guest_requests.assistant_session_id` for any lead pointing at one — **the lead's own
+transcript is untouched**, which is why deleting a session a lead came from is safe. Before migration
+023 the transcript only lived in the session, and this script would have destroyed it; that is what the
+copy exists to prevent.
+
+### The wind region the page shows (estimated, not certified)
+
+When a guest picks an address from Google's suggestions, the page shows *"Region B · 10a Enclosed ·
+Importance Level 2 — Indicative — confirmed in your quote"*. Three properties matter to whoever runs
+this:
+
+- **It is an estimate.** The letters come from a simplified copy of Geoscience Australia's *1170.2
+  Wind Regions for Australia* dataset (`packages/core/src/domain/windRegionData.ts`, 77 rings). GA's
+  own record says the dataset is *"not suitable for design purposes"* and *"has not been formally
+  endorsed by Standards Australia"*, and it carries **no stated licence** — see
+  `docs/KNOWN-DEVIATIONS.md` row 57, which is an **open decision for the operator**.
+- **It refuses to answer near a boundary.** Within about 9 km of a boundary between two regions the
+  answer is `null` and the page says "Wind region confirmed in your quote". That is deliberate: the
+  simplified table moves a boundary by up to 5.5 km, and answering the wrong side under-states a
+  cyclonic site's frame.
+- **No wind speed is printed.** The Standard's Table 3.1 could not be sourced, so
+  `GuestSiteEstimate.windSpeedMs` is deliberately left unset
+  (`docs/research/wind-regions-as1170-2.md` §4).
+
+The server **recomputes** the region when the request is sent — it calls Place Details again with
+the stored `place_id` and stores its own answer in `guest_requests.site_estimate_json`. A browser
+that sends a different region cannot change the record. If Google is unavailable at that moment, the
+estimate is `null` and the request is still stored; the log line is
+`guest wind region: the address could not be resolved`.
+
+Rebuilding the table from the source shapefile is described in the header of
+`windRegionData.ts`; the two downloaded files (`ga_windregions.zip`, `ga_windspec.pdf`) are
+gitignored at the repo root.
+
+
+### Cleaning `rate_limits`
+
+All of these counters live in one table, `rate_limits(key, count, window_end)`, keyed `gplaces:…`, `guest-request:…` and `guest-suburbs:…`. An expired row is overwritten the next time its key is used and never deleted, so one-off keys (a session id, a day's counter) stay. Remove the expired ones at any time, including while the API runs:
+
+```bash
+pnpm ratelimits:prune
+```
+
+A sensible schedule is once a day. To lift a limit on purpose before its window ends (for example after a test run from the office), delete that one key — never truncate the table, which would also reset the system-wide daily caps:
+
+```sql
+SELECT key, count, window_end FROM rate_limits WHERE key LIKE 'guest-request:ip:%';
+DELETE FROM rate_limits WHERE key = '<the key>';
+```

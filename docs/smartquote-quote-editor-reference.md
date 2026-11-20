@@ -99,6 +99,51 @@ các loại khác và điền mặc định cho quote cũ: `leaves = 1`, `hinge 
 `KNOWN-DEVIATIONS.md` dòng 50. Import `.sqd` đọc được cả hai: `ESlidingDoorType` 2 =
 `DoubleInSingleBay` → 2 cánh; `PADoor.Vector = 1` → bản lề phải.
 
+### 3.5 Cửa trên trang Guest (`/quote`) — luôn ở chỗ hợp lệ
+
+Trang Guest dùng chung engine đặt cửa với editor (`placeOpening`, margin 100 mm mỗi đầu tường),
+nhưng vì người dùng không thấy lưới toạ độ, **mọi thay đổi đều tự đẩy cửa về chỗ hợp lệ gần nhất**:
+
+- **Đổi kích thước toà nhà** (rộng, cao, bề rộng bay, thêm/bớt bay, đổi mái): sau khi áp thay đổi,
+  từng cửa được trượt về chỗ hợp lệ gần nhất (`refitGuestOpenings`), theo thứ tự index — cửa sau nhìn
+  thấy vị trí mới của cửa trước. Cửa nào không còn chỗ đứng thì **được báo**, không bị xoá: design
+  giữ nguyên vị trí cũ và bước ② hiện "cần chú ý" để người dùng tự quyết.
+- **Đổi kích thước cửa**: giữ tâm cửa, rồi tìm chỗ hợp lệ gần nhất (`resizeGuestOpening`). Nếu cỡ
+  mới không lọt tường nào thì trả về lý do cụ thể, không áp dụng.
+- **Thêm / dời cửa**: toạ độ mong muốn được làm tròn về bước 50 mm rồi tìm chỗ hợp lệ gần nhất; gửi
+  `offset: 0` sẽ ra 100 mm (sát margin), không dính cột góc. Không nêu vị trí thì đặt giữa tường.
+- **Nạp lại design đã lưu**: `hydrate` chạy cùng bước refit, nên quote lưu từ bản cũ (có cửa ở
+  `offset: 0`) tự lành khi mở lại, không cần người dùng sửa tay.
+
+**Trợ lý AI nhìn thấy vị trí cửa.** `designContext` gửi cho model, với từng cửa:
+`index: kind on <wall> wall, W×H mm, left edge <offset> mm along a <run> mm wall` kèm nhãn
+`centred` / `at the start end` / `at the far end` (dung sai 50 / 150 mm). Nhờ đó "dời cửa trái về
+phía sau" hay "đặt cửa sổ cách góc 2 m" là phép tính trên số, không phải đoán.
+
+**Offset 0 nằm ở đâu** (`packages/core/src/domain/placement.ts:130-150`): mép `x = 0` của tường
+**front**; mép `x = span` của tường **back**; đầu **back** (`y = length`) của tường **left**; đầu
+**front** (`y = 0`) của tường **right**. Nói cách khác, với mỗi tường, offset 0 là đầu "trái" khi
+đứng **ngoài** nhìn vào tường đó.
+
+### 3.6 Tài khoản Guest (tuỳ chọn)
+
+Khách gửi yêu cầu **không cần đăng nhập** như trước. Ai muốn thì bấm **Sign in** trên header trang
+`/quote` để đăng nhập hoặc tạo tài khoản nhanh (họ, tên, email, mobile, mật khẩu ≥ 8 ký tự).
+Spec: `docs/specs/guest-accounts.md`; quyết định: DECISIONS D4.
+
+- **Tự điền bước ①**: khi đã đăng nhập, các ô liên hệ **còn trống** lấy từ hồ sơ (mobile hiện dạng
+  `0412 345 678`). Ô khách đã gõ không bị ghi đè; khách sửa thoải mái trước khi bấm Next. Mỗi hồ sơ chỉ
+  tự điền một lần mỗi lần tải trang, nên ô khách tự xoá vẫn trống.
+- **Lưu bản dở**: thiết kế chưa gửi được lưu lên tài khoản 2 giây sau lần sửa cuối, dưới một uuid
+  của trang (`draftId`) nên lưu lại là PUT idempotent. Bản dở chỉ chứa thiết kế, bước, nguồn — không
+  chứa thông tin liên hệ. Gửi yêu cầu khi đã đăng nhập thì yêu cầu gắn vào tài khoản và bản dở đó bị xoá
+  trong cùng transaction.
+- **Hồ sơ** (`/quote/account`): 3 tab — My details (sửa tên/mobile, đổi mật khẩu; email chỉ đọc),
+  Sent requests (trạng thái Received / Being quoted / Closed, mở lại thiết kế), Unfinished designs
+  (Continue, Delete).
+- **Đăng xuất** xoá thông tin liên hệ khỏi trang (máy dùng chung) và huỷ phiên trên server.
+- Sai mật khẩu và email không tồn tại trả **cùng một** thông báo, để không lộ email nào đã có tài khoản.
+
 ---
 
 ## 4. Chuỗi giá
@@ -590,15 +635,31 @@ defaultCosts:  council · engineering · rubbish · delivery · concrete
 - **Đã nối vào Additions**: `CostPanel` đọc rate và **chỉ điền vào ô đơn giá đang bằng 0** —
   không bao giờ ghi đè con số người dùng đã gõ.
 
-**Plan drawing** — `GET /quotes/:id/revisions/:rev/plan` trả một trang **A4 landscape** chỉ có
-hình: khung nhà, cửa/cửa sổ, kích thước, dòng "Indicative only — not for construction".
-**Không giá, không tên/liên hệ khách, không quảng cáo** — đây là bản vẽ dán ở xưởng.
-Dùng chung `PlanGeometry` với tài liệu khách nên hai bản không thể lệch nhau.
+**Plan drawing** — `GET /quotes/:id/revisions/:rev/plan`, A4 landscape, bố cục theo desktop
+(`PlanViewDocument.cs`): cột trái là danh sách option theo đúng thứ tự `GetPrintOptionString`
+(`drawingSheet.ts` `optionListLines`): mái hiên có dòng chi tiết
+`  - H{cao}xL{dài}xW{vươn} @{dốc}deg - Opened x n` (mái hiên v2 không có tường nên luôn "Opened");
+đầu/bay mở in `End Opening @H…xW…`, `Side Opening  @H…xW…`, `Double Side Opening @H…xW…` theo
+`GetListOpeningName`, với tiết diện đọc từ sách giá của revision (`documents/drawingSections.ts`) —
+không có thiết kế/sách thì chỉ in tên + số lượng, không kích thước; khối `-Cantilever:` chỉ khi có
+cantilever (overhang không in). Bên phải là mặt bằng **Length nằm ngang**, Width nằm dọc.
+Vẽ: khung, đường bay, vạch tôn tường mỗi 762, mái gable có vạch tấm lợp + đường nóc, máng xối
+(luôn hết chiều dài), ô "DP" (bỏ DP nằm dưới mái hiên gắn sát mái, cao ≥ tường − 200), ký hiệu cửa + cung mở, tên ngắn trong hình thoi (W1, PA1, RD1,
+SD1, OP1 — một tên cho mỗi loại + cỡ), mũi tên dốc ở giữa bay 1, kích thước bay **chỉ khi bay khác
+cỡ**, Length ở trên kèm `H. = …mm`, Width bên phải cùng cột với bề sâu mái hiên.
+Khung tên dưới cùng: Client, Site address, State (tên đầy đủ), Job No. (= số báo giá), Date.
+**Không giá, không email/điện thoại khách.**
 
-**Elevations** — `GET /quotes/:id/revisions/:rev/elevations`, A4 landscape, 4 panel (Front / Back /
-Left end / Right end). Mỗi panel đọc `buildWallGeometries(config)` — **cùng nguồn với model 3D** —
-nên lỗ cửa đúng vị trí, sill và kích thước; đường mái là **schematic** và sheet ghi rõ.
-Không giá, không liên hệ khách.
+**Elevations** — `GET /quotes/:id/revisions/:rev/elevations`, A4 landscape, lưới 2×2 theo desktop
+(`ElevationDocument.cs`): **Front** (trên-trái) · **Right** (trên-phải) · **Back** (dưới-trái) ·
+**Left** (dưới-phải). Tên theo desktop: **Front/Back là tường dọc** (v2 `left`/`right`),
+**Right/Left là tường hồi** (v2 `front`/`back`); caption ghi thêm "(editor: … wall)".
+Front/Back chung một tỉ lệ, Right/Left chung một tỉ lệ; cỡ chữ = bề rộng / 50.
+Hình học từ `buildElevations` (`packages/core/src/domain/elevation.ts`): đa giác mái thật (gable
+nóc giữa, skillion thấp→cao), vạch tôn tường/tấm lợp, cladding ngang, gable infill, máng xối, ống
+xả, lỗ cửa trắng có ký hiệu loại + tên ngắn, mái hiên/outrigger/mezzanine/skylight…, kích thước
+chuỗi lỗ cửa, bề rộng tổng, cao tường + cao nóc ở mặt hồi (đặt ra ngoài mái hiên).
+Các khác biệt cố ý: `KNOWN-DEVIATIONS.md` dòng 59–64.
 `CustomerDocument` vì thế mang thêm `config` (hình học thật), không chỉ block đã project.
 
 ---
@@ -654,6 +715,29 @@ còn `TopHatQuote.cs:212` dùng `width / 2`.
 
 **`ENGINE_VERSION` tăng lên `2`** vì công thức đổi: revision cũ đánh dấu engine 1 và giữ nguyên số
 của nó; revision mới dùng engine 2. Mọi revision skillion do engine 1 đã đặt thiếu khoảng nửa rafter.
+
+### Bug thứ hai đã sửa: skillion đổ ngang span, không đổ dọc chiều dài (engine 3)
+
+v2 trước đây cho mái skillion đổ **dọc chiều dài**: tấm lợp dài bằng `length`, đếm theo span; mọi
+tường và cột cùng một chiều cao; barge chỉ một đoạn span. Desktop đổ **ngang span**, từ `FrontWall`
+thấp lên `RearWall` cao (`SkillionBuildingQuote.cs:838-851`, `:861`, `:74`; `SubMaterial.cs:844-850`).
+Nay (3D, mũi tên mái 2D và BOM cùng một hình):
+
+- Tấm lợp = `span / cos(pitch) + roofEndAllowance`, số tấm = `ceil(length / cover)` − skylight, 1 dốc.
+- Tường bên: hai dòng — phía thấp `height + wallEndAllowance`, phía cao thêm `tan(pitch) × span`.
+- Cột: hai dòng riêng, cả cột chính lẫn cột tường hồi — phía thấp `columnLength`, phía cao thêm
+  `tan(pitch) × span` (`SkillionBuildingQuote.cs:54-80`, `:180-195`). Bảng cắt (cut list) cũng hai dòng,
+  cùng số với dòng giá. Tên tường trong `frame.ts` theo kiểu desktop: `front` = thấp, `back` = cao.
+- Rafter: mỗi khung skillion **một** cây chạy hết span (desktop `:238-244`): rafter chính =
+  `bays − 1 + số đầu hồi mở`, rafter hồi = một cây cho mỗi đầu hồi kín (`:278-283`). Trước đây v2 đếm
+  bằng số cột, tức gấp đôi lượng thép rafter.
+- Barge (mọi loại mái, `SubMaterial.cs:823-850`): mỗi mép vát một đoạn `chiều dài tấm lợp + 200` —
+  gable 4 đoạn, tấm `round((span/2)/cos + 80, tới 10)`; skillion 2 đoạn, tấm `ceil(span/cos + 80, tới 10)`.
+  Skillion thêm barge mép cao: `q = ceil(L/8000) + 1` đoạn dài `L/q + 20`; dưới 8 m desktop đặt 2 đoạn
+  dài nguyên L (gấp đôi) — v2 đặt 1 đoạn (lỗi desktop, sửa chứ không chép). Máng xối và fascia 1 × length
+  (mép thấp).
+- Áp dụng cho `skillion`, `skillion_carport`, `custom_skillion` (hàm `fallsToBothSides`).
+- Nhãn Ridge cho `skillion_carport` nay cũng là đỉnh của mái một dốc. KNOWN-DEVIATIONS dòng 58; `ENGINE_VERSION` `3`.
 
 ### Đóng băng theo revision
 

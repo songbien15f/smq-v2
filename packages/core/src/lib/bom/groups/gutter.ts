@@ -13,6 +13,7 @@
  */
 
 import type { ShedConfig, DimensionedShed } from '@/domain/types';
+import { fallsToBothSides } from '@/domain/types';
 import type { PriceLookup, PriceRow } from '@/lib/pricing/types';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
@@ -34,7 +35,7 @@ const DEFAULT_DOWNPIPE_KIND = 'PVC';
 /** How many brackets hold the gutter up, which the fixing group also needs. */
 export function gutterBracketCount(shed: DimensionedShed, rules: BomRules = DEFAULT_BOM_RULES): number {
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+    !fallsToBothSides(shed.structureType);
   const eaves = fallsAlongLength ? 1 : 2;
   return Math.ceil(((shed.length / 1000) * eaves * 1000) / rules.bracketSpacing);
 }
@@ -104,7 +105,7 @@ export function gutterLines(
   // no walls for the fascia capping.
 
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+    !fallsToBothSides(shed.structureType);
   // A gable has an eave on both long walls; a skillion sheds to one.
   const eaves = fallsAlongLength ? 1 : 2;
 
@@ -156,22 +157,74 @@ export function gutterLines(
   ];
 }
 
+/** One run of barge flashing pieces: each piece's length in mm, and how many. */
+export interface BargePieces {
+  lengthMm: number;
+  count: number;
+}
+
+/**
+ * The barge flashing pieces, as the desktop cuts them (`SubMaterial.cs:823-850`
+ * `computeGableBargeFlashing`).
+ *
+ * ## Raking barges
+ *
+ * One piece per raking roof edge, each `roof sheet length + 200` (the lap over the eave and the
+ * ridge). The sheet length is the desktop's own, rounded the way each caller rounds it:
+ *
+ * - gable (`TopHatQuote.cs:1861`): `round((W / 2) / cos(pitch) + 80, to 10)`, four pieces;
+ * - skillion (`SkillionBuildingQuote.cs:1414`): `ceil(round(W / cos(pitch) + 80), to 10)`, two
+ *   pieces, because a single slope has one raking edge per end.
+ *
+ * Until 2026-11-20 v2 ordered `2 x span`, which is the horizontal width, not the slope, and has no
+ * laps: 1.2 m short on a 12 m gable at 10 degrees, and on a skillion it was the gable's two halves
+ * laid end to end rather than one sloped run per end.
+ *
+ * ## The skillion's high eave
+ *
+ * A single slope caps its high eave with barge along the length (`:844-850`):
+ * `q = ceil(L / 8000) + 1` pieces of `L / q + 20`, rounded up to 10 mm, so the laps add 20 mm a
+ * piece. Below 8 m the desktop orders `q = 2` pieces of the **whole** length, which is twice the
+ * run; v2 orders one (KNOWN-DEVIATIONS row 58).
+ */
+export function bargePieces(shed: DimensionedShed, rules: BomRules = DEFAULT_BOM_RULES): BargePieces[] {
+  const pitch = (shed.roofPitchDeg * Math.PI) / 180;
+  const singleSlope = !fallsToBothSides(shed.structureType);
+  const sheet = singleSlope
+    ? Math.ceil(Math.round(shed.span / Math.cos(pitch) + rules.roofEndAllowance) / 10) * 10
+    : Math.round((Math.floor(shed.span / 2) / Math.cos(pitch) + rules.roofEndAllowance) / 10) * 10;
+  const raking: BargePieces = { lengthMm: sheet + 200, count: singleSlope ? 2 : 4 };
+  if (!singleSlope) return [raking];
+
+  const length = shed.length;
+  const highEave: BargePieces =
+    length < 8000
+      ? { lengthMm: Math.ceil(length / 10) * 10, count: 1 }
+      : (() => {
+          const q = Math.ceil(length / 8000) + 1;
+          return { lengthMm: Math.ceil((Math.floor(length / q) + 20) / 10) * 10, count: q };
+        })();
+  return [raking, highEave];
+}
+
+/** The barge flashing in metres: every piece, laps included. */
+export function bargeMetres(shed: DimensionedShed, rules: BomRules = DEFAULT_BOM_RULES): number {
+  return bargePieces(shed, rules).reduce((sum, run) => sum + (run.lengthMm / 1000) * run.count, 0);
+}
+
 /** The flashing lines: barge, fascia and corners. */
 export function flashingLines(
   shed: DimensionedShed,
   frame: OptimisedFrame,
   lookup: PriceLookup,
-  // Flashing runs are measured from the roof's geometry and priced by profile and
-  // colour; no factory setting applies.
-  _rules?: BomRules,
+  // The barge reads the roof end allowance, the same one the roof sheet does.
+  rules: BomRules = DEFAULT_BOM_RULES,
 ): BomLine[] {
   const fallsAlongLength =
-    shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+    !fallsToBothSides(shed.structureType);
 
-  // Barge closes the gable end of the roof, so a gable has two barge runs and a
-  // skillion has one raking edge.
-  const bargeRuns = fallsAlongLength ? 1 : 2;
-  const bargeMetres = (shed.span / 1000) * bargeRuns;
+  // Barge closes each raking edge, plus a skillion's high eave: see `bargePieces`.
+  const barge = bargeMetres(shed, rules);
 
   // Fascia or capping runs along every eave, like the gutter.
   const eaveRuns = fallsAlongLength ? 1 : 2;
@@ -211,7 +264,7 @@ export function flashingLines(
 
   return [
     ...lengthLine('flashing', 'Ridge capping', ridgeMetres, flashing('ROLLTOP_RIDGE_CAPPING')),
-    ...lengthLine('flashing', 'Barge flashing', bargeMetres, flashing('GABLE_BARGE')),
+    ...lengthLine('flashing', 'Barge flashing', barge, flashing('GABLE_BARGE')),
     ...lengthLine('flashing', 'Eave capping', fasciaMetres, flashing('CORO_CAPPING')),
     // A corner flashing runs the wall height, so it is a length, not a count.
     ...lengthLine(

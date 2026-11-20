@@ -58,10 +58,12 @@ describe('the elevations page', () => {
   it('draws four walls, each with its openings', () => {
     const html = renderElevationsPageHtml(document());
     expect((html.match(/<figure>/g) ?? []).length).toBe(4);
-    for (const label of ['Front', 'Back', 'Left end', 'Right end']) {
-      expect(html).toContain(label);
-    }
-    // The door is a hole on the front wall; the window is a hole on the left end.
+    // The desktop's names and grid order: Front, Right, Back, Left. Front/Back are the long walls.
+    const order = ['Front elevation', 'Right elevation', 'Back elevation', 'Left elevation'].map((t) => html.indexOf(t));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toContain('(editor: left wall)');
+    // The door is a hole on v2's front (the desktop's Right end); the window on v2's left (Front).
     expect((html.match(/<rect[^>]*fill="#fff"/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 

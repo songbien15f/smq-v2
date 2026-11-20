@@ -47,12 +47,33 @@ export interface ResolvedAddress {
   /** A two- or three-letter code, matching the quote's `stateCode`. */
   state: string;
   postcode: string;
+  /**
+   * The place's coordinates, when the caller asked for them.
+   *
+   * Used to estimate a wind region (plan G-a2 S2) and **never stored or sent to a browser**:
+   * Google's Places policy allows keeping the place ID only. Members of this interface are
+   * internal to the server.
+   */
+  lat?: number;
+  lng?: number;
+}
+
+/**
+ * Per-call options.
+ *
+ * `sessionToken` groups a run of autocompletes and the one details call that ends it into a single
+ * billing session (Google: a URL-safe base64 string of at most 36 characters; a v4 UUID is what Google
+ * recommends). Omitted, every call is billed on its own — which is what the operator's editor routes
+ * have always done, so leaving it out changes nothing for them.
+ */
+export interface PlacesCallOptions {
+  sessionToken?: string;
 }
 
 /** What a caller may ask for. */
 export interface PlacesTransport {
-  autocomplete(input: string): Promise<AddressSuggestion[]>;
-  details(placeId: string): Promise<ResolvedAddress | null>;
+  autocomplete(input: string, options?: PlacesCallOptions): Promise<AddressSuggestion[]>;
+  details(placeId: string, options?: PlacesCallOptions): Promise<ResolvedAddress | null>;
 }
 
 /** The smallest query worth sending to a paid API. */
@@ -93,12 +114,23 @@ function component(
  * Exported so a test can pin the mapping without a network call — the mapping is the part that goes
  * wrong, and it is the part that decides which state's price table a quote is priced from.
  */
-export function splitAddress(components: AddressComponent[], formatted: string): ResolvedAddress {
+export function splitAddress(
+  components: AddressComponent[],
+  formatted: string,
+  location?: { latitude?: number; longitude?: number },
+): ResolvedAddress {
   const streetNumber = component(components, ['street_number']);
   const route = component(components, ['route']);
   // A street line is "number route" when both exist, and whichever exists when only one does. A
   // rural address often has no number, and a PO box has neither.
   const street = [streetNumber, route].filter((part) => part !== '').join(' ');
+
+  const lat = location?.latitude;
+  const lng = location?.longitude;
+  const coords =
+    typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)
+      ? { lat, lng }
+      : {};
 
   return {
     formatted,
@@ -108,6 +140,7 @@ export function splitAddress(components: AddressComponent[], formatted: string):
     // price table. The long name ("Queensland") would not match.
     state: component(components, ['administrative_area_level_1'], 'short'),
     postcode: component(components, ['postal_code']),
+    ...coords,
   };
 }
 
@@ -146,7 +179,7 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
   };
 
   return {
-    async autocomplete(input) {
+    async autocomplete(input, options = {}) {
       const response = await fetchImpl('https://places.googleapis.com/v1/places:autocomplete', {
         method: 'POST',
         headers: autocompleteHeaders,
@@ -155,6 +188,7 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
           // Australia only: this app quotes Australian sheds, and an address in another country is a
           // typo or a mistake, not a delivery.
           includedRegionCodes: ['au'],
+          ...(options.sessionToken === undefined ? {} : { sessionToken: options.sessionToken }),
         }),
       });
       if (!response.ok) throw new Error(await describeRefusal(response));
@@ -184,16 +218,20 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
       });
     },
 
-    async details(placeId) {
+    async details(placeId, options = {}) {
+      const session =
+        options.sessionToken === undefined ? '' : `?sessionToken=${encodeURIComponent(options.sessionToken)}`;
       const response = await fetchImpl(
-        `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+        `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}${session}`,
         {
           headers: {
             'x-goog-api-key': apiKey,
             // `addressComponents` is what makes the four fields fillable; asking for it is a
             // different (and slightly dearer) billing tier than `formattedAddress` alone, which is
-            // the trade this product needs.
-            'x-goog-fieldmask': 'formattedAddress,addressComponents',
+            // the trade this product needs. `location` is in the **same** Essentials tier (checked
+            // 2026-11-19, docs/research/places-location-sku.md), so the wind-region estimate costs
+            // nothing extra.
+            'x-goog-fieldmask': 'formattedAddress,addressComponents,location',
           },
         },
       );
@@ -211,10 +249,28 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
       const body = (await response.json()) as {
         formattedAddress?: string;
         addressComponents?: AddressComponent[];
+        location?: { latitude?: number; longitude?: number };
       };
       if (body.formattedAddress === undefined || body.formattedAddress.trim() === '') return null;
 
-      return splitAddress(body.addressComponents ?? [], body.formattedAddress);
+      return splitAddress(body.addressComponents ?? [], body.formattedAddress, body.location);
     },
   };
+}
+
+/**
+ * Reject after `ms`, so a hung upstream does not hold an address field open.
+ *
+ * `AbortSignal.timeout` would be tidier but the transport takes a `fetch` implementation, and a
+ * promise race is what can be applied to any transport — including the fake one a test injects.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error('the lookup timed out')), ms);
+      // Do not keep the process alive for a timer whose answer nobody is waiting for any more.
+      if (typeof timer === 'object' && 'unref' in timer) timer.unref();
+    }),
+  ]);
 }

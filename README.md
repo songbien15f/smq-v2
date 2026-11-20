@@ -70,7 +70,7 @@ the password before anything leaves a laptop**, and use a secret store in a depl
    is absent;
 7. starts all four services and opens the client once it answers.
 
-| Service | URL |
+| Service | URL (default) |
 |---|---|
 | **Client** (the workspace) | **http://localhost:3061** |
 | Admin (the vendor's control plane) | http://localhost:3062 |
@@ -79,12 +79,42 @@ the password before anything leaves a laptop**, and use a secret store in a depl
 
 Sign in with `owner@demo-sheds.local` / `a-long-enough-password` — the launcher prints these too.
 
-**`stop-306.bat`** kills whatever is listening on 3060–3063. Use it when the window was closed
+**The ports are in one file: [`start/ports.env`](start/ports.env).** Change a number there and the
+matching origin follows — the API's allow-list, the browser origins and the three front-ends all
+move together, so nothing has to be edited twice. Something else on the machine holding 3060–3063
+(another checkout, a container, a stale process) is the usual reason to change one.
+
+**`stop-306.bat`** kills whatever is listening on the ports in that file — not hard-coded numbers —
+so after a port change it still stops the right processes. Use it when the window was closed
 without Ctrl+C: the four Node processes survive that, and the next start then fails with "address
 already in use".
 
+Running by hand (`pnpm dev`) does not read `start/ports.env`. Set the same names in the shell
+instead — `API_PORT`, `CLIENT_PORT`, `ADMIN_PORT`, `SITE_PORT` — and the API still derives its
+allowed origins from them.
+
 Postgres is required now: the application database has no SQLite fallback (DECISIONS D1). See
 "Provisioning Postgres once" below.
+
+### Public link for QA (Cloudflare tunnel)
+
+`start	unnel.bat site` opens a tunnel to the Guest page and prints an
+`https://….trycloudflare.com` address to send to testers. Nothing else is needed for the **site**:
+the front-end picks up the public host through `allowedDevOrigins` in its `next.config.ts`.
+
+Two things it prints, and why they matter:
+
+- **Restart the services with the printed `*_ORIGIN`** values. The API's CORS allow-list is explicit
+  and never a wildcard, so a request arriving from the tunnel host is refused until that host is
+  named. Tunnelling a front-end therefore means restarting with `set SITE_ORIGIN=…` (or
+  `CLIENT_ORIGIN`/`ADMIN_ORIGIN`) in the same shell.
+- **Quote-page address search needs `GUEST_PLACES_SESSION_SECRET`** (32+ random characters) once the
+  page is public. Without it the API refuses at boot rather than signing sessions with the
+  development secret.
+
+Quick tunnels have no access control: whoever has the link can load what that port serves. Tunnelling
+`client` or `admin` therefore puts a sign-in screen on the public internet, and
+`start	unnel.bat` asks before doing it. Links die when the tunnel window closes.
 
 ## Run it — by hand
 

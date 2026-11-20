@@ -26,6 +26,7 @@
  * "some rows failed" would hide the one the operator can actually fix.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { useState } from 'react';
 import { Panel, StatusPill } from '@sq/ui';
 import { api } from '@/lib/sq';
@@ -170,7 +171,7 @@ export function PriceImportPage() {
         <div className="flex flex-col gap-sq-3">
           <div className="flex flex-wrap items-center gap-sq-2">
             <a
-              href={`${process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3060/api/v1'}/admin/prices/template`}
+              href={`${process.env.NEXT_PUBLIC_API_BASE ?? resolveApiBaseUrl(undefined, process.env.NEXT_PUBLIC_API_PORT)}/admin/prices/template`}
               className="inline-flex min-h-11 items-center rounded-md border border-sq-line px-sq-3 text-sq-body font-medium text-sq-ink no-underline transition-colors duration-sq-fast hover:bg-sq-ground"
             >
               Download the template

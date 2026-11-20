@@ -59,6 +59,16 @@ describe('the plan page', () => {
     expect(html).toContain('<svg');
     expect(html).toContain('9,000 × 18,000 mm');
     expect(html).toMatch(/<rect[^>]*fill="#111"/); // the roller door, filled
+    expect(html).toContain('RD1'); // its short name, in a rhombus
+    expect(html).toContain('H. = '); // the wall height beside the length
+    expect(html).toContain('Roller Door x 1'); // the option list, desktop wording
+  });
+
+  it('carries the desktop title block: client, site, state, job no., date', () => {
+    const html = renderPlanPageHtml(document());
+    expect(html).toContain('Jane Citizen');
+    expect(html).toContain('Q-2026-0042');
+    expect(html).toContain('Queensland');
   });
 
   it('carries no price and no customer block', () => {

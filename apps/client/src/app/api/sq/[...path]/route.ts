@@ -18,9 +18,10 @@
  * is expected to use. A path that is not listed is a request nobody designed.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { NextResponse } from 'next/server';
 
-const API = process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+const API = resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 
 /**
  * What the browser is allowed to ask for.

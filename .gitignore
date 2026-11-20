@@ -44,3 +44,12 @@ e2e/.auth/
 
 # Local credential notes — never commit (contains live keys)
 docs/note.md
+
+# Geoscience Australia wind-region source data (docs/research/wind-regions-as1170-2.md).
+# Downloaded to rebuild packages/core/src/domain/windRegionData.ts; never committed.
+ga_windregions.zip
+ga_windspec.pdf
+
+# Cloudflare quick-tunnel addresses from start/tunnel.bat. They are not secrets, but they are
+# disposable public links and change on every restart - never commit them.
+start/tunnel-urls.txt

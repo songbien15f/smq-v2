@@ -28,6 +28,8 @@ import type { MaterialUnitContract } from '@/lib/pricing/catalogueManifest';
 import { bomLine, mockedLine, type BomLine } from '../types';
 import type { OptimisedFrame } from '../types';
 import { parseSheeting } from '@/domain/sheeting';
+import { skillionRiseMm } from '@/domain/roof';
+import { fallsToBothSides } from '@/domain/types';
 import { extendMaterial } from '../materialUnits';
 import type { EstimateIssue, MaterialEvidence } from '@/lib/estimating/types';
 import { safeCall } from '../safe';
@@ -80,9 +82,15 @@ export function isOpenStructure(shed: DimensionedShed): boolean {
   return shed.structureType === 'gable_carport' || shed.structureType === 'skillion_carport';
 }
 
-/** True when the roof falls along the length, so it has one slope. */
-function fallsAlongLength(shed: DimensionedShed): boolean {
-  return shed.structureType === 'skillion' || shed.structureType === 'skillion_carport';
+/**
+ * True when the roof has one slope (skillion, skillion carport).
+ *
+ * A skillion falls **across the span**, from the low front wall to the high back wall, as the
+ * desktop builds it (`SkillionBuildingQuote.cs:838-851` — sheet = Width / cos(pitch) + 80; count
+ * = Length / cover) and as the 3D now draws it.
+ */
+function isSingleSlope(shed: DimensionedShed): boolean {
+  return !fallsToBothSides(shed.structureType);
 }
 
 /** Sheets needed to cover `runMm` at `coverMm`, rounded up. */
@@ -94,27 +102,31 @@ function sheetCount(runMm: number, coverMm: number): number {
 /**
  * A roof sheet's length: the slope run plus the end allowance.
  *
- * Which dimension is the run depends on where the water goes:
+ * Both roofs fall across the span, so a sheet always runs across it:
  *
- * - **Gable** — falls across the span, so a sheet runs from an eave to the ridge:
- *   half the span.
- * - **Skillion** — falls **along the length**, so a sheet runs the whole length
- *   from the low wall to the high wall. The renderer agrees: the 3D roof drops
- *   `tan(pitch) × length` across `length`, not across `span`.
- *
- * Getting this backwards makes every skillion's sheets the wrong dimension — the
- * length instead of half the span, which on a long narrow skillion is several
- * times the steel.
+ * - **Gable** — from an eave to the ridge: half the span.
+ * - **Skillion** — from the low eave to the high one: the whole span
+ *   (`SkillionBuildingQuote.cs:845`). KNOWN-DEVIATIONS records that this build once ran
+ *   skillion sheets along the length.
  */
 function roofSheetLength(shed: DimensionedShed, rules: BomRules): number {
   const pitch = (shed.roofPitchDeg * Math.PI) / 180;
-  const run = fallsAlongLength(shed) ? shed.length : shed.span / 2;
+  const run = isSingleSlope(shed) ? shed.span : shed.span / 2;
   return Math.round(run / Math.cos(pitch) + rules.roofEndAllowance);
 }
 
 /** A wall sheet's length: the wall height plus the end allowance. */
 function wallSheetLength(shed: DimensionedShed, rules: BomRules): number {
   return shed.height + rules.wallEndAllowance;
+}
+
+/**
+ * The high side wall's sheet length on a skillion: the back wall stands `tan(pitch) × span`
+ * taller (`SkillionBuildingQuote.cs:861`, `computeHeightAwning`). A gable has no high side, so
+ * this equals `wallSheetLength`.
+ */
+function highWallSheetLength(shed: DimensionedShed, rules: BomRules): number {
+  return Math.round(shed.height + skillionRiseMm(shed) + rules.wallEndAllowance);
 }
 
 /** How many skylights sit on the roof, each replacing a sheet. */
@@ -149,11 +161,10 @@ export function sheetCounts(
   const wallCover =
     safeCall(() => lookup.sheeting(wallSheet.profile, wallSheet.bmtMm))?.coverageMm ?? cover;
 
-  // Sheets are counted across the run, not along it. A gable's sheets span from
-  // eave to ridge and are counted along the length; a skillion's sheets run the
-  // length and are counted across the span.
-  const acrossRun = fallsAlongLength(shed) ? shed.span : shed.length;
-  const roofRuns = fallsAlongLength(shed) ? 1 : 2;
+  // Sheets run across the span on both roofs, so they are counted along the length:
+  // one run per slope.
+  const acrossRun = shed.length;
+  const roofRuns = isSingleSlope(shed) ? 1 : 2;
   const walls = isOpenStructure(shed) ? 0 : 1;
 
   return {
@@ -294,15 +305,15 @@ export function sheetingGroup(
       contract,
       lookup,
     ),
-    sheetLine(
-      'Side wall sheeting',
-      counts.side,
-      wallSheetLength(shed, rules),
-      counts.wallCoverMm,
-      wallSheet,
-      contract,
-      lookup,
-    ),
+    // A skillion's two side walls differ in height, so they are two lines of two lengths.
+    ...(isSingleSlope(shed)
+      ? [
+          sheetLine('Side wall sheeting (low side)', counts.side / 2, wallSheetLength(shed, rules), counts.wallCoverMm, wallSheet, contract, lookup),
+          sheetLine('Side wall sheeting (high side)', counts.side / 2, highWallSheetLength(shed, rules), counts.wallCoverMm, wallSheet, contract, lookup),
+        ]
+      : [
+          sheetLine('Side wall sheeting', counts.side, wallSheetLength(shed, rules), counts.wallCoverMm, wallSheet, contract, lookup),
+        ]),
     sheetLine(
       'End wall sheeting',
       counts.end,

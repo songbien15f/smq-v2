@@ -35,7 +35,18 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@sq/ui', '@sq/contracts'],
+  // `@sq/core` for the building-type checks the form runs as it is typed. Only the `domain`
+  // subpath is imported: `@sq/core/pricing` reaches for `node:fs` and must never reach a browser.
+  transpilePackages: ['@sq/ui', '@sq/contracts', '@sq/core'],
+
+  /*
+   * Cloudflare quick tunnels (scripts/tunnel.mjs) reach this dev server under a
+   * `*.trycloudflare.com` host. Next blocks cross-origin requests to its own dev assets unless the
+   * host is named, so a QA link would render a page with no JavaScript and no explanation. Only the
+   * project's own tunnel domain is allowed: naming the whole of trycloudflare.com would let any other
+   * tunnel load this app's dev assets.
+   */
+  allowedDevOrigins: ['*.trycloudflare.com'],
   // `X-Powered-By: Next.js` tells a scanner what to try. It costs nothing to stop saying it.
   poweredByHeader: false,
   async headers() {

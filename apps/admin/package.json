@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3062",
+    "dev": "node ../../scripts/next-port.mjs dev ADMIN_PORT 3062",
     "build": "next build",
-    "start": "next start --port 3062",
+    "start": "node ../../scripts/next-port.mjs start ADMIN_PORT 3062",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf .next .turbo"
   },
   "dependencies": {
     "@sq/contracts": "workspace:*",
+    "@sq/core": "workspace:*",
     "@sq/ui": "workspace:*",
     "next": "16.4.3",
     "react": "19.3.1",

@@ -116,7 +116,23 @@ describe('frameLines', () => {
     const skillion = shed({ structureType: 'skillion', span: 12000, roofPitchDeg: 10 });
     const rafter = frameLines(skillion, frame(), lookup).find((l) => /Main rafter/.test(l.description))!;
     const fullRun = 12000 / Math.cos((10 * Math.PI) / 180);
-    expect((rafter.quantity * 1000) / 6).toBeGreaterThan(fullRun);
+    // One rafter per frame on a single slope (desktop `SkillionBuildingQuote.cs:238-244`): 4 bays
+    // are 3 internal frames, not the 6 half-rafters of a gable.
+    expect((rafter.quantity * 1000) / 3).toBeGreaterThan(fullRun);
+    expect((rafter.quantity * 1000) / 3).toBeLessThan(fullRun + 300);
+  });
+
+  it('prices skillion columns as a low line and a high line, tan(pitch) x span apart', () => {
+    const skillion = shed({ structureType: 'skillion', span: 12000, roofPitchDeg: 10 });
+    const lines = frameLines(skillion, frame(), lookup);
+    const low = lines.find((l) => /Main column \(low side\)/.test(l.description))!;
+    const high = lines.find((l) => /Main column \(high side\)/.test(l.description))!;
+    const rise = Math.tan((10 * Math.PI) / 180) * 12000;
+    // 4 bays: three columns on each long wall.
+    expect((high.quantity - low.quantity) * 1000).toBeCloseTo(3 * rise, -1);
+    expect(lines.some((l) => /End wall column \(high side\)/.test(l.description))).toBe(true);
+    const ends = lines.find((l) => /End wall rafter/.test(l.description))!;
+    expect((ends.quantity * 1000) / 2).toBeGreaterThan(rise); // two ends, one rafter each
   });
 
   it('keeps a zed shed on half the span, because the book calls it a crossover gable', () => {

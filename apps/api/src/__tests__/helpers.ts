@@ -58,6 +58,17 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
     // Short, so a device-idle test can move a timestamp a few days back rather than weeks.
     deviceIdleDays: 14,
     allowedOrigins: ['http://localhost:3061'],
+    /*
+     * Where each service would be in a development checkout. Only read where a link is built
+     * (mail, share links); the tests that assert on such a link use 3061, so these are the
+     * development defaults rather than a second fixture to keep in step with `start/ports.env`.
+     */
+    origins: {
+      api: 'http://localhost:3060',
+      client: 'http://localhost:3061',
+      admin: 'http://localhost:3062',
+      site: 'http://localhost:3063',
+    },
     production: false,
     /*
      * `loopback`, and `app.inject()` connects from `127.0.0.1`, so a test may set
@@ -65,6 +76,13 @@ export function testConfig(overrides: Partial<ApiConfig> = {}): ApiConfig {
      * remote address in a test is still untrusted, which is the other half of what those tests prove.
      */
     trustProxy: 'loopback',
+    // Off, as in a fresh deployment; a test of the Guest Places routes switches it on.
+    guestPlaces: {
+      enabled: false,
+      sessionSecret: 'test-guest-places-secret-long-enough-to-use',
+      dailyAutocompleteCap: 2000,
+      dailyDetailsCap: 300,
+    },
     ...overrides,
   };
 }

@@ -13,11 +13,11 @@
  */
 
 import { cookies } from 'next/headers';
-import type { ApiResult } from '@sq/contracts';
+import { resolveApiBaseUrl, type ApiResult } from '@sq/contracts';
 
 /** The API's base URL. Server-side only; the browser talks to this app's own routes. */
 export function apiBaseUrl(): string {
-  return process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+  return resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 }
 
 /** A failure the caller may want to distinguish from an empty answer. */

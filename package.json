@@ -18,8 +18,10 @@
     "publish-book": "pnpm --filter @sq/api publish-book",
     "seats:release": "pnpm --filter @sq/api seats:release",
     "quotes:blocked": "pnpm --filter @sq/api quotes:blocked",
+    "ratelimits:prune": "pnpm --filter @sq/api ratelimits:prune",
     "build:inc": "pnpm --filter @sq/core build:inc && pnpm --filter @sq/contracts build:inc",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "assistant:prune": "pnpm --filter @sq/api assistant:prune"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",

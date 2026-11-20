@@ -302,8 +302,14 @@ export function createLookup(db: DatabaseSync): PriceLookup {
    * Both the table and the view are tried, because a dump may carry either and a
    * book that has the table but not the view should still price a frame.
    */
+  // `C1_type` and `EP1` feed only the drawing's opening sizes, so a book without them must
+  // still price a frame: naming a missing column would fail the whole statement.
+  const scheduleExtras = ['C1_type', 'EP1']
+    .filter((column) => hasColumn('view_system_lookup_data', column))
+    .map((column) => `, ${column}`)
+    .join('');
   const scheduleStatement = prepare(
-    `SELECT C1, C2, R1, R2, KB, embedment, "no_M_EW", M1, M2, DM, DH
+    `SELECT C1, C2, R1, R2, KB, embedment, "no_M_EW", M1, M2, DM, DH${scheduleExtras}
      FROM view_system_lookup_data
      WHERE structure_code = ? AND wind_region = ? AND terrain_category = ?
        AND importance_level = ? AND internal_pressure = ?
@@ -519,7 +525,7 @@ export function createLookup(db: DatabaseSync): PriceLookup {
    * section.
    */
   const frameGeometryBySize = prepare(
-    'SELECT web, depth FROM cost_frame WHERE description = ? LIMIT 1',
+    `SELECT web, depth${hasColumn('cost_frame', 'width') ? ', width' : ''} FROM cost_frame WHERE description = ? LIMIT 1`,
   );
   /**
    * The knee-edge row: the hole offset above the eave, by pitch.
@@ -805,6 +811,10 @@ export function createLookup(db: DatabaseSync): PriceLookup {
         // because a section that resolves to no price would look like a real member.
         doorMullion: str(row.DM).trim() === '' ? null : str(row.DM).trim(),
         doorHeader: str(row.DH).trim() === '' ? null : str(row.DH).trim(),
+        // `C1_type` says whether the main column is a back-to-back pair (`DOUBLE`), which the
+        // desktop's `WallDataService` doubles the column's width for; `EP1` is the eaves purlin.
+        mainColumnDouble: str(row.C1_type).trim().toUpperCase() === 'DOUBLE',
+        eavesPurlin: str(row.EP1).trim() === '' ? null : str(row.EP1).trim(),
       };
     },
 
@@ -947,14 +957,14 @@ export function createLookup(db: DatabaseSync): PriceLookup {
     frameGeometry(section) {
       if (frameGeometryBySize === null) return undefined;
       const row = frameGeometryBySize.get(section) as
-        | { web: number; depth: number }
+        | { web: number; depth: number; width?: number }
         | undefined;
       // A zero web is not a section — it is a row the dump could not read — so it
       // is reported as unknown rather than passed on to a connector lookup.
       if (row === undefined) return undefined;
       const web = num(row.web);
       if (web <= 0) return undefined;
-      return { web, depth: num(row.depth) };
+      return { web, depth: num(row.depth), ...(row.width === undefined ? {} : { width: num(row.width) }) };
     },
 
     kneeEdge(pitchDeg) {

@@ -176,6 +176,69 @@ list changed nothing. It is wired now — see `docs/PLAN-REMAINING.md` slice I.
   files. These are the four unbuilt slices of the multi-company spec, listed in
   `superpowers/specs/2026-11-03-multi-company-and-template-files-design.md` §"Ranh giới từng slice".
 
+### 6. Guest quote page — built 2026-11-18, reworked to the customer's spec 2026-11-19
+
+A public page on the site, `apps/site` `/quote`, for a customer with no account. It is not a port:
+the desktop and the licence server only ever served signed-in dealers. Spec
+`docs/specs/quote-tiers-guest.md`, plan `docs/plans/quote-tiers-guest-ga2.md` (G-a2), checkpoint
+`docs/state/quote-tiers.md`.
+
+**Three steps** (Q2 reversed D-T4 — the contact details are asked at the start):
+
+1. **Start** — six building types (Garage, Industrial Building, Riding Arena, Aircraft Hangar,
+   Carport, Class 1 House) · one address box that must be picked from Google's suggestions (the
+   price book's suburb list is the fallback, then manual entry) · First/Last name, email, mobile with
+   a fixed `+61` · *Additional Request* · an estimated line "Region B · 10a Enclosed · Importance
+   Level 2 — Indicative — confirmed in your quote".
+2. **Building** — width, height, length read-only as the sum of bays · Roof Gable/Skillion · pitch
+   chips per roof · Slab Connection (In Slab / On Slab / Footing Only) · Knee Brace ("No Knee Brace –
+   If Possible" recorded as a wish) · Cladding Vertical/Horizontal · per-bay list with add, edit and
+   remove · doors and windows on the 2D plan.
+3. **Send** — the summary, the free-text request, consent, Send. A Class 1 House is `enquiry` only:
+   no designer, and ① goes straight to ③.
+
+- **Have:** `packages/core/src/domain/guest.ts` (`GuestDesignInput` v2 with `bayWidths`, `upgradeGuestDesign`
+  for a v1 `localStorage` document, `guestReviewFlags`, `guestSiteEstimate`); `windRegion.ts` +
+  `windRegionData.ts` (estimated AS/NZS 1170.2 region from coordinates); API routes in
+  `apps/api/src/routes/guest.ts` with the server recomputing the estimate and the flags; migration 021
+  (`site_estimate_json`, `review_flags`); a `GR-…` request row and mail to the company and the guest.
+- **Deliberately absent:** no price is shown to a guest; no account; the design is kept in the
+  browser's `localStorage` — **the contact details are not**, they live in page memory only.
+- **The building types are editable from the admin** (2026-11-19, `docs/plans/admin-guest-building-types.md`):
+  `/guest-types` in `apps/admin` lists them, switches them off and on, reorders them and opens a six-section
+  editor per type (general · roof · limits · starting design · doors · colours). The table
+  `guest_building_types` was empty, so the page is served the six compiled into `@sq/core` until the first
+  save — **which copies all six in first**, or editing one would hide the other five. Types are never
+  deleted (a sent request and a saved draft both point at the id), and the id never changes. Limits beyond
+  the price book are allowed and marked for the estimator. A draft pointing at a type that has since been
+  switched off is cleared with a one-line notice rather than left naming an id that no longer exists.
+- **The Design panel is a three-column workspace** (2026-11-20, plan `docs/plans/guest-template-3col.md`):
+  tools · 2D/3D stage · AI assistant. Both side panels hide independently; at 1280 and above a hidden tools
+  column becomes a 48 px rail and a hidden assistant leaves an "Ask the AI" button; below that the panels
+  are a right drawer (assistant) and, under 1024, a left drawer (tools), with the assistant a bottom sheet
+  under 768. The assistant's thread lives in a store, so hiding the panel does not lose it, and a reply
+  that lands unseen is counted on the button. The stage also carries four one-click "Ask the AI"
+  sentences. Page override: `design-system/smartquote-v2/pages/guest-quote.md` §3–§4.
+- **Openings stay legal after every change** (2026-11-20, plan `docs/plans/guest-opening-placement.md`):
+  every change — building size, roof, bays, resize, move, add, a saved design reloading — re-places each
+  door and window at the nearest legal spot (50 mm steps, 100 mm margin at each end of the wall). An
+  opening that fits nowhere is **reported, not dropped**: it keeps its offset and step ② shows it as
+  needing attention. The assistant is given each opening's `offset` and wall length in its per-turn
+  context, so "move the left door towards the back" is arithmetic rather than a guess. Offset 0 is the
+  front wall's front-left end, the back wall's right-hand end, the left wall's **back** end and the
+  right wall's **front** end (`packages/core/src/domain/placement.ts:130-150`). Reference:
+  `docs/smartquote-quote-editor-reference.md` §3.5.
+- **Not done in the assistant column:** voice input (the template has a mic, the Guest page has none),
+  a Stop button for a reply in flight, and the FRONT/SIDE/PLAN/FRAME camera presets — this build has
+  "Show roof" and "Reset view" only. The desktop quote editor's preset views are not ported here.
+- **Recorded deviations:** `docs/KNOWN-DEVIATIONS.md` rows 53–57 (5° skillion, 5.90 m carport bay,
+  Footing Only unmapped, estimated wind region, the GA dataset's unstated licence).
+- **Checked by:** `e2e/guestQuote.spec.ts` — desktop run sends one real request, 390 px phone run
+  sends none and measures horizontal overflow; `scripts/probe-guest-places.mjs` (one real Google
+  session, run by hand). Manual browser run 2026-11-19: all six types, a suburb address, a 3-bay
+  skillion 5° design, the `pitch` review flag stored, `GR-000006` created. Operations:
+  `docs/OPERATIONS.md` §8.
+
 ---
 
 ## Built but not wired — audited 2026-11-02, **now wired** (slice D1)

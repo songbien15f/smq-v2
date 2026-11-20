@@ -1,0 +1,3412 @@
+/*
+ * The Guest quote page (`/quote`) — tokens and page chrome.
+ *
+ * Source of truth: design-system/smartquote-v2/pages/guest-quote.md (the page override). Every token is
+ * scoped to `.guest-quote`, never `:root`, so the SSA palette cannot leak into `/`, `/s` or any shared
+ * `@sq/ui` component rendered elsewhere. MASTER's navy/gold stays the rest of the product's look.
+ *
+ * Four tokens are not in the override's table and are derived here so components never pick a raw
+ * colour: `--g-heading`, `--g-link` and `--g-red-text` have light values (the override gives only their
+ * dark ones), and `--g-focus` is the focus ring — navy on light, which would be invisible on the dark
+ * background, so it follows `--g-link` there.
+ */
+
+/* ------------------------------------------------------------------ tokens: light */
+.guest-quote {
+  --g-red: #e83238;
+  --g-red-dark: #c4232b;
+  --g-navy: #132c6e;
+  --g-navy-deep: #0b1d4d;
+  --g-bg: #f3f5f9;
+  --g-surface: #ffffff;
+  --g-surface-2: #ebeff6;
+  --g-line: #d8dee9;
+  --g-ink: #141e36;
+  --g-ink-soft: #46536f;
+  --g-ink-mute: #5e6a86;
+  --g-ok: #177245;
+  --g-warn-bg: #fff4e0;
+  --g-warn-line: #e8b34b;
+  --g-ai-bg: #eef2fb;
+  --g-radius: 14px;
+  --g-shadow: 0 10px 30px rgba(11, 29, 77, 0.1);
+
+  --g-heading: var(--g-navy);
+  --g-link: var(--g-navy);
+  --g-red-text: var(--g-red-dark);
+  --g-focus: var(--g-navy);
+  /* The warning dot on a tab: the override's warning line colour, with a dark ring so it reads on white. */
+  --g-dot: #c77700;
+
+  --g-font-fallback: Inter, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --g-header-h: 64px;
+  --g-tabs-h: 56px;
+}
+
+/* ------------------------------------------------------------------ tokens: dark (both selectors, one list) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .guest-quote {
+    --g-bg: #0b1120;
+    --g-surface: #131c33;
+    --g-surface-2: #1a2542;
+    --g-line: #2a385c;
+    --g-ink: #edf1fa;
+    --g-ink-soft: #b4bed6;
+    --g-ink-mute: #8492b3;
+    --g-ai-bg: #18264a;
+    --g-warn-bg: #3a2e12;
+    --g-heading: #c7d5f5;
+    --g-link: #9db4ea;
+    --g-red-text: #ff6b70;
+    --g-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    --g-focus: #9db4ea;
+    --g-dot: #e8b34b;
+  }
+}
+:root[data-theme='dark'] .guest-quote {
+  --g-bg: #0b1120;
+  --g-surface: #131c33;
+  --g-surface-2: #1a2542;
+  --g-line: #2a385c;
+  --g-ink: #edf1fa;
+  --g-ink-soft: #b4bed6;
+  --g-ink-mute: #8492b3;
+  --g-ai-bg: #18264a;
+  --g-warn-bg: #3a2e12;
+  --g-heading: #c7d5f5;
+  --g-link: #9db4ea;
+  --g-red-text: #ff6b70;
+  --g-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --g-focus: #9db4ea;
+  --g-dot: #e8b34b;
+}
+
+/* ------------------------------------------------------------------ base */
+.guest-quote {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--g-bg);
+  color: var(--g-ink);
+  font-family: var(--g-font-body), var(--g-font-fallback);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+.guest-quote *:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.guest-quote h1,
+.guest-quote h2,
+.guest-quote h3 {
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  color: var(--g-heading);
+}
+.guest-quote input,
+.guest-quote select,
+.guest-quote textarea {
+  font-size: 16px; /* iOS zooms into anything smaller */
+}
+.g-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.g-container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+@media (min-width: 768px) {
+  .g-container {
+    padding: 0 24px;
+  }
+}
+
+/* ------------------------------------------------------------------ buttons */
+.g-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+  white-space: nowrap;
+}
+.g-btn:disabled,
+.g-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+/* The one red button on screen: Send quote request. */
+.g-btn-primary {
+  background: var(--g-red-dark);
+  color: #fff;
+}
+.g-btn-primary:hover:not(:disabled) {
+  background: #a81d24;
+}
+.g-btn-outline {
+  background: transparent;
+  color: var(--g-heading);
+  border-color: var(--g-heading);
+}
+.g-btn-outline:hover:not(:disabled) {
+  background: var(--g-surface-2);
+}
+.g-btn-outline:disabled {
+  color: var(--g-ink-mute);
+  border-color: var(--g-line);
+}
+.g-btn-ghost {
+  background: transparent;
+  color: var(--g-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0 8px;
+}
+.g-btn-ghost:hover {
+  background: var(--g-surface-2);
+}
+.g-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------------------ header */
+.g-header {
+  background: var(--g-surface);
+  border-bottom: 1px solid var(--g-line);
+}
+.g-header-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--g-header-h);
+}
+.g-logo {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 44px;
+  border-radius: 10px;
+}
+.g-logo img {
+  display: block;
+  height: 40px;
+  width: auto;
+}
+@media (min-width: 768px) {
+  .g-logo img {
+    height: 48px;
+  }
+  .guest-quote {
+    --g-header-h: 72px;
+  }
+}
+/* Dark: the logo sits on a white plate. It is never inverted (override §4a). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .guest-quote .g-logo {
+    background: #fff;
+    padding: 6px 10px;
+  }
+}
+:root[data-theme='dark'] .guest-quote .g-logo {
+  background: #fff;
+  padding: 6px 10px;
+}
+.g-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--g-ai-bg);
+  color: var(--g-heading);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.g-pill .g-pill-long {
+  display: none;
+}
+@media (max-width: 399px) {
+  .g-header-row {
+    gap: 12px;
+  }
+  .g-pill {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+}
+/*
+ * Below 480px the header holds the logo and the account button only: the pill and "Sign in" side
+ * by side overflow a 390px phone, and the sign-in dialog itself says an account is optional.
+ */
+@media (max-width: 479px) {
+  .g-header-row .g-pill {
+    display: none;
+  }
+}
+@media (min-width: 560px) {
+  .g-pill .g-pill-long {
+    display: inline;
+  }
+  .g-pill .g-pill-short {
+    display: none;
+  }
+}
+.g-nav {
+  display: none;
+  margin-left: auto;
+  gap: 4px;
+}
+.g-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--g-ink-soft);
+  font-weight: 500;
+  text-decoration: none;
+}
+.g-nav a:hover {
+  color: var(--g-heading);
+  background: var(--g-surface-2);
+}
+@media (min-width: 1024px) {
+  .g-nav {
+    display: flex;
+  }
+}
+
+/* ------------------------------------------------------------------ tab bar */
+.g-tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--g-surface);
+  border-bottom: 1px solid var(--g-line);
+}
+.g-tabbar-row {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  min-height: var(--g-tabs-h);
+}
+/* On a phone the tabs scroll sideways inside the bar; the page never does. */
+.g-tablist {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+.g-tablist::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 768px) {
+  .g-tablist {
+    margin: 0;
+    padding: 0;
+  }
+}
+.g-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--g-ink-soft);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.g-tab::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
+  transition: background-color 150ms ease-out;
+}
+.g-tab:hover:not([aria-disabled='true']) {
+  color: var(--g-heading);
+}
+.g-tab[aria-selected='true'] {
+  color: var(--g-heading);
+  font-weight: 700;
+}
+.g-tab[aria-selected='true']::after {
+  background: var(--g-heading);
+}
+.g-tab[aria-disabled='true'] {
+  color: var(--g-ink-mute);
+  cursor: not-allowed;
+}
+.g-tab:focus-visible {
+  outline-offset: -3px;
+}
+.g-tab-num {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.g-tab-done .g-tab-num {
+  background: var(--g-ok);
+  border-color: var(--g-ok);
+  color: #fff;
+}
+.g-tab-num .g-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.25;
+}
+.g-tab-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--g-dot);
+  box-shadow: 0 0 0 2px var(--g-surface);
+}
+.g-tab-label-short {
+  display: inline;
+}
+.g-tab-label-long {
+  display: none;
+}
+/* Long labels once the summary bar beside them still fits (S7). */
+@media (min-width: 1100px) {
+  .g-tab-label-short {
+    display: none;
+  }
+  .g-tab-label-long {
+    display: inline;
+  }
+}
+.g-tab-hint {
+  margin: 0;
+  padding: 8px 0 10px;
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+
+/* Summary in the tab bar (≥ 768). Colours, popover and the phone bar: see "tab ④ send, summary bar". */
+.g-summary {
+  display: none;
+}
+@media (min-width: 768px) {
+  .g-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    padding: 6px 0;
+  }
+}
+.g-summary-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: right;
+}
+.g-summary-label {
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g-ink-mute);
+}
+.g-summary-value {
+  font-weight: 600;
+  color: var(--g-heading);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ panel */
+.g-main {
+  flex: 1;
+  padding: 24px 0 32px;
+}
+@media (min-width: 768px) {
+  .g-main {
+    padding: 32px 0 48px;
+  }
+}
+.g-panel {
+  animation: g-fade 150ms ease-out;
+}
+@keyframes g-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.g-panel-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  scroll-margin-top: calc(var(--g-tabs-h) + 16px);
+}
+.g-panel-title:focus {
+  outline: none;
+}
+.g-panel-title:focus-visible {
+  outline: 3px solid var(--g-focus);
+}
+.g-panel-lead {
+  margin: 0 0 24px;
+  color: var(--g-ink-soft);
+  max-width: 60ch;
+}
+.g-card {
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  padding: 24px;
+}
+.g-placeholder {
+  color: var(--g-ink-soft);
+}
+.g-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--g-radius);
+  background: var(--g-warn-bg);
+  border: 1px solid var(--g-warn-line);
+  color: var(--g-ink);
+}
+
+/* Hero: only on tab ① before a type is picked. */
+.g-hero {
+  margin-bottom: 32px;
+}
+.g-hero h1 {
+  margin: 0 0 16px;
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.g-hero-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--g-ink-soft);
+  font-weight: 500;
+}
+.g-hero-checks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.g-hero-checks .g-icon {
+  color: var(--g-ok);
+}
+
+/* ------------------------------------------------------------------ tab ① building types */
+.g-type-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+}
+.g-type-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 20px;
+  text-align: left;
+  background: var(--g-surface);
+  color: var(--g-ink);
+  border: 2px solid var(--g-line);
+  border-radius: var(--g-radius);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+/* One card per row on a phone: icon beside the text, so four cards fit without a long scroll. */
+@media (max-width: 479px) {
+  .g-type-card {
+    flex-direction: row;
+    gap: 16px;
+    padding: 16px;
+  }
+  .g-type-text {
+    padding-right: 24px;
+  }
+}
+.g-type-card:hover {
+  border-color: var(--g-ink-mute);
+}
+.g-type-card[aria-pressed='true'] {
+  border-color: var(--g-red);
+  box-shadow: var(--g-shadow);
+}
+.g-type-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--g-surface-2);
+  color: var(--g-heading);
+}
+.g-type-icon .g-icon {
+  width: 28px;
+  height: 28px;
+}
+.g-type-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.g-type-name {
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--g-heading);
+}
+.g-type-desc {
+  color: var(--g-ink-soft);
+}
+/* The check badge: selection is ring + badge + aria-pressed, never colour alone. */
+.g-type-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--g-red-dark);
+  color: #fff;
+}
+.g-type-check .g-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+}
+.g-type-none {
+  margin: 0 0 8px;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--g-heading);
+}
+
+/* ------------------------------------------------------------------ tab ② address */
+.g-address {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .g-address {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+.g-address-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (max-width: 559px) {
+  .g-address-card {
+    padding: 16px;
+  }
+}
+.g-label {
+  display: block;
+  font-weight: 500;
+  color: var(--g-ink);
+}
+.g-optional {
+  font-weight: 400;
+  color: var(--g-ink-mute);
+}
+.g-hint {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+/* Inputs are 16px so iOS does not zoom; 10px radius (override §3). */
+.g-input {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--g-ink-mute);
+  border-radius: 10px;
+  background: var(--g-surface);
+  color: var(--g-ink);
+  font: inherit;
+  font-size: 16px;
+}
+.g-input::placeholder {
+  color: var(--g-ink-mute);
+}
+.g-input:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 1px;
+}
+.g-input[aria-invalid='true'] {
+  border-color: var(--g-red-dark);
+}
+.g-select {
+  appearance: auto;
+}
+.g-field-error {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--g-red-text);
+}
+.g-notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--g-warn-bg);
+  border: 1px solid var(--g-warn-line);
+  color: var(--g-ink);
+}
+.g-combo-box {
+  position: relative;
+}
+.g-combo-icon {
+  position: absolute;
+  left: 14px;
+  top: calc(6px + 14px);
+  color: var(--g-ink-mute);
+  pointer-events: none;
+}
+.g-combo-input {
+  padding-left: 44px;
+}
+.g-combo-popup {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  box-shadow: var(--g-shadow);
+  overflow: hidden;
+}
+.g-combo-popup[hidden] {
+  display: none;
+}
+.g-combo-list {
+  max-height: min(304px, 45vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+.g-combo-option {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 48px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.g-combo-option[aria-selected='true'] {
+  background: var(--g-surface-2);
+  box-shadow: inset 3px 0 0 var(--g-heading);
+}
+.g-combo-primary {
+  font-weight: 600;
+  color: var(--g-ink);
+}
+.g-combo-secondary {
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+.g-combo-attribution {
+  margin: 0;
+  padding: 6px 14px 8px;
+  border-top: 1px solid var(--g-line);
+  font-size: 12px;
+  color: var(--g-ink-mute);
+  text-align: right;
+}
+.g-combo-status {
+  min-height: 1.5em;
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+.g-address-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-left: -8px;
+}
+.g-address-links .g-btn-ghost {
+  white-space: normal;
+  text-align: left;
+}
+.g-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 4px 0 0;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--g-line);
+  min-width: 0;
+}
+.g-fields-legend {
+  float: left;
+  width: 100%;
+  grid-column: 1 / -1;
+  padding: 0;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--g-heading);
+}
+.g-field {
+  min-width: 0;
+}
+.g-field-wide {
+  grid-column: 1 / -1;
+}
+.g-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* "Wind check happens here" */
+.g-wind {
+  display: flex;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--g-radius);
+  background: var(--g-ai-bg);
+  color: var(--g-ink);
+}
+.g-wind-icon {
+  flex: none;
+  color: var(--g-heading);
+}
+.g-wind-icon .g-icon {
+  width: 24px;
+  height: 24px;
+}
+.g-wind-title {
+  margin: 0 0 4px;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--g-heading);
+}
+.g-wind p {
+  margin: 0;
+  color: var(--g-ink-soft);
+}
+
+/* ------------------------------------------------------------------ footer */
+.g-footer {
+  border-top: 1px solid var(--g-line);
+  background: var(--g-surface);
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+}
+.g-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.g-footer-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--g-ink-soft);
+  font-size: 14px;
+  order: 3;
+  width: 100%;
+}
+.g-footer-saved .g-icon {
+  color: var(--g-ok);
+  width: 18px;
+  height: 18px;
+}
+.g-footer-next {
+  margin-left: auto;
+}
+/*
+ * Phones: one row of buttons (Back · Start over as an icon · Next), the saved note small beneath it, so
+ * the footer stays about 90px tall. Start over keeps its words for a screen reader (`.g-narrow-sr`).
+ */
+@media (max-width: 559px) {
+  .g-footer-row {
+    column-gap: 8px;
+  }
+  .g-footer-saved {
+    font-size: 13px;
+  }
+  .g-footer-row .g-btn-ghost {
+    min-width: 44px;
+    padding-inline: 10px;
+  }
+  .g-wide-only {
+    display: none;
+  }
+  .g-narrow-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+@media (min-width: 560px) {
+  .g-narrow-only {
+    display: none;
+  }
+}
+@media (min-width: 768px) {
+  .g-footer-saved {
+    order: 0;
+    width: auto;
+  }
+}
+
+/* ------------------------------------------------------------------ dialog */
+.g-dialog {
+  /* Centred: the site-wide reset (`* { margin: 0 }`) removes the browser's own `margin: auto`. */
+  margin: auto;
+  width: min(440px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  background: var(--g-surface);
+  color: var(--g-ink);
+  box-shadow: var(--g-shadow);
+}
+.g-dialog::backdrop {
+  background: rgba(11, 29, 77, 0.45);
+}
+.g-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+.g-dialog p {
+  margin: 0 0 24px;
+  color: var(--g-ink-soft);
+}
+.g-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* Start over discards a design: destructive, so it is red text on an outline — not the red fill,
+   which belongs to Send alone. */
+.g-btn-danger {
+  background: transparent;
+  color: var(--g-red-text);
+  border-color: var(--g-red-text);
+}
+
+/* ------------------------------------------------------------------ tab ③ design (S6) */
+.g-main[data-step='design'] {
+  padding-bottom: 24px;
+}
+.g-design {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.g-design-stage,
+.g-design-controls,
+.g-design-assistant {
+  min-width: 0;
+}
+
+/* Tools head: the title and the collapse control. Present in every layout; on a phone it is the
+   drawer's own header, so the close control sits where the eye already is. */
+.g-controls-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 8px;
+}
+.g-controls-title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--g-heading);
+}
+.g-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--g-ink-soft);
+  cursor: pointer;
+}
+.g-icon-btn:hover,
+.g-icon-btn:focus-visible {
+  background: var(--g-surface-2);
+  color: var(--g-heading);
+}
+
+/* The rail: what the tools column becomes when it is collapsed on a desktop. Hidden elsewhere. */
+.g-rail {
+  display: none;
+}
+.g-rail-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 40px;
+  min-height: 46px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--g-ink-soft);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.1;
+  cursor: pointer;
+}
+.g-rail-btn:hover,
+.g-rail-btn:focus-visible {
+  background: var(--g-surface-2);
+  color: var(--g-heading);
+}
+.g-rail-btn .g-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* A scrim under an off-canvas panel. A button, so a click closes; the label names the panel. */
+.g-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  border: 0;
+  padding: 0;
+  background: rgba(8, 15, 35, 0.45);
+  cursor: pointer;
+}
+
+/* The assistant column. At ≥1280 it is a column; below that it is off-canvas (Task 4). */
+.g-design-assistant {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.g-design-assistant .g-assistant {
+  margin-top: 0;
+  height: 100%;
+}
+.g-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: max(45dvh, 260px);
+}
+@media (min-width: 768px) {
+  .g-stage {
+    height: 55dvh;
+  }
+}
+/* 1024 – 1279: tools + stage. The assistant is a drawer (Task 4). */
+@media (min-width: 1024px) {
+  .g-design {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-areas: 'controls stage';
+    grid-template-rows: minmax(0, 1fr);
+    height: calc(100dvh - var(--g-header-h) - var(--g-tabs-h));
+    min-height: 480px;
+    transition: grid-template-columns 0.3s ease;
+  }
+  .g-design[data-left='closed'] {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .g-design-stage {
+    grid-area: stage;
+    min-height: 0;
+  }
+  .g-design-controls {
+    grid-area: controls;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+  }
+  /* Collapsed: the rail replaces the title and the accordion. */
+  .g-design[data-left='closed'] .g-controls-title,
+  .g-design[data-left='closed'] .g-controls-body {
+    display: none;
+  }
+  .g-design[data-left='closed'] .g-controls-head {
+    justify-content: center;
+    padding: 8px 0 0;
+  }
+  .g-design[data-left='closed'] .g-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 0 14px;
+  }
+  .g-stage {
+    height: 100%;
+  }
+}
+
+/* ≥ 1280: three columns, the template's widths (330 / 350) and its 48 px rail. */
+@media (min-width: 1280px) {
+  .g-design {
+    grid-template-columns: 330px minmax(0, 1fr) 350px;
+    grid-template-areas: 'controls stage assistant';
+  }
+  .g-design[data-left='closed'] {
+    grid-template-columns: 48px minmax(0, 1fr) 350px;
+  }
+  .g-design[data-right='closed'] {
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-areas: 'controls stage';
+  }
+  .g-design[data-left='closed'][data-right='closed'] {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  /* No assistant at all: two columns, whatever the flags say. */
+  .g-design[data-assistant='no'] {
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-areas: 'controls stage';
+  }
+  .g-design[data-assistant='no'][data-left='closed'] {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .g-design-assistant {
+    grid-area: assistant;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* Below 1280 the panel is a fixed drawer; as a column it must not be. */
+  .g-design[data-right='closed'] .g-design-assistant {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ off-canvas panels (Task 4)
+
+   Below 1280 neither panel is a grid column. The assistant becomes a fixed drawer from the right, and
+   under 768 a bottom sheet; the tools become a fixed drawer from the left under 1024. Each closed panel
+   is slid out of view and marked `inert` by the component, so the keyboard cannot reach it. */
+
+@media (max-width: 1279px) {
+  .g-design-assistant {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 55;
+    width: min(400px, 94vw);
+    border-radius: 0;
+    background: var(--g-surface);
+    box-shadow: 0 12px 40px rgba(11, 29, 77, 0.28);
+    transform: translateX(105%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .g-design[data-right='open'] .g-design-assistant {
+    transform: none;
+  }
+  /* Off-canvas, the panel is the whole column: no card border inside a drawer. */
+  .g-design-assistant .g-assistant {
+    border: 0;
+    border-radius: 0;
+    min-height: 100%;
+  }
+}
+
+/* Tools become a drawer where the grid no longer has a column for them. */
+@media (max-width: 1023px) {
+  .g-design-controls {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 56;
+    width: min(340px, 92vw);
+    max-height: 100dvh;
+    padding: 0 16px 16px;
+    border-radius: 0;
+    background: var(--g-surface);
+    box-shadow: 0 12px 40px rgba(11, 29, 77, 0.28);
+    transform: translateX(-105%);
+    transition: transform 0.28s ease;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .g-design[data-left='open'] .g-design-controls {
+    transform: none;
+  }
+  .g-controls-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 10px 0;
+    background: var(--g-surface);
+  }
+  /* The rail is a desktop affordance; a drawer has the whole accordion instead. */
+  .g-rail {
+    display: none;
+  }
+}
+
+/* The sheet's grab handle: hidden everywhere the panel is a column or a side drawer. */
+.g-sheet-handle {
+  display: none;
+}
+@media (max-width: 767px) {
+  .g-sheet-handle {
+    display: flex;
+    justify-content: center;
+    flex: none;
+    padding: 10px 0 4px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .g-sheet-handle span {
+    width: 44px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--g-line);
+  }
+}
+
+/* Bottom sheet: the assistant covers the lower 84% of a phone screen and slides up from the bottom. */
+@media (max-width: 767px) {
+  .g-design-assistant {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 84dvh;
+    border-radius: 18px 18px 0 0;
+    transform: translateY(105%);
+  }
+  .g-design[data-right='open'] .g-design-assistant {
+    transform: none;
+  }
+}
+
+/* Motion off: the drawers appear without sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .g-design-assistant,
+  .g-design-controls {
+    transition: none;
+  }
+}
+
+/* Motion off: the column change happens without animating. */
+@media (prefers-reduced-motion: reduce) {
+  .g-design {
+    transition: none;
+  }
+}
+/*
+   Phones: the stage sizes to its content rather than to a fixed 45dvh.
+
+   The toolbar carries the two panel switches, the "Ask the AI" chips wrap onto two or three
+   lines, and the summary takes a row of its own; together they are taller than 45dvh on a small
+   phone, so a fixed stage height squeezed the plan down to nothing. The view keeps a usable
+   height of its own and the page scrolls.
+*/
+@media (max-width: 767px) {
+  .g-stage {
+    height: auto;
+  }
+  .g-stage-view {
+    flex: 0 0 auto;
+    height: 300px;
+  }
+}
+
+/*
+   Short landscape: a phone held sideways. At this size both panels are already drawers, so the
+   stage takes the whole width — a two-column split would give the tools 60% of a very short
+   screen and leave the last 40% empty, because the assistant is off-canvas.
+
+   The header and the panel heading already use about 258 px of a 390 px screen, so the stage
+   cannot fit above the fold however it is sized. It gets a usable height of its own and the page
+   scrolls to it, instead of being squeezed to a strip. The chips stay on one scrollable line.
+*/
+
+@media (max-height: 499px) and (orientation: landscape) and (max-width: 1023px) {
+  /* The stage is the only thing on screen, so it takes the width and a shorter view keeps the
+     toolbar, the chips and the summary visible without scrolling to reach them. */
+  .g-design {
+    display: block;
+  }
+  .g-stage-view {
+    height: 240px;
+  }
+  /* One scrollable line of chips: three wrapped lines are most of a 390 px screen. */
+  .g-design .g-stage-asks {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .g-design .g-stage-asks > * {
+    flex: 0 0 auto;
+  }
+  .g-design-controls {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+.g-stage-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--g-surface-2);
+  border-radius: 12px;
+  align-self: flex-start;
+  /* The panel switches join the same row; on a phone that is more than one line. */
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.g-stage-tab {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--g-ink-soft);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-stage-tab[aria-selected='true'] {
+  background: var(--g-surface);
+  color: var(--g-heading);
+  box-shadow: 0 1px 3px rgba(11, 29, 77, 0.15);
+}
+.g-stage-tab:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-stage-view {
+  flex: 1;
+  min-height: 0;
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  overflow: hidden;
+}
+.g-stage-3d {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px;
+  text-align: center;
+}
+.g-stage-3d-art {
+  width: 120px;
+  height: 120px;
+  color: var(--g-heading);
+}
+.g-stage-3d-name {
+  margin: 0;
+  font-weight: 700;
+  color: var(--g-heading);
+}
+/* The toolbar's own buttons: a line button for Tools (phone) and the navy "AI Assistant". */
+.g-stage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid var(--g-line);
+  border-radius: 999px;
+  background: var(--g-surface);
+  color: var(--g-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-stage-btn:hover,
+.g-stage-btn:focus-visible {
+  background: var(--g-surface-2);
+}
+.g-stage-btn-navy {
+  border-color: var(--g-heading);
+  background: var(--g-heading);
+  color: #fff;
+}
+.g-stage-btn-navy:hover,
+.g-stage-btn-navy:focus-visible {
+  background: var(--g-heading);
+  color: #fff;
+  filter: brightness(1.12);
+}
+.g-stage-btn .g-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/*
+   On a phone the toolbar holds the two view tabs, the 3D switches and the two panel switches, and
+   at 390 px they do not fit on one line. Dropping the two decorative glyphs and tightening the
+   padding brings it back to two rows instead of three.
+*/
+@media (max-width: 479px) {
+  .g-stage-tabs {
+    gap: 2px;
+  }
+  .g-stage-tab {
+    padding: 0 11px;
+  }
+  .g-stage-btn {
+    padding: 0 11px;
+    font-size: 13px;
+  }
+  .g-stage-btn .g-icon {
+    display: none;
+  }
+  .g-stage-tools .g-btn {
+    padding: 0 8px;
+  }
+}
+
+/* "Ask the AI" chips: a labelled row of navy-outlined pills, the template's stage-chips. */
+.g-stage-asks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  background: var(--g-surface);
+}
+.g-stage-asks-label {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--g-heading);
+}
+.g-chip-ask {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid var(--g-heading);
+  border-radius: 999px;
+  background: var(--g-surface);
+  color: var(--g-heading);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-chip-ask:hover,
+.g-chip-ask:focus-visible {
+  background: var(--g-ai-bg);
+}
+
+.g-stage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--g-surface-2);
+  font-size: 14px;
+}
+.g-stat-label {
+  color: var(--g-ink-soft);
+}
+.g-stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.g-stat-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--g-line);
+}
+.g-stat .g-icon,
+.g-stat svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* plan */
+.g-plan {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.g-plan-empty {
+  display: grid;
+  place-items: center;
+  color: var(--g-ink-soft);
+}
+.g-plan-svg {
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.g-plan-floor {
+  fill: var(--g-surface-2);
+}
+.g-plan-outline {
+  fill: none;
+  stroke: var(--g-ink);
+  stroke-width: 2;
+}
+.g-plan-bay {
+  stroke: var(--g-ink-mute);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+.g-plan-witness,
+.g-plan-dimline {
+  stroke: var(--g-ink-soft);
+  stroke-width: 1;
+}
+.g-plan-dimtext,
+.g-plan-wallnames {
+  fill: var(--g-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.g-plan-wallnames {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.g-plan-wallhit {
+  stroke: transparent;
+  cursor: copy;
+}
+.g-plan-sym {
+  fill: none;
+  stroke: var(--g-heading);
+  stroke-width: 1.5;
+}
+.g-plan-fill {
+  fill: var(--g-heading);
+}
+.g-plan-track {
+  stroke: var(--g-ink-mute);
+}
+.g-plan-opening.is-active .g-plan-sym {
+  stroke: var(--g-red-text);
+}
+.g-plan-handle {
+  stroke: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+.g-plan-handle:active {
+  cursor: grabbing;
+}
+.g-plan-handle:focus-visible {
+  outline: none;
+  stroke: var(--g-focus);
+  stroke-opacity: 0.25;
+}
+.g-plan-zoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+}
+.g-plan-message {
+  position: absolute;
+  left: 8px;
+  right: 160px;
+  bottom: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--g-warn-bg);
+  border: 1px solid var(--g-warn-line);
+  font-size: 14px;
+}
+.g-icon-btn,
+.g-step-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  background: var(--g-surface);
+  color: var(--g-heading);
+  cursor: pointer;
+}
+.g-icon-btn:disabled,
+.g-step-btn:disabled {
+  color: var(--g-ink-mute);
+  cursor: not-allowed;
+}
+.g-icon-btn:focus-visible,
+.g-step-btn:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-popover {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  padding: 12px;
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-shadow);
+}
+.g-popover-title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--g-heading);
+}
+.g-popover-sub {
+  font-weight: 400;
+  color: var(--g-ink-soft);
+}
+.g-popover-note {
+  margin: 0;
+  color: var(--g-ink-soft);
+}
+.g-popover-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.g-popover-btn {
+  padding: 0 10px;
+}
+.g-popover-max {
+  font-size: 12px;
+  font-weight: 400;
+}
+.g-popover-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.g-popover-close {
+  align-self: flex-end;
+}
+
+/* accordion */
+.g-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.g-group {
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+}
+.g-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.g-group-summary::-webkit-details-marker {
+  display: none;
+}
+.g-group-summary:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+  border-radius: var(--g-radius);
+}
+.g-group-title {
+  font-weight: 700;
+  color: var(--g-heading);
+}
+.g-group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--g-ink-soft);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.g-group-chevron {
+  transition: transform 150ms ease-out;
+}
+.g-group[open] .g-group-chevron {
+  transform: rotate(180deg);
+}
+.g-group[aria-disabled='true'] .g-group-title {
+  color: var(--g-ink-soft);
+}
+.g-group-lock {
+  width: 16px;
+  height: 16px;
+}
+.g-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 16px 16px;
+}
+.g-locked {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--g-ink-soft);
+}
+.g-issues {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: 10px;
+  background: var(--g-warn-bg);
+  border: 1px solid var(--g-warn-line);
+  font-size: 14px;
+}
+.g-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.g-size-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.g-size-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.g-size-input {
+  width: 84px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.g-range {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  accent-color: var(--g-heading);
+}
+.g-range-ends {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.g-range-note {
+  margin: 0;
+  color: var(--g-red-text);
+}
+.g-readout {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+}
+.g-readout-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.g-readout-note {
+  font-weight: 400;
+  color: var(--g-ink-soft);
+}
+.g-stepper-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.g-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.g-step-value {
+  min-width: 32px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.g-chip-set,
+.g-swatch-set {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.g-chip-legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--g-ink-soft);
+}
+.g-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.g-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--g-line);
+  border-radius: 999px;
+  background: var(--g-surface);
+  color: var(--g-ink);
+  font: inherit;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.g-chip-input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.g-chip:has(.g-chip-input:checked),
+.g-chip[aria-pressed='true'] {
+  border: 2px solid var(--g-heading);
+  background: var(--g-surface-2);
+  font-weight: 700;
+  padding: 0 13px;
+}
+.g-chip:has(.g-chip-input:focus-visible),
+.g-chip:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-chip-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--g-line);
+}
+.g-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.g-switch-input {
+  position: absolute;
+  opacity: 0;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  cursor: pointer;
+}
+.g-switch-track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--g-ink-mute);
+  transition: background-color 150ms ease-out;
+}
+.g-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 150ms ease-out;
+}
+.g-switch-input:checked + .g-switch-track {
+  background: var(--g-heading);
+}
+.g-switch-input:checked + .g-switch-track::after {
+  transform: translateX(18px);
+}
+.g-switch-input:focus-visible + .g-switch-track {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-kinds,
+.g-openings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-kind {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.g-kind-name {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+}
+.g-kind-max {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--g-ink-soft);
+}
+.g-opening {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+}
+.g-opening-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.g-opening-name {
+  font-weight: 700;
+}
+.g-opening-size {
+  color: var(--g-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.g-opening-head .g-icon-btn {
+  margin-left: auto;
+}
+.g-colours {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.g-colour-current {
+  margin: 0;
+}
+.g-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+.g-swatch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: center;
+}
+.g-swatch-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.g-swatch-chip {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--g-line);
+}
+.g-swatch[data-selected] .g-swatch-chip {
+  box-shadow: 0 0 0 2px var(--g-surface), 0 0 0 4px var(--g-heading);
+}
+.g-swatch-check {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 1px #000);
+}
+.g-swatch-name {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.g-swatch:has(.g-swatch-input:focus-visible) {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------------ tab ④ send, summary bar (S7) */
+/* Shared: a button that reads as a link (Edit, Change, Add). 44px tall for touch. */
+.g-link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--g-link);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.g-link-btn:hover {
+  text-decoration-thickness: 2px;
+}
+.g-link-btn:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.g-card-title {
+  margin: 0 0 12px;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--g-heading);
+}
+
+/* Summary bar in the tab bar (≥ 768): navy (override §4). The words show once there is room. */
+@media (min-width: 768px) {
+  .g-summary {
+    position: relative;
+    margin-block: 6px;
+    padding: 6px 6px 6px 8px;
+    min-width: 0;
+    border-radius: 12px;
+    background: var(--g-navy);
+    color: #fff;
+    --g-focus: #fff;
+  }
+  .g-summary .g-btn {
+    flex: none;
+    min-height: 44px;
+  }
+}
+.g-summary-text {
+  display: none;
+  min-width: 0;
+}
+/* The tabs keep their full width; the summary gives way (its line ellipsises, its button loses its words). */
+@media (min-width: 768px) {
+  .g-tablist {
+    flex: 0 1 auto;
+  }
+  .g-summary {
+    flex: 0 1 auto;
+    gap: 8px;
+  }
+  .g-summary-toggle {
+    width: 44px;
+    padding: 0;
+  }
+}
+.g-summary-toggle-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (min-width: 1024px) {
+  .g-summary-toggle {
+    width: auto;
+    padding: 0 14px;
+  }
+  .g-summary-toggle-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+}
+@media (min-width: 1280px) {
+  .g-tablist {
+    flex: none;
+  }
+  .g-summary {
+    padding-left: 14px;
+  }
+  .g-summary-text {
+    display: flex;
+    flex: 0 1 auto;
+    text-align: left;
+  }
+}
+.g-summary .g-summary-label {
+  color: #c9d3ea;
+}
+.g-summary .g-summary-value {
+  max-width: 28ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+}
+.g-summary-toggle {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.65);
+  color: #fff;
+}
+.g-summary-toggle:hover,
+.g-summary-toggle[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #fff;
+}
+.g-summary .g-btn:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+.g-sumpop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  padding: 8px 16px;
+  background: var(--g-surface);
+  color: var(--g-ink);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  box-shadow: var(--g-shadow);
+  --g-focus: var(--g-link);
+}
+.g-sumpop[hidden] {
+  display: none;
+}
+
+/* "What you're sending": label · value lines · Edit. */
+.g-sum {
+  margin: 0;
+}
+.g-sum-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--g-line);
+}
+.g-sum-row:first-child {
+  border-top: 0;
+}
+.g-sum dt {
+  padding-top: 11px;
+  font-weight: 600;
+  color: var(--g-ink-soft);
+}
+.g-sum dd {
+  margin: 0;
+  min-width: 0;
+}
+.g-sum dd:not(.g-sum-edit) {
+  display: flex;
+  flex-direction: column;
+  padding-top: 11px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.g-sum-none {
+  color: var(--g-ink-mute);
+}
+.g-sum-note {
+  white-space: pre-line;
+}
+.g-sum-missing dd:not(.g-sum-edit) {
+  color: var(--g-red-text);
+  font-weight: 600;
+}
+.g-sum-missing dt::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--g-dot);
+  vertical-align: middle;
+}
+.g-sum-compact .g-sum-row {
+  grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  font-size: 15px;
+}
+@media (max-width: 479px) {
+  .g-sum-row,
+  .g-sum-compact .g-sum-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .g-sum dt {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .g-sum dd:not(.g-sum-edit) {
+    grid-column: 1;
+    grid-row: 2;
+    padding-top: 0;
+  }
+  .g-sum-edit {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* ④ layout: summary and next steps side by side at ≥ 1024, the form below. */
+.g-send-grid {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 1024px) {
+  .g-send-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}
+.g-revision {
+  margin: -6px 0 8px;
+}
+.g-send-missing {
+  margin-bottom: 16px;
+}
+.g-send-missing p {
+  margin: 0;
+  font-weight: 600;
+}
+.g-send-missing ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.g-next-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: g-next;
+  display: grid;
+  gap: 14px;
+}
+.g-next-list li {
+  position: relative;
+  padding-left: 40px;
+  min-height: 28px;
+  padding-top: 2px;
+  color: var(--g-ink);
+  counter-increment: g-next;
+}
+.g-next-list li::before {
+  content: counter(g-next);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--g-surface-2);
+  color: var(--g-heading);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* The form: one column, two at ≥ 768. */
+.g-send-form {
+  margin-top: 16px;
+}
+.g-form-grid {
+  display: grid;
+  gap: 16px;
+}
+@media (min-width: 768px) {
+  .g-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 20px;
+  }
+}
+@media (max-width: 559px) {
+  .g-send .g-card {
+    padding: 16px;
+  }
+}
+.g-error-summary {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--g-red-dark);
+  border-radius: 10px;
+  background: var(--g-surface);
+}
+/* Focus and the summary's links land below the sticky tab bar, not under it. */
+.g-error-summary,
+.g-send-form :is(input, textarea, label) {
+  scroll-margin-top: calc(var(--g-tabs-h) + 24px);
+}
+.g-error-summary:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-error-summary-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+  color: var(--g-red-text);
+}
+.g-error-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.g-error-summary a {
+  color: var(--g-red-text);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+.g-send-form > .g-error {
+  margin-bottom: 16px;
+}
+.g-prefixed {
+  display: flex;
+  margin-top: 6px;
+}
+.g-prefix {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1.5px solid var(--g-ink-mute);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  background: var(--g-surface-2);
+  color: var(--g-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.g-prefixed .g-input {
+  margin-top: 0;
+  border-radius: 0 10px 10px 0;
+}
+.g-readonly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 6px;
+  min-height: 48px;
+  padding: 2px 8px 2px 12px;
+  border: 1.5px dashed var(--g-line);
+  border-radius: 10px;
+  background: var(--g-surface-2);
+  overflow-wrap: anywhere;
+}
+.g-textarea {
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.5;
+}
+/* The honeypot: off-screen, not `display: none` (some scripts skip hidden fields). */
+.g-hp {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.g-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.g-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--g-navy);
+  cursor: pointer;
+}
+.g-check input:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-send-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 20px;
+}
+.g-send-actions .g-hint {
+  margin: 0;
+}
+.g-send-btn {
+  min-height: 52px;
+  padding: 0 28px;
+  font-size: 17px;
+}
+.g-send-btn:disabled {
+  opacity: 0.8;
+}
+@media (max-width: 559px) {
+  .g-send-btn {
+    width: 100%;
+  }
+}
+.g-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: g-spin 800ms linear infinite;
+}
+@keyframes g-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Confirmation, in place of the form. */
+.g-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 24px;
+  text-align: center;
+}
+.g-confirm p {
+  margin: 0;
+}
+.g-confirm-tick {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 999px;
+  background: var(--g-ok);
+  color: #fff;
+}
+.g-confirm-tick .g-icon {
+  width: 32px;
+  height: 32px;
+  stroke-width: 2.5;
+}
+.g-confirm-title {
+  margin: 0;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--g-heading);
+}
+.g-confirm-title:focus {
+  outline: none;
+}
+.g-confirm-title:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 4px;
+}
+.g-confirm-number strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--g-heading);
+}
+.g-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* The phone's summary line, stuck to the bottom below 768. */
+.g-mbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--g-navy);
+  color: #fff;
+  box-shadow: 0 -6px 20px rgba(11, 29, 77, 0.18);
+  --g-focus: #fff;
+  transition: transform 150ms ease-out, visibility 150ms;
+}
+.g-mbar[data-hidden] {
+  transform: translateY(100%);
+  visibility: hidden;
+}
+.g-mbar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.g-mbar-send {
+  flex: none;
+  padding: 0 14px;
+}
+.g-mbar .g-btn:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+.g-mbar-spacer {
+  height: calc(64px + env(safe-area-inset-bottom));
+}
+@media (min-width: 768px) {
+  .g-mbar,
+  .g-mbar-spacer {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ motion */
+@media (prefers-reduced-motion: reduce) {
+  .guest-quote *,
+  .guest-quote *::before,
+  .guest-quote *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------------------ step ① start (G-a2 S4)
+
+   One panel holding four groups: type cards, the single address field, the contact grid and the
+   free-text request. The sections are separated by a rule rather than by cards, so the page reads as
+   one form and not four. */
+
+.g-start {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 880px;
+}
+.g-start-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.g-start-section + .g-start-section {
+  padding-top: 28px;
+  border-top: 1px solid var(--g-line);
+}
+.g-section-title {
+  margin: 0;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--g-heading);
+}
+.g-start-next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 8px;
+}
+.g-contact-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+.g-contact-note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+/* The fixed +61 sits inside the field's border, so a guest types only the national number. */
+.g-input-with-prefix {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  background: var(--g-surface);
+  overflow: hidden;
+}
+.g-input-with-prefix .g-input {
+  border: 0;
+  border-radius: 0;
+  min-width: 0;
+}
+.g-input-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid var(--g-line);
+  background: var(--g-surface-2);
+  color: var(--g-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The picked address: one line to read, with Change beside it. */
+.g-address-chosen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  background: var(--g-surface-2);
+}
+.g-address-chosen-icon {
+  flex: none;
+  color: var(--g-heading);
+}
+.g-address-chosen-icon .g-icon {
+  width: 20px;
+  height: 20px;
+}
+.g-address-chosen-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-weight: 500;
+  color: var(--g-ink);
+  overflow-wrap: break-word;
+}
+.g-address-search {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The estimate line under the address (Q3). */
+.g-wind-line {
+  margin: 0 0 2px;
+  font-weight: 600;
+  color: var(--g-ink);
+  font-variant-numeric: tabular-nums;
+}
+.g-wind-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--g-ink-soft);
+}
+
+/* ------------------------------------------------------------------ step ② per-bay list (G-a2 S5) */
+
+.g-bays {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.g-bay-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-bay {
+  display: grid;
+  align-items: center;
+  gap: 8px 12px;
+  grid-template-columns: minmax(0, auto) minmax(0, 120px) minmax(0, 1fr) auto;
+}
+@media (max-width: 559px) {
+  .g-bay {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 110px) auto;
+  }
+  .g-bay .g-hint {
+    grid-column: 1 / -1;
+  }
+}
+.g-bay .g-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--g-ink-soft);
+}
+.g-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+.g-readout-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--g-ink);
+}
+.g-readout-note {
+  font-weight: 400;
+  color: var(--g-ink-soft);
+}
+
+/* "Needs estimator check" beside the summary: an amber dot plus the words, never a colour alone. */
+.g-summary-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--g-ink-soft);
+}
+.g-summary-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--g-warn-line);
+}
+
+/* ------------------------------------------------------------------ step ② 3D stage (G-f S8)
+
+   The canvas fills the stage box, so the drag that orbits the model cannot scroll the page
+   (touch-action is set inline on the panel for the same reason). */
+
+.g-stage-3d {
+  position: relative;
+  /*
+     A plain block, not the centred flex column the placeholder rule above sets up: as a flex item
+     the canvas wrapper was sized by its content and the model rendered into a 150 px strip inside a
+     320 px box.
+  */
+  display: block;
+  padding: 0;
+  width: 100%;
+  min-height: 320px;
+  height: 100%;
+  border-radius: var(--g-radius);
+  overflow: hidden;
+  background: #eef2f5;
+}
+/*
+   The canvas wrapper is pinned to the box rather than sized with percentages.
+
+   A percentage height resolves against the parent's *specified* height, and on a phone the stage is
+   `height: auto` with a `min-height`, so 100% fell back to the canvas's own 150 px and the model
+   rendered into a strip inside a 320 px box. `inset: 0` needs no definite height at all.
+*/
+.g-stage-3d > div {
+  position: absolute;
+  inset: 0;
+  width: auto !important;
+  height: auto !important;
+}
+.g-stage-3d-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  margin: 0;
+  color: var(--g-ink-soft);
+}
+.g-stage-3d-note {
+  margin: 8px 0 0;
+}
+.g-stage-tools {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.g-stage-tools .g-btn {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ Design check (G-g S9)
+
+   Under the controls on step ②. Level is never colour alone: each item carries a dot *and* a word
+   ("Fine"/"Note"/"Check" in the screen reader text, and the badge in the header). */
+
+.g-check {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  background: var(--g-surface);
+}
+.g-check-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.g-check-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--g-surface-2);
+  color: var(--g-ink-soft);
+}
+.g-check-badge-review {
+  background: var(--g-warn-bg);
+  color: var(--g-ink);
+}
+.g-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-check-item {
+  font-size: 14px;
+  color: var(--g-ink);
+}
+.g-check-btn {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.g-check-btn:hover,
+.g-check-btn:focus-visible {
+  background: var(--g-surface-2);
+}
+/* A finding with a control is a button inside the li (styled by .g-check-btn); one without is the
+   bare row, which needs the same dot-and-text layout the button has. */
+.g-check-item:has(> .g-check-dot) {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+}
+.g-check-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+}
+.g-check-dot-ok {
+  background: var(--g-ok);
+}
+.g-check-dot-note {
+  background: var(--g-ink-soft);
+}
+.g-check-dot-review {
+  background: var(--g-warn-line);
+}
+.g-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.g-check-title {
+  font-weight: 600;
+}
+.g-check-detail {
+  color: var(--g-ink-soft);
+}
+
+/* ------------------------------------------------------------------ Shed Assistant (G-g S11)
+
+   Collapsed to one row by default: the assistant is an offer, not a step, and the designer has to
+   work when it is switched off. Everything inside is text; no HTML from the model is ever rendered. */
+
+.g-assistant {
+  display: flex;
+  flex-direction: column;
+  /* Fills its column (the grid area, the drawer or the sheet) so the thread can scroll inside it. */
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-radius);
+  background: var(--g-surface);
+  overflow: hidden;
+}
+.g-assistant-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 12px 16px;
+  background: var(--g-ai-bg);
+  color: var(--g-ink);
+  text-align: left;
+}
+/* The avatar is the template's: a navy square with the letter, not an image. */
+.g-assistant-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--g-heading);
+  color: #fff;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-weight: 800;
+  font-size: 15px;
+}
+.g-assistant-headtext {
+  flex: 1;
+  min-width: 0;
+}
+.g-assistant-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--g-heading);
+}
+.g-assistant-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--g-heading);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.g-assistant-sub {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--g-ink-soft);
+}
+.g-assistant-hide {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--g-ink-soft);
+  cursor: pointer;
+}
+.g-assistant-hide:hover,
+.g-assistant-hide:focus-visible {
+  background: var(--g-surface);
+  color: var(--g-heading);
+}
+
+/* Ask the AI: the button that brings the assistant back. Fixed, so it floats over whatever the stage
+   shows; the phone summary bar offsets it so it never sits on it. */
+.g-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 53;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 56px;
+  padding: 0 20px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--g-red);
+  color: #fff;
+  font-family: var(--g-font-display), var(--g-font-fallback);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(196, 35, 43, 0.4);
+}
+.g-fab:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 3px;
+}
+.g-fab-ping {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+}
+.g-fab-badge {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 2px solid var(--g-surface);
+  border-radius: 999px;
+  background: var(--g-heading);
+  color: #fff;
+  font-family: var(--g-font-fallback);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+/*
+   Above the phone summary bar (~64 px plus inset). Below 768 that bar is the only thing at the bottom,
+   and the toolbar already offers "AI Assistant" there, so the FAB is only the way back in after the
+   sheet has been hidden — it stays, because the badge is how a closed panel says something arrived.
+*/
+@media (max-width: 767px) {
+  .g-fab {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+  /*
+     There the FAB sits over the stage, and the "Ask the AI" chips are the last thing on it. Chips are
+     a convenience and the FAB is the only way back, so the chips step aside for it: the row keeps its
+     height and the FAB floats in the gap.
+  */
+  .g-stage-asks {
+    padding-right: 156px;
+  }
+}
+/*
+   The FAB floats over the bottom-right corner, which is where the footer's "Next" button sits: measured
+   at 900 it covered 119 × 40 px of it and took the click. While the FAB is on screen the footer's
+   actions keep clear of it — the same reservation the phone summary bar makes for itself.
+
+   `:has()` is already used in this file for the chips, so the browser support is the file's own.
+*/
+.guest-quote:has(#g-assistant-fab) .g-footer-row {
+  padding-right: calc(143px + env(safe-area-inset-right));
+}
+.g-assistant-strip {
+  margin: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--g-line);
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+.g-assistant-log {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /*
+     The thread is what scrolls. As a column on a desktop it takes the space between the head and the
+     composer; in a drawer or a sheet it takes the viewport minus those two, which is what makes the
+     composer stay reachable on a phone with the keyboard open.
+  */
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 16px 15px;
+  list-style: none;
+}
+.g-msg {
+  max-width: 100%;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--g-ink);
+}
+.g-msg p {
+  margin: 0;
+}
+/* The guest's own words: a soft grey bubble, right-aligned, with the tail on the side it came from. */
+.g-msg-guest p {
+  margin-left: auto;
+  max-width: 85%;
+  width: fit-content;
+  padding: 9px 13px;
+  border-radius: 14px 14px 3px 14px;
+  background: var(--g-surface-2);
+  color: var(--g-ink);
+}
+/* The assistant's: the panel's own tint, so the two sides never read as the same speaker. */
+.g-msg-assistant > p {
+  width: fit-content;
+  max-width: 96%;
+  padding: 9px 13px;
+  border-radius: 14px 14px 14px 3px;
+  background: var(--g-ai-bg);
+  color: var(--g-ink);
+}
+.g-msg-failed {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--g-ink-soft);
+  font-size: 13px;
+}
+/* A change set: what moved, then one Undo and one "View on plan" — the template's card-change. */
+.g-change {
+  margin-top: 9px;
+  padding: 12px 13px;
+  border: 1px solid var(--g-line);
+  border-radius: 12px;
+  background: var(--g-surface);
+}
+.g-change ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+/* One operation per row, the numbers on the right, so "Width → 9.00 m" can be scanned down. */
+.g-change ul > li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--g-ink);
+}
+.g-change[data-undone] {
+  opacity: 0.65;
+}
+.g-change-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.g-change-actions .g-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13.5px;
+}
+.g-assistant-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--g-line);
+  background: var(--g-surface);
+}
+/* The template's composer-box: the field and the button share one rounded, tinted frame. */
+.g-assistant-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 4px;
+  border: 1.5px solid var(--g-line);
+  border-radius: 14px;
+  background: var(--g-surface-2);
+}
+.g-assistant-row:focus-within {
+  border-color: var(--g-focus);
+  box-shadow: 0 0 0 3px var(--g-focus);
+}
+.g-assistant-row .g-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 15px;
+}
+.g-assistant-row .g-input:focus-visible {
+  outline: 0;
+}
+/* The send button: red, square-ish, and clearly the action of the box. */
+.g-assistant-row .g-btn {
+  flex: none;
+  min-height: 40px;
+  min-width: 60px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-weight: 700;
+}
+.g-assistant-row .g-btn:disabled {
+  background: var(--g-ink-mute);
+  color: var(--g-surface);
+  cursor: default;
+}
+
+/* "Your recent requests" on ① (SentRequests.tsx): the last five sent from this device. */
+.g-recent {
+  margin-bottom: 24px;
+}
+.g-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.g-recent-head .g-card-title {
+  margin: 0;
+}
+.g-recent .g-hint {
+  margin: 4px 0 12px;
+}
+.g-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-recent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--g-line);
+}
+.g-recent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.g-recent-number {
+  font-weight: 700;
+  color: var(--g-heading);
+}
+.g-recent-meta {
+  color: var(--g-ink-soft);
+  font-size: 14px;
+}
+.g-recent-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------ guest account (docs/specs/guest-accounts.md) */
+.g-account {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+}
+@media (min-width: 1024px) {
+  .g-nav + .g-account {
+    margin-left: 0;
+  }
+}
+.g-account-btn {
+  min-height: 40px;
+  padding: 0 12px;
+}
+.g-account-name {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 399px) {
+  .g-account-btn .g-icon {
+    display: none;
+  }
+}
+.g-account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 180px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--g-surface);
+  border: 1px solid var(--g-line);
+  border-radius: 10px;
+  box-shadow: var(--g-shadow);
+}
+.g-account-menu a,
+.g-account-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  color: var(--g-ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.g-account-menu a:hover,
+.g-account-menu button:hover {
+  background: var(--g-surface-2);
+}
+.g-account-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+.g-account-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--g-line);
+}
+.g-account-tab {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--g-ink-soft);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-account-tab[aria-selected='true'] {
+  color: var(--g-heading);
+  border-bottom-color: var(--g-heading);
+}
+.g-account-form {
+  display: grid;
+  gap: 14px;
+}
+.g-account-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.g-account-saved {
+  margin: 0;
+  font-size: 14px;
+  color: var(--g-ink-soft);
+}
+.g-account-page {
+  max-width: 760px;
+  padding-top: 16px;
+  padding-bottom: 48px;
+}
+.g-account-sections {
+  display: grid;
+  gap: 16px;
+}

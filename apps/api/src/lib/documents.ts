@@ -16,7 +16,9 @@
 import type { Db } from '@sq/db';
 import { resolveFromRoot } from '@sq/db';
 import type { FrozenIssue, FrozenPrice, FrozenRevision, PrintKind } from '@sq/core/documents';
+import type { DrawingSections } from '@sq/core/documents';
 import {
+  drawingSections,
   renderElevationsPageHtml,
   renderPlanPageHtml,
   renderQuoteHtml,
@@ -24,6 +26,7 @@ import {
 } from '@sq/core/documents';
 import { normaliseShedConfig, withDimensions } from '@sq/core/domain';
 import { loadLogo } from '@sq/core/branding';
+import { ensureBookOnDisk, openBook } from './priceBook.js';
 
 /**
  * The platform logo, or `null` when none is configured.
@@ -76,9 +79,38 @@ export async function renderFrozenDocument(
   };
 }
 
-/** The plan as a drawing sheet: no price, no customer block. */
-export async function renderFrozenPlan(frozen: FrozenRevision): Promise<string> {
-  return renderPlanPageHtml(toCustomerDocument(frozen));
+/**
+ * The plan as a drawing sheet: no price, no customer block.
+ *
+ * The option list states each open end's and open bay's clear size, which is the wall minus the
+ * steel in it, so the sheet needs the sections the revision's own price book chose. They are read
+ * here, from the book the revision was priced with; a missing book or a building the book has no
+ * design for prints the openings without a size rather than failing the sheet.
+ */
+export async function renderFrozenPlan(
+  frozen: FrozenRevision,
+  source?: { db: Db; tenantId: string; quoteId: string },
+): Promise<string> {
+  const sections = source === undefined ? null : await sectionsFor(frozen, source);
+  return renderPlanPageHtml(toCustomerDocument(frozen), { sections });
+}
+
+async function sectionsFor(
+  frozen: FrozenRevision,
+  source: { db: Db; tenantId: string; quoteId: string },
+): Promise<DrawingSections | null> {
+  try {
+    const row = await source.db.get<{ price_book_hash: string | null }>(
+      'SELECT price_book_hash FROM quote_revisions WHERE quote_id = ? AND tenant_id = ? AND revision = ?',
+      [source.quoteId, source.tenantId, frozen.revision],
+    );
+    const hash = row?.price_book_hash;
+    if (!hash) return null;
+    await ensureBookOnDisk(source.db, hash);
+    return drawingSections(frozen.config, openBook(hash).lookup);
+  } catch {
+    return null;
+  }
 }
 
 /** The four elevations as a drawing sheet: no price, no customer block. */

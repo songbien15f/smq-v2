@@ -27,6 +27,7 @@
  * row can be revoked.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@sq/ui';
 import { api } from '@/lib/sq';
@@ -41,7 +42,7 @@ export interface DocumentActionsProps {
   onSend?: () => void;
 }
 
-const API = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3060/api/v1';
+const API = process.env.NEXT_PUBLIC_API_BASE ?? resolveApiBaseUrl(undefined, process.env.NEXT_PUBLIC_API_PORT);
 
 type ShareState =
   | { kind: 'idle' }

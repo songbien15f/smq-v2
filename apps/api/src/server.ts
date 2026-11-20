@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     ? {
         transport: createSmtpTransport(smtpConfigFromEnv()),
         from: (process.env.MAIL_FROM ?? '').trim(),
-        publicOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:3061',
+        publicOrigin: config.origins.client,
       }
     : null;
 

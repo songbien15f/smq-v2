@@ -5,11 +5,12 @@
  * different ways of forwarding a session is two places for an authorization mistake.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { cookies } from 'next/headers';
 import type { ApiResult } from '@sq/contracts';
 
 export function apiBaseUrl(): string {
-  return process.env.API_BASE_URL ?? 'http://localhost:3060/api/v1';
+  return resolveApiBaseUrl(process.env.API_BASE_URL, process.env.API_PORT);
 }
 
 /** Call the API with the session cookie forwarded. */

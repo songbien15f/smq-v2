@@ -24,9 +24,10 @@
  * nothing else about the business that sent it.
  */
 
+import { resolveApiBaseUrl } from '@sq/contracts';
 import { useEffect, useState } from 'react';
 
-const API = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3060/api/v1';
+const API = process.env.NEXT_PUBLIC_API_BASE ?? resolveApiBaseUrl(undefined, process.env.NEXT_PUBLIC_API_PORT);
 
 type State =
   | { kind: 'reading' }

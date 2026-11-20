@@ -17,6 +17,7 @@
 
 import type { ShedConfig, WallSide, DimensionedShed } from './types';
 import { resolveOpeningPlacement, wallLength } from './placement';
+import { skillionRiseMm } from './roof';
 
 /** A rectangular hole cut into a wall, in wall-local millimetres. */
 export interface WallHole {
@@ -117,6 +118,8 @@ export function buildWallGeometries(shed: DimensionedShed): WallGeometry[] {
       });
     }
 
-    return { side, width, height: shed.height, holes, transform: wallTransform(shed, side) };
+    // A skillion's right wall carries the high side of the roof, so it is taller than the others.
+    const height = side === 'right' ? shed.height + skillionRiseMm(shed) : shed.height;
+    return { side, width, height, holes, transform: wallTransform(shed, side) };
   });
 }

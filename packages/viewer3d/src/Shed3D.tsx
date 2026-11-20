@@ -36,8 +36,8 @@ import {
   type OpeningPart,
 } from '@sq/core/domain';
 import { resolveOptions, type ResolvedOption } from '@sq/core/domain';
-import { AnyPart } from '@/components/three/PartMesh';
-import { useSheetingTexture } from '@/components/three/useSheetingTexture';
+import { AnyPart } from './PartMesh';
+import { useSheetingTexture } from './useSheetingTexture';
 
 /** Wall thickness, mm. */
 const WALL_DEPTH = 50;

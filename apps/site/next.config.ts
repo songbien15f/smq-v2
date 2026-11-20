@@ -32,7 +32,21 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@sq/ui', '@sq/contracts'],
+  /*
+   * `@sq/core` is here for the Guest page (`/quote`, plan G-a P6) and only its **domain** subpath may
+   * be imported: `@sq/core/domain`. Pricing, BOM and estimating never reach this app — the Guest page
+   * shows no price anywhere, including in its bundle (D-T3).
+   */
+  transpilePackages: ['@sq/ui', '@sq/contracts', '@sq/core', '@sq/viewer3d'],
+
+  /*
+   * Cloudflare quick tunnels (scripts/tunnel.mjs) reach this dev server under a
+   * `*.trycloudflare.com` host. Next blocks cross-origin requests to its own dev assets unless the
+   * host is named, so a QA link would render a page with no JavaScript and no explanation. Only the
+   * project's own tunnel domain is allowed: naming the whole of trycloudflare.com would let any other
+   * tunnel load this app's dev assets.
+   */
+  allowedDevOrigins: ['*.trycloudflare.com'],
   poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

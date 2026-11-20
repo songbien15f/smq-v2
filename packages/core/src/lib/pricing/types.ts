@@ -200,6 +200,13 @@ export interface FrameSchedule {
    */
   doorMullion: string | null;
   doorHeader: string | null;
+  /**
+   * True when the book's `C1_type` is `DOUBLE`: the main column is a back-to-back pair, so its
+   * width on plan is twice the section's. Optional — a lookup that predates the column does not know.
+   */
+  mainColumnDouble?: boolean;
+  /** The eaves purlin's section (`EP1`), or `null` when the book names none. */
+  eavesPurlin?: string | null;
 }
 
 /** Everything the BOM asks of the price book. */
@@ -283,7 +290,7 @@ export interface PriceLookup {
    * Optional, because a book with no `cost_frame` row for a section cannot answer
    * and a sheet that says "I do not know" beats one that guesses.
    */
-  frameGeometry?(section: string): { web: number; depth: number } | undefined;
+  frameGeometry?(section: string): { web: number; depth: number; width?: number } | undefined;
   /** The knee-edge row for a pitch: eave hole offset plus the apex/haunch allowances. */
   kneeEdge?(pitchDeg: number): { kneeEdgeCode: number; apex: number; haunch: number } | undefined;
   /**

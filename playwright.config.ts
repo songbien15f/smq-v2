@@ -113,6 +113,23 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
     {
+      /*
+       * The public Guest page on the site (3063), in its own project with **no storageState**.
+       *
+       * A guest has no account, so the spec must start with no cookie at all — the product session in
+       * `e2e/.auth` would make it a different page (and hold a licence seat for nothing). The base URL
+       * is the site, not the client, so `page.goto('/quote')` lands on the right app.
+       */
+      name: 'guest',
+      testMatch: /guestQuote\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        baseURL: process.env.E2E_SITE_URL ?? 'http://localhost:3063',
+        viewport: { width: 1440, height: 950 },
+      },
+    },
+    {
       name: 'teardown',
       testMatch: /auth\.teardown\.ts/,
       use: { ...devices['Desktop Chrome'], channel: 'chrome', storageState: 'e2e/.auth/state.json' },

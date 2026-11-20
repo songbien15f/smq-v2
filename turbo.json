@@ -39,6 +39,12 @@
     "SMTP_PASS",
     "MAIL_FROM",
     "ENQUIRY_TO",
+    "GUEST_NOTIFY_TO",
+    "GUEST_REQUEST_PREFIX",
+    "GUEST_PLACES_ENABLED",
+    "GUEST_PLACES_SESSION_SECRET",
+    "GUEST_PLACES_DAILY_AUTOCOMPLETE_CAP",
+    "GUEST_PLACES_DAILY_DETAILS_CAP",
     "GOOGLE_PLACES_API_KEY",
     "SHEDSAFE_BASE_URL",
     "SHEDSAFE_USERNAME",
@@ -66,7 +72,27 @@
     "COMPANY_ADMIN_USERNAME",
     "LOGO_FILE",
     "NEXT_PUBLIC_LOGO_SRC",
-    "NEXT_PUBLIC_SQ_ASSISTANT"
+    "NEXT_PUBLIC_SQ_ASSISTANT",
+    "NEXT_PUBLIC_BRAND_SITE_URL",
+    // The Guest assistant (plan G-g). The key is a server secret: it must never be a NEXT_PUBLIC_ var.
+    "VILAO_BASE_URL",
+    "VILAO_API_KEY",
+    "VILAO_MODEL",
+    "VILAO_STT_MODEL",
+    "GUEST_ASSISTANT_ENABLED",
+    "GUEST_ASSISTANT_DAILY_TURNS",
+    // Each front-end's listening port. `scripts/next-port.mjs` reads these (start/ports.env is the
+    // one place to change them); without these lines Turbo would hand the tasks nothing and every
+    // app would fall back to its default, quietly undoing the change.
+    "CLIENT_PORT",
+    "ADMIN_PORT",
+    "SITE_PORT",
+    // Where each service is reachable. Derived from the ports above when unset — see
+    // `serviceOrigins` in apps/api/src/config.ts.
+    "API_ORIGIN",
+    "CLIENT_ORIGIN",
+    "ADMIN_ORIGIN",
+    "SITE_ORIGIN"
   ],
 
   "globalDependencies": ["tsconfig.base.json"],
