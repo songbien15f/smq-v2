@@ -59,7 +59,7 @@
       button,[role="button"],select,summary{ min-height:2.25rem; }
       input,textarea{ min-height:2.25rem; }
       :focus-visible{ outline:3px solid var(--accent); outline-offset:2px; border-radius:4px; }
-      .wrap{ width:min(1200px,100% - 40px); margin-inline:auto; }
+      .wrap{ width:min(1760px,100% - clamp(40px,6vw,120px)); margin-inline:auto; }
       @media (max-width:560px){ .wrap{ width:calc(100% - 32px); } }
 
       /* ---------- top strip + header ---------- */

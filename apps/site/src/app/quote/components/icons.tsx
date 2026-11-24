@@ -212,3 +212,54 @@ export const IconList = (p: IconProps) => (
     <path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" strokeWidth="2.5" />
   </Svg>
 );
+
+/** A ruler laid on the diagonal, with tick marks — the rail's "Size & structure". */
+export const IconRuler = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.5 16.5L16.5 3.5l4 4-13 13z" />
+    <path d="M7 13l2 2M10 10l1.5 1.5M13 7l2 2" />
+  </Svg>
+);
+
+/** A paint roller: roller, handle frame and grip — the rail's "Colours". */
+export const IconPaintRoller = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="3.5" width="14" height="5" rx="1.5" />
+    <path d="M17.5 6h2v5.5H11V15" />
+    <rect x="9.5" y="15" width="3" height="5.5" rx="1" />
+  </Svg>
+);
+
+/** A door ajar in its frame, with a handle — the rail's "Doors & windows". */
+export const IconDoor = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 20.5V3.5h14v17" />
+    <path d="M3 20.5h18" />
+    <path d="M5 3.5l8 2.5v14.5" />
+    <path d="M10.5 12.5v.01" strokeWidth="2.5" />
+  </Svg>
+);
+
+/** Sparkles — the "AI Assistant" dock. */
+export const IconSparkle = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 4l1.6 4.4L16 10l-4.4 1.6L10 16l-1.6-4.4L4 10l4.4-1.6z" />
+    <path d="M18 14.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+  </Svg>
+);
+
+/** A microphone: capsule, yoke and stand. Used by the assistant's voice button. */
+export const IconMic = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="9" y="3.5" width="6" height="10.5" rx="3" />
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+    <path d="M12 18v2.5" />
+  </Svg>
+);
+
+/** A stop square, for finishing a recording without sending. */
+export const IconStop = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2" />
+  </Svg>
+);

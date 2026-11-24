@@ -261,26 +261,56 @@ export async function completeReply(
 /**
  * Speech to text. Returns `''` on any failure rather than throwing, because a transcript that cannot
  * be produced is "type it instead", not an error page.
+ *
+ * ## `opts` is the vocabulary lever — and the gateway may refuse it
+ *
+ * `prompt` and `language` are the two fields OpenAI's `/audio/transcriptions` shares with Whisper, and
+ * they are the only way a server-side call can bias a general recogniser towards shed words
+ * (`lib/guestVoice.ts` builds the prompt).
+ *
+ * **Measured 2026-11-22: `mgr/grok-stt` answers `400 BAD_REQUEST` to `prompt` at any length** ("This
+ * model rejected a generation parameter"), while `language` and `response_format` are accepted
+ * (`scripts/probe-stt.mjs`, results in `docs/state/quote-tiers.md`). So a prompt is an *attempt*, not a
+ * promise: on a 400 the call is retried **once** without it, and the model is remembered for the life
+ * of the process so the next visit does not pay for the same refusal. The transcript, its normalisation
+ * and the topic check never depended on the prompt, so the visitor still gets a usable sentence.
  */
+const promptRejected = new Set<string>();
+
 export async function transcribe(
   config: AssistantConfig,
   audio: Uint8Array,
   mimeType: string,
+  opts?: { prompt?: string; language?: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  try {
+  const wantsPrompt = opts?.prompt !== undefined && !promptRejected.has(config.sttModel);
+
+  /** One request; `withPrompt` decides whether the refused field is included. */
+  const post = async (withPrompt: boolean): Promise<Response> => {
     const form = new FormData();
     // `Blob` wants an ArrayBuffer-backed view; a `Uint8Array<ArrayBufferLike>` may be shared-backed.
     const bytes = new Uint8Array(audio.byteLength);
     bytes.set(audio);
     form.append('file', new Blob([bytes], { type: mimeType }), 'speech');
     form.append('model', config.sttModel);
-    const response = await fetchImpl(`${config.baseUrl}/audio/transcriptions`, {
+    if (withPrompt && opts?.prompt !== undefined) form.append('prompt', opts.prompt);
+    if (opts?.language !== undefined) form.append('language', opts.language);
+    return fetchImpl(`${config.baseUrl}/audio/transcriptions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${config.apiKey}` },
       body: form,
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+  };
+
+  try {
+    let response = await post(wantsPrompt);
+    if (!response.ok && wantsPrompt && response.status === 400) {
+      // A gateway that will not take `prompt` must not cost the visitor their sentence.
+      promptRejected.add(config.sttModel);
+      response = await post(false);
+    }
     if (!response.ok) return '';
     const body = (await response.json()) as { text?: unknown };
     return typeof body.text === 'string' ? body.text.trim() : '';

@@ -14,15 +14,18 @@ import { ToolsRail } from './ToolsRail';
 import { IconChevronLeft } from './icons';
 
 /**
- * Tab ③: the design workspace — tools on the left, the 2D/3D stage in the middle, the assistant on the
- * right (plan guest-template-3col).
+ * Tab ③: the design workspace — the 2D/3D stage fills it, "Your design" on the left, the assistant on
+ * the right (plan guest-template-3col, reworked by the client request of 2026-11-24).
  *
- * ## One grid, three attributes
+ * ## One workspace, three attributes
  *
  * `data-bp` says which layout applies and `data-left` / `data-right` say which panels are open. The CSS
- * reads those; nothing here measures the window. Above 1280 a closed tools column becomes a 48 px rail
- * and a closed assistant disappears; at 1024–1279 the assistant is a drawer; below 1024 both are
- * drawers, and below 768 the assistant is a bottom sheet.
+ * reads those; nothing here measures the window. From 1024 up the stage fills the whole workspace, an
+ * icon rail (Size · Colours · Doors) is always visible at its left edge, and a rail click opens the
+ * single-open "Your design" card beside it. A closed assistant leaves the bottom-right "AI Assistant"
+ * dock (suggestion chips above the button); an open one fills the workspace's full height on the right
+ * (≥1280), or is a drawer (1024–1279). Below 1024 the tools are a drawer too, and below 768 the
+ * assistant is a bottom sheet.
  *
  * ## The panels are hidden, not unmounted
  *
@@ -32,8 +35,8 @@ import { IconChevronLeft } from './icons';
  *
  * ## No assistant, no furniture
  *
- * Without the assistant (build flag off and no `?assistant=1`) there is no third column, no FAB, no
- * "AI Assistant" button and no stage chips: the grid is tools | stage, as it was before this plan.
+ * Without the assistant (build flag off and no `?assistant=1`) there is no panel, no dock and no
+ * "AI Assistant" button: only the rail, the card and the stage.
  */
 export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | undefined; loading: boolean }) {
   const design = useGuest((s) => s.design);
@@ -95,6 +98,9 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
         <button type="button" className="g-scrim" aria-label="Close the tools" onClick={() => closeTools()} />
       ) : null}
 
+      {/* Always visible from 1024 up (the CSS hides it on a phone, where the tools are a drawer). */}
+      <ToolsRail />
+
       <section id="g-tools" className="g-design-controls" aria-labelledby="g-tools-title">
         <div className="g-controls-head">
           <h2 id="g-tools-title" className="g-controls-title">
@@ -116,8 +122,6 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
           <ControlAccordion design={design} type={type} issues={issues} />
           <DesignCheck design={design} type={type} />
         </div>
-        {/* Shown only while collapsed on a desktop; the CSS decides, `data-left` drives it. */}
-        <ToolsRail />
       </section>
 
       <div className="g-design-stage">
@@ -135,11 +139,11 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
         </aside>
       ) : null}
 
-      {showAssistant && !rightOpen ? <AssistantFab /> : null}
+      {showAssistant && !rightOpen ? <AssistantFab design={design} type={type} /> : null}
 
       {/*
         The unread count and a pending confirmation, for whatever else needs them. Hidden, so they are
-        data rather than text; the FAB reads the store directly.
+        data rather than text; the dock reads the store directly.
       */}
       <span hidden data-assistant-unread={unread} data-assistant-pending={pending === null ? 'no' : 'yes'} />
     </div>

@@ -28,7 +28,12 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import type { GuestAssistantMessage, GuestAssistantTurnResponse, GuestOpWire } from '@sq/contracts';
+import type {
+  GuestAssistantMessage,
+  GuestAssistantTranscribeResponse,
+  GuestAssistantTurnResponse,
+  GuestOpWire,
+} from '@sq/contracts';
 import type { GuestDesignInput } from '@sq/core/domain';
 import { guestApi } from './api';
 import { applyAssistantDesign, undoDesign } from './store';
@@ -60,6 +65,11 @@ export interface AssistantState {
   unread: number;
   /** Whether the panel is currently open. Set by `DesignPanel` from the panel state. */
   visible: boolean;
+  /**
+   * Voice is switched off on the server, out of its daily budget, or there is no key. The composer
+   * hides the mic for the rest of the visit rather than offering a button that cannot work.
+   */
+  voiceUnavailable: boolean;
 }
 
 const GREETING: AssistantTurn = {
@@ -75,6 +85,7 @@ const INITIAL: AssistantState = {
   pending: null,
   unread: 0,
   visible: true,
+  voiceUnavailable: false,
 };
 
 let state: AssistantState = INITIAL;
@@ -217,4 +228,67 @@ export function undoChange(index: number): void {
       i === index && turn.kind === 'change' ? { ...turn, undone: true } : turn,
     ),
   });
+}
+
+
+/* ---------------------------------------------------------------- voice (STT, plan 2026-11-22) */
+
+/** A blob as base64 without its `data:...;base64,` header — what the route expects. */
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the recording.'));
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const comma = result.indexOf(',');
+      resolve(comma === -1 ? result : result.slice(comma + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Turn one recording into text. Returns `null` when there is nothing usable to put in the composer.
+ *
+ * The sentence is **not sent**: the caller puts it in the input for the visitor to read and edit. This
+ * is why the failure cases are quiet — a tap that was too short, a gateway that heard nothing, or voice
+ * being switched off all end as `null`, and the composer says what to do instead.
+ *
+ * `unavailable` from the server is sticky for the visit: the mic would fail the same way every time, so
+ * the composer stops offering it.
+ */
+/**
+ * Whether the server has told us voice is off this visit.
+ *
+ * Read straight from the store rather than through a hook: the transcript callback is async and closes
+ * over the values from the render that registered it, so it needs the answer *now*, not then.
+ */
+export function isVoiceUnavailable(): boolean {
+  return state.voiceUnavailable;
+}
+
+export async function transcribeVoice(
+  blob: Blob,
+  mimeType: string,
+  durationMs: number,
+  typeId: string,
+): Promise<{ text: string; onTopic: boolean } | null> {
+  let audio: string;
+  try {
+    audio = await blobToBase64(blob);
+  } catch {
+    return null;
+  }
+
+  const result = await guestApi<GuestAssistantTranscribeResponse>('public/guest/assistant/transcribe', {
+    method: 'POST',
+    body: { audio, mimeType, durationMs, typeId },
+  });
+
+  if (!result.ok) return null;
+  if (result.data.unavailable === true) {
+    set({ voiceUnavailable: true });
+    return null;
+  }
+  return { text: result.data.text, onTopic: result.data.onTopic };
 }

@@ -81,6 +81,10 @@
     "VILAO_STT_MODEL",
     "GUEST_ASSISTANT_ENABLED",
     "GUEST_ASSISTANT_DAILY_TURNS",
+    // Speech to text in the assistant's composer (plan 2026-11-22). Both are server-side settings:
+    // the page learns whether voice is available from the route's answer, not from a build constant.
+    "GUEST_ASSISTANT_VOICE",
+    "GUEST_ASSISTANT_DAILY_VOICE",
     // Each front-end's listening port. `scripts/next-port.mjs` reads these (start/ports.env is the
     // one place to change them); without these lines Turbo would hand the tasks nothing and every
     // app would fall back to its default, quietly undoing the change.

@@ -28,7 +28,12 @@ const securityHeaders = [
   // ever carry a customer's path to a third party.
   { key: 'Referrer-Policy', value: 'no-referrer' },
   { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  /*
+   * `microphone=(self)`: the Guest assistant's composer records speech (plan 2026-11-22). Without it
+   * the browser refuses the mic before the page can even ask, and the failure looks like a broken
+   * button. Camera and location stay closed — the page needs neither.
+   */
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
 ];
 
 const nextConfig: NextConfig = {

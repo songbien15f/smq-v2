@@ -68,30 +68,54 @@ the password before anything leaves a laptop**, and use a secret store in a depl
 5. creates the company — **skipped if one exists** (`--if-empty`);
 6. publishes the price book — **skipped if one is active**, and only a warning if the licensed dump
    is absent;
-7. starts all four services and opens the client once it answers.
+7. starts all four services and opens the client once it answers;
+8. starts the intro site (`00.smartcoaustralia.com.au`) in a window of its own, when that project is
+   installed — see "The intro site" below.
 
 | Service | URL (default) |
 |---|---|
 | **Client** (the workspace) | **http://localhost:3061** |
 | Admin (the vendor's control plane) | http://localhost:3062 |
 | Site (end customer) | http://localhost:3063 |
+| Intro (marketing site, own project) | http://localhost:3065 |
 | API | http://localhost:3060/api/v1 |
 
 Sign in with `owner@demo-sheds.local` / `a-long-enough-password` — the launcher prints these too.
 
 **The ports are in one file: [`start/ports.env`](start/ports.env).** Change a number there and the
-matching origin follows — the API's allow-list, the browser origins and the three front-ends all
-move together, so nothing has to be edited twice. Something else on the machine holding 3060–3063
+matching origin follows — the API's allow-list, the browser origins and the four front-ends all
+move together, so nothing has to be edited twice. Something else on the machine holding 3060–3065
 (another checkout, a container, a stale process) is the usual reason to change one.
 
 **`stop-306.bat`** kills whatever is listening on the ports in that file — not hard-coded numbers —
 so after a port change it still stops the right processes. Use it when the window was closed
-without Ctrl+C: the four Node processes survive that, and the next start then fails with "address
+without Ctrl+C: the Node processes survive that, and the next start then fails with "address
 already in use".
 
 Running by hand (`pnpm dev`) does not read `start/ports.env`. Set the same names in the shell
 instead — `API_PORT`, `CLIENT_PORT`, `ADMIN_PORT`, `SITE_PORT` — and the API still derives its
 allowed origins from them.
+
+### The intro site
+
+`00.smartcoaustralia.com.au` is the marketing site. It is **a separate npm project** — its own
+`package.json`, its own `node_modules`, its own Postgres database (`smartcoa`) — so it is not part
+of the pnpm workspace and does not run under `turbo dev`. The launcher starts it in its own window
+with `next dev -p <INTRO_PORT>` and closes it again when the services stop.
+
+It is optional: a missing folder, a missing `node_modules` or a missing `.env` only prints a note,
+and the application still starts. Set it up once with its own `Start\START-WEBSITE.bat` (which
+creates `.env`, migrates `smartcoa` and seeds the demo content), or by hand:
+
+```
+cd 00.smartcoaustralia.com.au
+copy .env.example .env
+npm install
+npm run migrate && npm run seed
+```
+
+If port 3065 is already in use the launcher leaves the intro site alone rather than refusing to
+start — that port is usually its own `Start\START-WEBSITE.bat`.
 
 Postgres is required now: the application database has no SQLite fallback (DECISIONS D1). See
 "Provisioning Postgres once" below.

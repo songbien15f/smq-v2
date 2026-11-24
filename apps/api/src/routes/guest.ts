@@ -41,9 +41,13 @@ import {
   type GuestWindRegion,
 } from '@sq/core/domain';
 import {
+  fail,
+  guestAssistantTranscribeRequest,
+  guestAssistantTurnRequest,
   guestBuildingTypeSchema,
   guestRequestBody,
   normaliseAuMobile,
+  type GuestAssistantTranscribeResponse,
   type GuestBuildingTypesResponse,
   type GuestRequestAccepted,
 } from '@sq/contracts';
@@ -84,18 +88,21 @@ import { guestNotifyRecipients, sendGuestRequestMail } from '../lib/mail/guestMa
 import {
   ASSISTANT_COOKIE,
   ASSISTANT_COOKIE_MAX_AGE,
+  ASSISTANT_LIMITS,
   assistantEnabled,
   fullTranscript,
   hashAssistantToken,
   liveSessionId,
+  redact,
   resolveAssistantSession,
   runAssistantTurn,
 } from '../lib/guestAssistant.js';
-import { assistantConfigFromEnv } from '../lib/ai/gateway.js';
-import { guestAssistantTurnRequest } from '@sq/contracts';
+import { assistantConfigFromEnv, transcribe } from '../lib/ai/gateway.js';
+import { isShedTopic, normaliseShedTranscript, shedSttPrompt } from '../lib/guestVoice.js';
 import { upgradeGuestDesign } from '@sq/core/domain';
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 const IP_LIMIT = 5;
 const EMAIL_LIMIT = 3;
 /** Suburb lookups are local and free, but the list is still not something to hand a scraper. */
@@ -525,6 +532,118 @@ export function registerGuest(
       needsConfirm: outcome.needsConfirm,
     });
   });
+
+  /*
+   * Speech to text for the composer (plan 2026-11-22, spec line 675).
+   *
+   * ## What it is not
+   *
+   * It is **not** a turn. Nothing is recorded, nothing reaches the model's chat, and the transcript
+   * never sends itself: it goes back to the browser, the visitor reads it, edits it if the recogniser
+   * misheard, and presses Send. So there is no `recordTurn` here and no design in the body.
+   *
+   * ## Audio does not survive the request
+   *
+   * The bytes are decoded, passed to the gateway and dropped. They are not written to disk or the
+   * database, and not logged: only the decoded length and the mime type appear in a failure line.
+   * The transcript is redacted (`redact`) before it is answered, so a mobile number spoken by accident
+   * never leaves the server.
+   *
+   * ## Its own quota
+   *
+   * The counters are separate from the turn's, because a transcription is a second paid call on top of
+   * the turn it feeds. The per-address and per-session limits answer 429 like the turn does; the
+   * platform's daily budget answers `unavailable` and the page retires the mic for that visit.
+   */
+  app.post(
+    '/public/guest/assistant/transcribe',
+    // base64 of 1 MB is ~1.4 MB; the app-wide 1 MB limit would refuse a legitimate clip.
+    { bodyLimit: Math.ceil(1.5 * 1024 * 1024) },
+    async (request, reply) => {
+      const voiceFlag = (process.env.GUEST_ASSISTANT_VOICE ?? '').trim().toLowerCase();
+      const voiceOn = voiceFlag === '1' || voiceFlag === 'true' || voiceFlag === 'on';
+      const config = assistantEnabled() && voiceOn ? assistantConfigFromEnv() : null;
+      if (config === null) {
+        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, unavailable: true };
+        return sendOk(reply, data);
+      }
+
+      const body = parseBody(guestAssistantTranscribeRequest, request.body, reply);
+      if (body === null) return;
+
+      const types = await loadBuildingTypes(db, request.log);
+      const type = types.find((t) => t.id === body.typeId);
+      if (type === undefined) {
+        return sendFail(reply, 'validation_failed', 'That building type is no longer offered.', [
+          { path: 'typeId', message: 'Unknown building type' },
+        ]);
+      }
+
+      const session = await resolveAssistantSession(db, request.cookies[ASSISTANT_COOKIE]);
+      if (session.created) {
+        reply.setCookie(ASSISTANT_COOKIE, session.token, {
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: ASSISTANT_COOKIE_MAX_AGE,
+          secure: process.env.NODE_ENV === 'production',
+        });
+      }
+
+      // Money is spent by the call below, so every counter is consumed first — the same order, and the
+      // same reason, as `runAssistantTurn`.
+      const ipHash = hashIp(clientIp(request));
+      const perIp = await consume(db, `ga:voice:ip:${ipHash}`, ASSISTANT_LIMITS.voicePerIpDay, DAY_MS);
+      if (!perIp.allowed) {
+        return sendFail(reply, 'rate_limited', 'That is a lot of recordings from one place. Please wait a while.');
+      }
+      const perSession = await consume(db, `ga:voice:s:${session.id}`, ASSISTANT_LIMITS.voicePerSession, DAY_MS);
+      if (!perSession.allowed) {
+        return sendFail(reply, 'rate_limited', 'This conversation has reached its recording limit. You can still type.');
+      }
+      const daily = Number(process.env.GUEST_ASSISTANT_DAILY_VOICE ?? 100);
+      const cap = await consume(
+        db,
+        `ga:voice:day:${new Date().toISOString().slice(0, 10)}`,
+        Number.isFinite(daily) && daily > 0 ? daily : 100,
+        DAY_MS,
+      );
+      if (!cap.allowed) {
+        request.log.info('guest voice daily budget spent');
+        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, unavailable: true };
+        return sendOk(reply, data);
+      }
+
+      const bytes = Buffer.from(body.audio, 'base64');
+      if (bytes.length === 0) {
+        request.log.warn({ mimeType: body.mimeType, durationMs: body.durationMs }, 'guest voice: empty audio');
+        return sendFail(reply, 'validation_failed', 'That recording was empty. Try again.');
+      }
+      if (bytes.length > 1024 * 1024) {
+        request.log.warn({ mimeType: body.mimeType, durationMs: body.durationMs, bytes: bytes.length }, 'guest voice: audio over the limit');
+        /*
+         * 413 with the product's usual envelope and the nearest existing code. A `payload_too_large`
+         * code would be more exact, but `ERROR_CODES` is a shared contract with every front-end and one
+         * route is not a reason to widen it.
+         */
+        return reply.status(413).send(fail('validation_failed', 'That recording was too long. Keep it under a minute.'));
+      }
+
+      const raw = await transcribe(config, new Uint8Array(bytes), body.mimeType, {
+        prompt: shedSttPrompt(type),
+        language: 'en',
+      });
+      if (raw === '') {
+        // The failure side of `transcribe` is a silent `''`. Length and type say whether the clip was
+        // unusable or the gateway was; the audio itself is gone by now, on purpose.
+        request.log.warn({ mimeType: body.mimeType, durationMs: body.durationMs, bytes: bytes.length }, 'guest voice: no transcript');
+      }
+
+      const text = redact(normaliseShedTranscript(raw));
+      const data: GuestAssistantTranscribeResponse = { text, onTopic: isShedTopic(text) };
+      return sendOk(reply, data);
+    },
+  );
 
   // ---------------------------------------------------------------- address (S3)
 

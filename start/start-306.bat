@@ -2,15 +2,18 @@
 REM ============================================================================
 REM  SmartQuote v2 - one click to start everything and open the browser.
 REM
-REM  Four processes. The ports come from start\ports.env - edit them there and
-REM  nothing else, so the API's allow-list, the browser origins and the three
+REM  Five processes. The ports come from start\ports.env - edit them there and
+REM  nothing else, so the API's allow-list, the browser origins and the four
 REM  front-ends all move together:
 REM     API     http://localhost:<API_PORT>/api/v1
 REM     Client  http://localhost:<CLIENT_PORT>   <- the workspace, opens automatically
 REM     Admin   http://localhost:<ADMIN_PORT>    <- the vendor's control plane
 REM     Site    http://localhost:<SITE_PORT>     <- the end-customer site
+REM     Intro   http://localhost:<INTRO_PORT>    <- the marketing site, own window
 REM
-REM  Ctrl+C in this window stops all four.
+REM  Ctrl+C in this window stops the four SmartQuote services. The intro site is
+REM  a separate npm project (own dependencies, own database) and runs in a window
+REM  of its own; this launcher closes it when the services stop.
 REM
 REM  This file does the first-run setup itself: dependencies, the database, the
 REM  company, and the price book. On a later run each step finds its work already
@@ -24,11 +27,11 @@ cd /d "%~dp0.."
 
 REM ---------------------------------------------------------------- ports
 REM One file, read before anything else starts: the API's allow-list, the origins
-REM the browser uses and the three front-ends must all agree, or a request is
+REM the browser uses and the four front-ends must all agree, or a request is
 REM refused as cross-origin with nothing in the log to say why.
 if not exist "start\ports.env" (
   echo.
-  echo  ERROR: start\ports.env is missing. It lists the four ports; restore it
+  echo  ERROR: start\ports.env is missing. It lists the ports; restore it
   echo         from the repository.
   echo.
   pause
@@ -43,10 +46,11 @@ if "%API_PORT%"==""    set API_PORT=3060
 if "%CLIENT_PORT%"=="" set CLIENT_PORT=3061
 if "%ADMIN_PORT%"==""  set ADMIN_PORT=3062
 if "%SITE_PORT%"==""   set SITE_PORT=3063
+if "%INTRO_PORT%"==""  set INTRO_PORT=3065
 
-REM Reject a typo before four services fail one after another. Two equal ports
+REM Reject a typo before five services fail one after another. Two equal ports
 REM would be an "address already in use" that reads like a stale process.
-for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT%) do (
+for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT% %INTRO_PORT%) do (
   echo %%P| findstr /r /c:"^[1-9][0-9][0-9]*$" >nul || (
     echo.
     echo  ERROR: "%%P" in start\ports.env is not a port number.
@@ -57,7 +61,7 @@ for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT%) do (
 )
 set SEEN=
 set DUPE=
-for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT%) do (
+for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT% %INTRO_PORT%) do (
   REM `&&` does not work inside a for-block here; errorlevel does.
   echo !SEEN! | findstr /c:" %%P " >nul
   if not errorlevel 1 set DUPE=%%P
@@ -204,10 +208,35 @@ if errorlevel 1 (
   echo.
 )
 
+REM ------------------------------------------------------------------ intro
+REM The marketing site next door (00.smartcoaustralia.com.au) is a separate npm
+REM project: its own dependencies, its own lockfile and its own Postgres
+REM database. It therefore cannot ride on `pnpm dev`, and it is optional - a
+REM half-installed marketing site must not stop the application from starting,
+REM so anything missing below is a note, not an error.
+set "INTRO_DIR=%CD%\00.smartcoaustralia.com.au"
+set "START_INTRO="
+if not exist "%INTRO_DIR%\package.json" (
+  echo.
+  echo  NOTE: 00.smartcoaustralia.com.au is missing, so the intro site will not run.
+) else if not exist "%INTRO_DIR%\node_modules" (
+  echo.
+  echo  NOTE: the intro site has no node_modules, so it will not run.
+  echo        Install them once, then start again:
+  echo            cd 00.smartcoaustralia.com.au  ^&^&  npm install
+) else if not exist "%INTRO_DIR%\.env" (
+  echo.
+  echo  NOTE: the intro site has no .env, so it will not run. Copy .env.example to
+  echo        .env in 00.smartcoaustralia.com.au, or run its own
+  echo        Start\START-WEBSITE.bat once, which does the first-run setup.
+) else (
+  set "START_INTRO=1"
+)
+
 REM ------------------------------------------------------------ ports free?
 REM A window closed without Ctrl+C leaves its Node processes alive. Starting again then
-REM brings up only some of the four (the Next apps answer, the API does not), and the page
-REM shows "fetch failed" with nothing pointing at the real cause. Stop here and say so.
+REM brings up only some of the services (the Next apps answer, the API does not), and the
+REM page shows "fetch failed" with nothing pointing at the real cause. Stop here and say so.
 set BUSY=
 for %%P in (%API_PORT% %CLIENT_PORT% %ADMIN_PORT% %SITE_PORT%) do (
   netstat -ano | findstr /r /c:"^ *TCP.*:%%P .*LISTENING" >nul && set BUSY=!BUSY! %%P
@@ -221,6 +250,18 @@ if defined BUSY (
   exit /b 1
 )
 
+REM The intro port is checked apart, and only disables the intro. The marketing
+REM site is often already running from its own Start\START-WEBSITE.bat, and that
+REM must not be a reason to refuse to start the application.
+if defined START_INTRO (
+  netstat -ano | findstr /r /c:"^ *TCP.*:%INTRO_PORT% .*LISTENING" >nul && (
+    set "START_INTRO="
+    echo.
+    echo  NOTE: port %INTRO_PORT% is already in use, so the intro site is left alone.
+    echo        Something else is serving it - probably its own Start\START-WEBSITE.bat.
+  )
+)
+
 REM ------------------------------------------------------------------ start
 echo.
 echo  ==========================================
@@ -231,6 +272,8 @@ echo    Client   %CLIENT_ORIGIN%   (the workspace)
 echo    Admin    %ADMIN_ORIGIN%
 echo    Site     %SITE_ORIGIN%
 echo    API      %API_BASE_URL%
+if defined START_INTRO echo    Intro    http://localhost:%INTRO_PORT%   (own window)
+if not defined START_INTRO echo    Intro    not started - see the note above
 echo.
 echo    Client sign in:   code     %COMPANY_CODE%
 echo                      username %COMPANY_ADMIN_USERNAME%
@@ -238,8 +281,17 @@ echo                      password %COMPANY_ADMIN_PASSWORD%
 echo    Admin sign in:    email    %PLATFORM_ADMIN_EMAIL%
 echo                      password %PLATFORM_ADMIN_PASSWORD%
 echo.
-echo    Ctrl+C here stops everything.
+echo    Ctrl+C here stops the services and the intro site.
 echo.
+
+REM The intro site in its own console, and before the rest: its output would
+REM otherwise interleave with Turbo's and make a failure in either one hard to
+REM read. `next dev` is called directly rather than through the project's `dev`
+REM script, because that script pins -p 3065 and the port belongs in
+REM start\ports.env.
+if defined START_INTRO (
+  start "Smart Solutions Australia - intro site, port %INTRO_PORT%" /d "%INTRO_DIR%" /min cmd /c "set NODE_OPTIONS=--no-deprecation&& node_modules\.bin\next.cmd dev -p %INTRO_PORT%"
+)
 
 REM Wait for the client to answer before opening a tab, so the browser does not
 REM land on a connection error and leave the operator reloading by hand. It polls rather than
@@ -248,6 +300,18 @@ REM later one. Gives up after about three minutes and opens the tab anyway.
 start "" powershell -NoProfile -WindowStyle Hidden -Command "for($i=0;$i -lt 90;$i++){try{Invoke-WebRequest %CLIENT_ORIGIN% -UseBasicParsing -TimeoutSec 2 | Out-Null;break}catch{Start-Sleep 2}}; Start-Process %CLIENT_ORIGIN%"
 
 call pnpm dev
+
+REM The intro site runs in a separate console, so it does not receive this
+REM window's Ctrl+C. Stop it here, and only if this run started it: an intro
+REM site the operator launched from its own Start\START-WEBSITE.bat is not ours
+REM to close.
+if defined START_INTRO (
+  echo.
+  echo  Stopping the intro site...
+  for /f "tokens=5" %%A in ('netstat -ano ^| findstr /r /c:"^ *TCP.*:%INTRO_PORT% .*LISTENING"') do (
+    if not "%%A"=="0" taskkill /F /PID %%A >nul 2>nul
+  )
+)
 
 echo.
 echo  The services have stopped.

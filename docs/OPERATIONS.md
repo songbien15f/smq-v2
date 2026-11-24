@@ -301,8 +301,10 @@ works".
 | `VILAO_BASE_URL` | OpenAI-compatible gateway. Defaults to `https://api.vilao.ai/v1`. |
 | `VILAO_API_KEY` | The key. **A server secret**: it stays in `.env`, never `NEXT_PUBLIC_*`, never in a commit. |
 | `VILAO_MODEL` | Chat model. Defaults to `wiki`. |
-| `VILAO_STT_MODEL` | Speech-to-text model, used only if a microphone is added. Defaults to `mgr/grok-stt`. |
+| `VILAO_STT_MODEL` | Speech-to-text model, used by the composer's microphone. Defaults to `mgr/grok-stt`. |
 | `GUEST_ASSISTANT_DAILY_TURNS` | Platform-wide ceiling per UTC day. Defaults to 200. |
+| `GUEST_ASSISTANT_VOICE` | `1` to offer the microphone in the composer. **Separate from the chat switch**, because each recording is its own paid call. Defaults to off. |
+| `GUEST_ASSISTANT_DAILY_VOICE` | Platform-wide ceiling on transcriptions per UTC day. Defaults to 100. |
 | `NEXT_PUBLIC_SQ_ASSISTANT` | `1` renders the panel for everyone. `?assistant=1` turns it on for one visit. |
 
 **What a turn costs and who stops it.** One model call, or two when the first reply wrote an
@@ -310,6 +312,23 @@ operation with key names that do not exist (the gateway does not enforce the JSO
 server asks once more with the exact shape and keeps the reply that lost fewer operations. Three
 counters are consumed *before* the call: 60 a day per IP, 40 per conversation, and the daily ceiling
 above — they count turns, not calls. A refusal answers "unavailable" and the designer keeps working.
+
+**The microphone (speech to text).** Switched on separately with `GUEST_ASSISTANT_VOICE=1`; without it
+the composer simply has no mic. A recording is capped at 60 s and 1 MB, and the audio is **never stored
+or logged** — only its length and mime type appear in a failure line. The transcript is normalised and
+redacted, then put **in the composer for the guest to read and edit**: it is never sent by itself, so a
+misheard "nine" cannot become a design change. Its counters are its own — 30 a day per IP, 20 per
+conversation, and `GUEST_ASSISTANT_DAILY_VOICE` for the platform — consumed before the gateway call.
+Over the IP or conversation limit answers 429; over the daily budget answers `unavailable` and the page
+retires the mic for that visit.
+
+**The STT gateway does not take a vocabulary prompt (measured 2026-11-22).** `mgr/grok-stt` answers
+`400 BAD_REQUEST` to the OpenAI `prompt` field at any length, while `language` and `response_format` are
+accepted. The API therefore sends the shed-vocabulary prompt once and, on a 400, retries without it —
+remembering the refusal per model for the life of the process, so repeat visitors do not pay for the
+same rejection. Accuracy is then the recogniser's own; the word-level fixes in `lib/guestVoice.ts`
+("role a door" → "roller door") and the topic check still apply. Re-check with
+`node scripts/probe-stt.mjs <clip.webm>` if the STT model changes.
 
 **What the model never sees.** The contact details (name, email, mobile, street address) are not in
 the request — the route's schema has no field for them. The sentence itself is redacted first: email

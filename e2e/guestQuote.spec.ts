@@ -146,7 +146,7 @@ async function design(page: Page, { phone }: { phone: boolean }): Promise<void> 
   if (!phone) await expect(summary(page, phone)).toContainText('3 bays');
 
   // Doors & windows still work: a garage starts with one roller door. Scoped to the controls,
-  // because the stage's "Ask the AI" chips carry a sentence that starts with the same words.
+  // because the "AI Assistant" dock's suggestion chips carry a sentence that starts with the same words.
   await openGroup(page, 'g-group-doors');
   await page.locator('#g-tools').getByRole('button', { name: 'Add a roller door', exact: true }).click();
   await expect(page.locator('.g-opening-name', { hasText: 'Roller door 2' })).toBeVisible();
@@ -215,8 +215,8 @@ test.describe('Guest quote page', () => {
     await fillStart(page, { phone: false }, email, '/quote?assistant=1');
 
     await expect(summary(page, false)).toContainText('6.00 ×');
-    // At 1440 the assistant is the open third column (plan guest-template-3col, D1), so there
-    // is nothing to open: the head is a static header now, not a toggle.
+    // The assistant starts closed on every width; the bottom-right "AI Assistant" dock opens it.
+    await page.locator('#g-assistant-fab').click();
     await page.locator('#g-assistant-input').fill('make it 9 metres wide');
     await page.locator('.g-assistant-form').getByRole('button', { name: 'Send' }).click();
 
@@ -243,8 +243,8 @@ test.describe('Guest quote page', () => {
     const email = `test.guest+ai${Date.now()}b@example.com`;
     await fillStart(page, { phone: false }, email, '/quote?assistant=1');
 
-    // At 1440 the assistant is the open third column (plan guest-template-3col, D1), so there
-    // is nothing to open: the head is a static header now, not a toggle.
+    // The assistant starts closed on every width; the bottom-right "AI Assistant" dock opens it.
+    await page.locator('#g-assistant-fab').click();
     await page.locator('#g-assistant-input').fill('make it 9 metres wide');
     await page.locator('.g-assistant-form').getByRole('button', { name: 'Send' }).click();
 

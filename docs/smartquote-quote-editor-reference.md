@@ -125,6 +125,29 @@ phía sau" hay "đặt cửa sổ cách góc 2 m" là phép tính trên số, kh
 **front** (`y = 0`) của tường **right**. Nói cách khác, với mỗi tường, offset 0 là đầu "trái" khi
 đứng **ngoài** nhìn vào tường đó.
 
+### 3.6 Trợ lý Guest — nhập bằng giọng nói (STT)
+
+Khách bấm mic trong khung "Shed Assistant", nói một câu về shed; server chuyển thành chữ. Điểm cốt lõi:
+**chữ không bao giờ tự gửi** — nó điền vào ô chat, khách đọc (và sửa nếu nghe nhầm) rồi mới bấm Send.
+
+- **Đường đi:** `MediaRecorder` trong trình duyệt → blob → base64 trong JSON (không multipart) →
+  `POST /public/guest/assistant/transcribe` → `transcribe()` gọi gateway → `normaliseShedTranscript`
+  (sửa lỗi nghe nhầm như "role a door" → "roller door") → `redact()` → trả `{ text, onTopic }`.
+  Lượt chat thật vẫn là `/assistant/turn` khi khách bấm Send.
+- **Audio không lưu, không log** (không đĩa, không DB, không `request.log`); log lỗi chỉ có
+  `mimeType`, `durationMs`, số byte. Transcript đã redact trước khi rời server.
+- **Chủ đề shed:** prompt từ vựng gửi cho STT, cộng bảng sửa lỗi nghe nhầm và `isShedTopic` (từ khoá +
+  mẫu số-kèm-đơn-vị). Không gọi model thêm. Transcript lạc chủ đề vẫn vào ô, kèm gợi ý "I can only help
+  with the shed design".
+- **Gateway và `prompt`:** đo 2026-11-22, `mgr/grok-stt` trả `400 BAD_REQUEST` cho `prompt` ở mọi độ dài
+  (`language` và `response_format` thì nhận). Vì vậy `transcribe()` gửi prompt một lần rồi lùi về không
+  prompt, nhớ theo model trong process. Hệ quả: với gateway hiện tại, phần "gợi ý từ vựng" của prompt
+  **không có tác dụng**; phần chuẩn hoá và kiểm chủ đề ở phía ta mới là thứ chạy.
+- **Quota:** riêng với chat — 30 lượt/IP/ngày, 20 lượt/phiên/ngày, và `GUEST_ASSISTANT_DAILY_VOICE`
+  (mặc định 100) cho toàn nền tảng. Audio tối đa 60 s và 1 MB.
+- **Bật/tắt:** `GUEST_ASSISTANT_VOICE=1` (mặc định 0) **và** phải có key như trợ lý chat. Thiếu một
+  trong hai thì trình duyệt không thấy nút mic và route trả `unavailable`.
+
 ### 3.6 Tài khoản Guest (tuỳ chọn)
 
 Khách gửi yêu cầu **không cần đăng nhập** như trước. Ai muốn thì bấm **Sign in** trên header trang

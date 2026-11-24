@@ -28,7 +28,7 @@ pnpm quotes:blocked [-- --tenant <slug> | --list]   # count quotes that cannot b
 
 Postgres: `docker compose up -d` (local-only container, credentials match `.env.example`), or on a machine that already runs Postgres use `scripts/postgres-setup.sql`. `scripts/probe-*.mjs` are one-off live probes (pricing, documents, mail, ShedSafe), not tests.
 
-Windows launcher: `start/start-306.bat` does the whole first-run (env, install, migrate, create company, publish book, start services, open browser); `start/stop-306.bat` kills whatever listens on 3060–3063. The README says these are at the repo root — they are in `start/`.
+Windows launcher: `start/start-306.bat` does the whole first-run (env, install, migrate, create company, publish book, start services, open browser); `start/stop-306.bat` kills whatever listens on 3060–3063 and 3065. The README says these are at the repo root — they are in `start/`.
 
 | Service | Port (default) |
 |---|---|
@@ -36,6 +36,7 @@ Windows launcher: `start/start-306.bat` does the whole first-run (env, install, 
 | Client (`apps/client`, the quote editor) | 3061 |
 | Admin (`apps/admin`, vendor control plane) | 3062 |
 | Site (`apps/site`, end customer) | 3063 |
+| Intro (`00.smartcoaustralia.com.au`, marketing site) | 3065 |
 
 **The ports live in one file: `start/ports.env`.** Change one there and the derived origins follow
 (`serviceOrigins` in `apps/api/src/config.ts` builds the allow-list; `resolveApiBaseUrl` in
@@ -43,6 +44,12 @@ Windows launcher: `start/start-306.bat` does the whole first-run (env, install, 
 new file — `scripts/next-port.mjs` is why `apps/*/package.json` no longer names one. Running
 `pnpm dev` by hand does not read that file: set `API_PORT`/`CLIENT_PORT`/`ADMIN_PORT`/`SITE_PORT`
 in the shell, and the same derivation still applies.
+
+`INTRO_PORT` is the exception to that derivation: the intro site is a **separate npm project**
+(own `node_modules`, own Postgres database `smartcoa`, not in `pnpm-workspace.yaml`), so it cannot
+run under `turbo dev`. The launcher starts it with `next dev -p <INTRO_PORT>` in its own console and
+skips it — with a note, never an error — when the folder, `node_modules` or `.env` is missing, or
+when the port is already taken by its own `Start\START-WEBSITE.bat`.
 
 Single package / single test:
 

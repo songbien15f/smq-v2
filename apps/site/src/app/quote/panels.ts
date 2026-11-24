@@ -11,7 +11,14 @@
  * on their phone, where a different default is correct: on a phone both panels start closed, because a
  * drawer covering the stage would be the first thing they saw.
  *
- * Defaults: **desktop both open · tablet (1024–1279) tools open, assistant closed · phone both closed.**
+ * Defaults: **desktop and tablet tools open (Size expanded), assistant closed · phone both closed.**
+ * The assistant starts closed everywhere so the model has the room; the bottom-right "AI Assistant"
+ * dock is what a person sees first.
+ *
+ * ## One group at a time
+ *
+ * `group` is the one "Your design" group that is expanded. The accordion is single-open and reads it,
+ * and the always-visible tools rail shows it as the active icon, so the two can never disagree.
  *
  * ## The server render
  *
@@ -31,13 +38,15 @@ export interface PanelsState {
   bp: Bp;
   leftOpen: boolean;
   rightOpen: boolean;
+  /** The expanded "Your design" group, or null when every group is collapsed. */
+  group: ToolsGroupId | null;
 }
 
 /** What each breakpoint starts with (D1, D4, and the template's own defaults). */
-export function defaultsFor(bp: Bp): { leftOpen: boolean; rightOpen: boolean } {
-  if (bp === 'desktop') return { leftOpen: true, rightOpen: true };
-  if (bp === 'tablet') return { leftOpen: true, rightOpen: false };
-  return { leftOpen: false, rightOpen: false };
+export function defaultsFor(bp: Bp): { leftOpen: boolean; rightOpen: boolean; group: ToolsGroupId | null } {
+  if (bp === 'desktop') return { leftOpen: true, rightOpen: false, group: 'g-group-size' };
+  if (bp === 'tablet') return { leftOpen: true, rightOpen: false, group: 'g-group-size' };
+  return { leftOpen: false, rightOpen: false, group: 'g-group-size' };
 }
 
 function bpFor(width: number): Bp {
@@ -47,7 +56,7 @@ function bpFor(width: number): Bp {
 }
 
 /*
- * The server snapshot: desktop with both panels open, which is also the widest layout. `useSyncExternal
+ * The server snapshot: the desktop defaults (tools open, assistant closed). `useSyncExternal
  * Store` renders this first and the real answer on the client, so hydration matches.
  */
 const INITIAL: PanelsState = { bp: 'desktop', ...defaultsFor('desktop') };
@@ -126,9 +135,12 @@ export function watchBreakpoint(): () => void {
 
 export function openTools(groupId?: ToolsGroupId): void {
   // On a phone the rail does not exist, so opening a group means opening the drawer and scrolling.
-  set({ leftOpen: true });
-  if (groupId === undefined) return;
-  // After the DOM has the panel open (a drawer animates in), open the group and bring it into view.
+  if (groupId === undefined) {
+    set({ leftOpen: true });
+    return;
+  }
+  set({ leftOpen: true, group: groupId });
+  // After the DOM has the panel open (a drawer animates in), bring the group into view.
   const scroll = () => {
     const summary = document.getElementById(groupId);
     if (summary === null) return;
@@ -140,13 +152,49 @@ export function openTools(groupId?: ToolsGroupId): void {
   window.requestAnimationFrame(scroll);
 }
 
+/**
+ * A rail icon: open the card on that group, or — when that group is already the open one — close the
+ * card. The rail itself never goes away.
+ */
+export function toggleToolsGroup(groupId: ToolsGroupId): void {
+  if (state.leftOpen && state.group === groupId) {
+    set({ leftOpen: false });
+    return;
+  }
+  openTools(groupId);
+}
+
+/**
+ * The accordion reports a group header click here (its `toggle` event), so opening one group collapses
+ * the others. A close only counts for the group that is the open one: React closing the others fires
+ * their `toggle` too, after `group` already names the new one.
+ */
+export function setToolsGroup(groupId: ToolsGroupId, open: boolean): void {
+  if (open) {
+    if (state.group !== groupId) set({ group: groupId });
+  } else if (state.group === groupId) {
+    set({ group: null });
+  }
+}
+
+/** The rail button's id for a group (`g-group-size` → `g-rail-size`). */
+export function railIdFor(groupId: ToolsGroupId): string {
+  return groupId.replace('g-group-', 'g-rail-');
+}
+
 export function closeTools(): void {
-  if (focusIsInside('g-tools')) focusAfter('g-tools-btn');
+  // A phone reopens the drawer from the toolbar's "Tools"; wider screens from the rail.
+  if (focusIsInside('g-tools')) {
+    focusAfter(state.bp === 'phone' ? 'g-tools-btn' : railIdFor(state.group ?? 'g-group-size'));
+  }
   set({ leftOpen: false });
 }
 
 export function openAssistant(): void {
   set({ rightOpen: true });
+  // On a desktop the panel is part of the workspace, so the cursor goes to the composer (the dock that
+  // opened it is gone). Phones and tablets keep focus where it was: a soft keyboard would cover a sheet.
+  if (state.bp === 'desktop') focusAfter('g-assistant-input');
 }
 
 export function closeAssistant(): void {

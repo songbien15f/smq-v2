@@ -125,6 +125,10 @@
   margin: 0 auto;
   padding: 0 16px;
 }
+/* The design step is a workspace, not a form: it (and the bars above and below it) gets 1760. */
+.guest-quote:has(.g-main[data-step='design']) .g-container {
+  max-width: 1760px;
+}
 @media (min-width: 768px) {
   .g-container {
     padding: 0 24px;
@@ -1032,7 +1036,8 @@
   color: var(--g-heading);
 }
 
-/* The rail: what the tools column becomes when it is collapsed on a desktop. Hidden elsewhere. */
+/* The rail: the always-visible "Your design" icon toolbar from 1024 up (placed in the floating
+   layout below). A phone has the drawer instead, so it is hidden there. */
 .g-rail {
   display: none;
 }
@@ -1041,27 +1046,45 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  width: 40px;
-  min-height: 46px;
-  padding: 4px 0;
+  gap: 4px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 2px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: var(--g-ink-soft);
-  font-size: 9px;
+  font: inherit;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.1;
   cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
-.g-rail-btn:hover,
-.g-rail-btn:focus-visible {
+.g-rail-btn:hover {
   background: var(--g-surface-2);
   color: var(--g-heading);
 }
+.g-rail-btn:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+/* Active: the open group of an open card — navy fill with the gold accent bar on its inner edge. */
+.g-rail-btn[data-active] {
+  background: var(--g-heading);
+  color: var(--g-surface);
+  box-shadow: inset 3px 0 0 var(--g-warn-line);
+}
 .g-rail-btn .g-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-rail-btn {
+    transition: none;
+  }
 }
 
 /* A scrim under an off-canvas panel. A button, so a click closes; the label names the panel. */
@@ -1096,81 +1119,166 @@
     height: 55dvh;
   }
 }
-/* 1024 – 1279: tools + stage. The assistant is a drawer (Task 4). */
+/*
+   ≥ 1024: the stage is the whole workspace (client request 2026-11-23).
+
+   The 2D plan / 3D model fills the design area edge to edge. On the left, the icon rail is always
+   there and the "Your design" card floats beside it while open; on the right, the open assistant fills
+   the workspace's height (≥ 1280), and a closed one leaves the "AI Assistant" dock in the bottom-right
+   corner. The stage's toolbar and summary sit in the gutter between them — `--g-float-l` /
+   `--g-float-r` say how wide each side's footprint is, and `--g-dock-space` reserves the dock's width
+   for the 2D plan and the summary, so the plan's zoom buttons never sit under the dock. The 3D canvas
+   runs under everything (the model is the page); the 2D plan is inset to the gutter, because a
+   dimension hidden under a card is a dimension the guest cannot read.
+*/
 @media (min-width: 1024px) {
   .g-design {
-    display: grid;
-    grid-template-columns: 330px minmax(0, 1fr);
-    grid-template-areas: 'controls stage';
-    grid-template-rows: minmax(0, 1fr);
-    height: calc(100dvh - var(--g-header-h) - var(--g-tabs-h));
-    min-height: 480px;
-    transition: grid-template-columns 0.3s ease;
+    --g-float-gap: 16px;
+    --g-rail-w: 64px;
+    --g-card-x: calc(var(--g-float-gap) + var(--g-rail-w) + 8px);
+    --g-float-l: calc(var(--g-card-x) + 330px + var(--g-float-gap));
+    --g-float-r: var(--g-float-gap);
+    --g-dock-space: 0px;
+    position: relative;
+    display: block;
+    /* The step's title and lead line (≈ 58 px plus gaps) and the page's bottom padding sit above and
+       below the workspace too; without them the bottom-right dock lands under the fold. */
+    height: calc(100dvh - var(--g-header-h) - var(--g-tabs-h) - 82px);
+    min-height: 520px;
+    border: 1px solid var(--g-line);
+    border-radius: var(--g-radius);
+    background: var(--g-surface);
+    overflow: hidden;
   }
   .g-design[data-left='closed'] {
-    grid-template-columns: 48px minmax(0, 1fr);
+    --g-float-l: calc(var(--g-rail-w) + 2 * var(--g-float-gap));
+  }
+  /* The dock's footprint (chips ≈ 230 px wide plus the gap), only while it is on screen. */
+  .g-design[data-assistant='yes'][data-right='closed'] {
+    --g-dock-space: 248px;
   }
   .g-design-stage {
-    grid-area: stage;
-    min-height: 0;
+    position: absolute;
+    inset: 0;
   }
-  .g-design-controls {
-    grid-area: controls;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-right: 4px;
+  .g-design .g-stage {
+    position: relative;
+    height: 100%;
+    gap: 10px;
+    padding: var(--g-float-gap) var(--g-float-r) var(--g-float-gap) var(--g-float-l);
+    /* The stage box spans the cards too; only its visible pieces take the pointer. */
+    pointer-events: none;
+    transition: padding 0.3s ease;
   }
-  /* Collapsed: the rail replaces the title and the accordion. */
-  .g-design[data-left='closed'] .g-controls-title,
-  .g-design[data-left='closed'] .g-controls-body {
-    display: none;
+  .g-design .g-stage > * {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
   }
-  .g-design[data-left='closed'] .g-controls-head {
-    justify-content: center;
-    padding: 8px 0 0;
+  .g-design .g-stage > .g-stage-view {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--g-surface-2);
   }
-  .g-design[data-left='closed'] .g-rail {
+  /* Toolbar at the top of the gutter, the summary at the bottom (clear of the dock). */
+  .g-design .g-stage-tabs {
+    margin-bottom: auto;
+    background: var(--g-surface);
+    box-shadow: 0 6px 18px rgba(11, 29, 77, 0.12);
+  }
+  .g-design .g-stage-chips {
+    align-self: flex-start;
+    margin-right: var(--g-dock-space);
+  }
+  .g-design .g-stage-chips .g-stat {
+    background: var(--g-surface);
+    box-shadow: 0 2px 8px rgba(11, 29, 77, 0.1);
+  }
+  /* The plan keeps to the gutter, clear of the toolbar above, the summary below and the dock. */
+  .g-design .g-stage-view > .g-plan {
+    position: absolute;
+    top: 72px;
+    bottom: 96px;
+    left: var(--g-float-l);
+    right: calc(var(--g-float-r) + var(--g-dock-space));
+    width: auto;
+    height: auto;
+    transition:
+      left 0.3s ease,
+      right 0.3s ease;
+  }
+  .g-design .g-stage-view > .g-hint {
+    position: absolute;
+    top: 72px;
+    left: var(--g-float-l);
+    right: var(--g-float-r);
+    margin: 0;
+    text-align: center;
+  }
+  /* The rail: always on screen at the stage's left edge, never covered by the card. */
+  .g-design .g-rail {
+    position: absolute;
+    z-index: 4;
+    top: var(--g-float-gap);
+    left: var(--g-float-gap);
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 4px;
-    padding: 8px 0 14px;
+    width: var(--g-rail-w);
+    padding: 6px;
+    border: 1px solid var(--g-line);
+    border-radius: var(--g-radius);
+    background: var(--g-surface);
+    box-shadow: var(--g-shadow);
+  }
+  /* "Your design": a card floating beside the rail while open; closed, it is gone (the rail stays). */
+  .g-design-controls {
+    position: absolute;
+    z-index: 3;
+    top: var(--g-float-gap);
+    left: var(--g-card-x);
+    bottom: var(--g-float-gap);
+    width: 330px;
+    padding: 4px 12px 14px 16px;
+    border: 1px solid var(--g-line);
+    border-radius: var(--g-radius);
+    background: var(--g-surface);
+    box-shadow: var(--g-shadow);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .g-design[data-left='closed'] .g-design-controls {
+    display: none;
   }
   .g-stage {
     height: 100%;
   }
 }
 
-/* ≥ 1280: three columns, the template's widths (330 / 350) and its 48 px rail. */
+/* ≥ 1280: the open assistant fills the workspace's right side, top to bottom. */
 @media (min-width: 1280px) {
-  .g-design {
-    grid-template-columns: 330px minmax(0, 1fr) 350px;
-    grid-template-areas: 'controls stage assistant';
-  }
-  .g-design[data-left='closed'] {
-    grid-template-columns: 48px minmax(0, 1fr) 350px;
-  }
-  .g-design[data-right='closed'] {
-    grid-template-columns: 330px minmax(0, 1fr);
-    grid-template-areas: 'controls stage';
-  }
-  .g-design[data-left='closed'][data-right='closed'] {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
-  /* No assistant at all: two columns, whatever the flags say. */
-  .g-design[data-assistant='no'] {
-    grid-template-columns: 330px minmax(0, 1fr);
-    grid-template-areas: 'controls stage';
-  }
-  .g-design[data-assistant='no'][data-left='closed'] {
-    grid-template-columns: 48px minmax(0, 1fr);
+  .g-design[data-assistant='yes'][data-right='open'] {
+    --g-float-r: calc(380px + var(--g-float-gap));
   }
   .g-design-assistant {
-    grid-area: assistant;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 380px;
+    border-left: 1px solid var(--g-line);
+    background: var(--g-surface);
+    box-shadow: -12px 0 32px rgba(11, 29, 77, 0.12);
+    overflow: hidden;
+  }
+  /* Edge to edge in the workspace: no card border or radius of its own. */
+  .g-design-assistant .g-assistant {
+    border: 0;
+    border-radius: 0;
   }
   /* Below 1280 the panel is a fixed drawer; as a column it must not be. */
   .g-design[data-right='closed'] .g-design-assistant {
@@ -1301,8 +1409,7 @@
 /*
    Phones: the stage sizes to its content rather than to a fixed 45dvh.
 
-   The toolbar carries the two panel switches, the "Ask the AI" chips wrap onto two or three
-   lines, and the summary takes a row of its own; together they are taller than 45dvh on a small
+   The toolbar carries the two panel switches and the summary takes a row of its own; together they are taller than 45dvh on a small
    phone, so a fixed stage height squeezed the plan down to nothing. The view keeps a usable
    height of its own and the page scrolls.
 */
@@ -1334,15 +1441,6 @@
   }
   .g-stage-view {
     height: 240px;
-  }
-  /* One scrollable line of chips: three wrapped lines are most of a 390 px screen. */
-  .g-design .g-stage-asks {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-  .g-design .g-stage-asks > * {
-    flex: 0 0 auto;
   }
   .g-design-controls {
     min-height: 0;
@@ -1468,39 +1566,28 @@
   }
 }
 
-/* "Ask the AI" chips: a labelled row of navy-outlined pills, the template's stage-chips. */
-.g-stage-asks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--g-line);
-  border-radius: var(--g-radius);
-  background: var(--g-surface);
-}
-.g-stage-asks-label {
-  font-size: 12.5px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--g-heading);
-}
+/* AI suggestion chips: navy-outlined pills, in the dock and inside the open assistant. */
 .g-chip-ask {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border: 1.5px solid var(--g-heading);
   border-radius: 999px;
   background: var(--g-surface);
   color: var(--g-heading);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
   cursor: pointer;
 }
-.g-chip-ask:hover,
+.g-chip-ask:hover {
+  background: var(--g-ai-bg);
+}
 .g-chip-ask:focus-visible {
   background: var(--g-ai-bg);
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
 }
 
 .g-stage-chips {
@@ -1702,6 +1789,34 @@
 }
 .g-popover-close {
   align-self: flex-end;
+}
+.g-popover-opening {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.g-popover-offset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.g-popover-offset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.g-popover-offset-row .g-input {
+  width: 96px;
+}
+/* The opening popover holds four chip groups: tighter chips keep each group on one line. */
+.g-popover-opening .g-chips {
+  gap: 6px;
+}
+.g-popover-opening .g-chip {
+  padding: 0 10px;
+  font-size: 14px;
+}
+.g-popover-opening .g-chip-legend {
+  margin-bottom: 4px;
 }
 
 /* accordion */
@@ -3032,18 +3147,165 @@
   color: var(--g-heading);
 }
 
-/* Ask the AI: the button that brings the assistant back. Fixed, so it floats over whatever the stage
-   shows; the phone summary bar offsets it so it never sits on it. */
-.g-fab {
+/* The "AI Assistant" dock: suggestion chips stacked above the button, right-aligned. From 1024 up it
+   sits in the workspace's bottom-right corner; below that it is fixed to the viewport (the phone
+   summary bar offsets it) and shows only the button — the chips are inside the opened sheet. */
+.g-ai-dock {
   position: fixed;
   right: 16px;
   bottom: calc(16px + env(safe-area-inset-bottom));
   z-index: 53;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: 232px;
+  pointer-events: none;
+}
+.g-ai-dock > * {
+  pointer-events: auto;
+}
+.g-ai-dock-chips {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.g-ai-dock-chips .g-chip-ask {
+  box-shadow: 0 4px 12px rgba(11, 29, 77, 0.14);
+}
+@media (min-width: 1024px) {
+  .g-design .g-ai-dock {
+    position: absolute;
+    z-index: 4;
+    right: var(--g-float-gap);
+    bottom: var(--g-float-gap);
+  }
+}
+@media (max-width: 1023px) {
+  .g-ai-dock-chips {
+    display: none;
+  }
+}
+/*
+ * The suggestions inside the open assistant: one slim row just above the composer — a fold toggle,
+ * then the chips scrolling sideways — so the thread keeps the height. Folded, only the toggle stays.
+ */
+.g-assistant-suggest {
+  display: flex;
+  flex: none;
   align-items: center;
-  gap: 9px;
-  height: 56px;
-  padding: 0 20px 0 14px;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 12px 0;
+  border-top: 1px solid var(--g-line);
+  background: var(--g-surface);
+}
+.g-assistant-suggest + .g-assistant-form {
+  border-top: 0;
+}
+/* Folded: no row at all — the toggle floats as a small pill over the thread's bottom-right corner. */
+.g-assistant-suggest:not([data-open]) {
+  position: relative;
+  height: 0;
+  padding: 0;
+  overflow: visible;
+}
+.g-assistant-suggest:not([data-open]) .g-suggest-toggle {
+  position: absolute;
+  z-index: 1;
+  right: 12px;
+  bottom: 8px;
+  height: 28px;
+  padding: 0 10px;
+  box-shadow: 0 2px 8px rgba(11, 29, 77, 0.16);
+}
+.g-suggest-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--g-ai-bg);
+  color: var(--g-heading);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.g-suggest-toggle:hover {
+  background: color-mix(in srgb, var(--g-ai-bg) 70%, var(--g-heading) 12%);
+}
+.g-suggest-toggle:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-suggest-icon {
+  width: 14px;
+  height: 14px;
+}
+.g-suggest-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+.g-assistant-suggest[data-open] .g-suggest-chevron {
+  transform: rotate(180deg);
+}
+.g-assistant-chips-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.g-assistant-chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  list-style: none;
+  /* Fade the right edge so a chip cut by the panel reads as "more this way". */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.g-assistant-chips::-webkit-scrollbar {
+  display: none;
+}
+.g-assistant-chips li {
+  flex: none;
+}
+.g-assistant-chips .g-chip-ask {
+  min-height: 32px;
+  padding: 0 12px;
+  border-width: 1px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .g-suggest-toggle,
+  .g-assistant-chips .g-chip-ask {
+    min-height: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-suggest-chevron {
+    transition: none;
+  }
+}
+.g-fab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 20px 0 16px;
   border: 0;
   border-radius: 999px;
   background: var(--g-red);
@@ -3058,11 +3320,12 @@
   outline: 3px solid var(--g-focus);
   outline-offset: 3px;
 }
-.g-fab-ping {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #fff;
+.g-fab:hover {
+  background: var(--g-red-dark);
+}
+.g-fab-icon {
+  width: 20px;
+  height: 20px;
 }
 .g-fab-badge {
   position: absolute;
@@ -3087,27 +3350,21 @@
    sheet has been hidden — it stays, because the badge is how a closed panel says something arrived.
 */
 @media (max-width: 767px) {
-  .g-fab {
+  .g-ai-dock {
     bottom: calc(76px + env(safe-area-inset-bottom));
-  }
-  /*
-     There the FAB sits over the stage, and the "Ask the AI" chips are the last thing on it. Chips are
-     a convenience and the FAB is the only way back, so the chips step aside for it: the row keeps its
-     height and the FAB floats in the gap.
-  */
-  .g-stage-asks {
-    padding-right: 156px;
   }
 }
 /*
-   The FAB floats over the bottom-right corner, which is where the footer's "Next" button sits: measured
-   at 900 it covered 119 × 40 px of it and took the click. While the FAB is on screen the footer's
-   actions keep clear of it — the same reservation the phone summary bar makes for itself.
+   Below 1024 the dock is fixed over the bottom-right corner, which is where the footer's "Next" button
+   sits: measured at 900 it covered 119 × 40 px of it and took the click. While it is on screen the
+   footer's actions keep clear of it. From 1024 up the dock lives inside the workspace instead.
 
-   `:has()` is already used in this file for the chips, so the browser support is the file's own.
+   `:has()` is already used in this file, so the browser support is the file's own.
 */
-.guest-quote:has(#g-assistant-fab) .g-footer-row {
-  padding-right: calc(143px + env(safe-area-inset-right));
+@media (max-width: 1023px) {
+  .guest-quote:has(#g-assistant-fab) .g-footer-row {
+    padding-right: calc(160px + env(safe-area-inset-right));
+  }
 }
 .g-assistant-strip {
   margin: 0;
@@ -3253,6 +3510,219 @@
   background: var(--g-ink-mute);
   color: var(--g-surface);
   cursor: default;
+}
+
+/* ------------------------------------------------------------------ assistant voice (plan 2026-11-22)
+
+   Four shapes of one row: the field and the mic, the recording bar, "Listening back…", and the field
+   again once a transcript is in it. The recording bar keeps the row's height so the composer does not
+   jump when it appears. */
+
+/* The mic: 44 × 44, icon only, inside the field's frame. Gold focus ring, like every control here. */
+.g-mic-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--g-heading);
+  cursor: pointer;
+}
+.g-mic-btn:hover:not(:disabled) {
+  background: var(--g-surface);
+}
+.g-mic-btn:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+.g-mic-btn:disabled {
+  color: var(--g-ink-mute);
+  cursor: default;
+}
+.g-mic-btn .g-icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* Recording: red dot, clock, wave, Cancel and Done — the same height as the field row. */
+.g-voice-rec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  padding: 6px 6px 6px 12px;
+  border: 1.5px solid var(--g-red-dark);
+  border-radius: 14px;
+  background: var(--g-surface-2);
+}
+.g-voice-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--g-red);
+  animation: g-voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes g-voice-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.g-voice-clock {
+  flex: none;
+  min-width: 76px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--g-ink);
+}
+/* Ten seconds left: amber, not red — the recording is not an error yet. */
+.g-voice-clock-warn {
+  color: var(--g-dot);
+}
+.g-voice-wave {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  height: 26px;
+}
+.g-voice-wave > span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--g-heading);
+  transform-origin: center;
+  transition: transform 90ms linear;
+}
+.g-voice-cancel,
+.g-voice-done {
+  flex: none;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.g-voice-cancel {
+  border: 1.5px solid var(--g-line);
+  background: var(--g-surface);
+  color: var(--g-ink);
+}
+.g-voice-cancel:hover,
+.g-voice-cancel:focus-visible {
+  background: var(--g-surface-2);
+}
+.g-voice-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--g-heading);
+  background: var(--g-heading);
+  color: var(--g-surface);
+}
+.g-voice-done:hover:not(:disabled),
+.g-voice-done:focus-visible {
+  filter: brightness(1.12);
+}
+.g-voice-done:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.g-voice-done .g-icon {
+  width: 16px;
+  height: 16px;
+}
+.g-voice-cancel:focus-visible,
+.g-voice-done:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 2px;
+}
+
+/* "Listening back…": the same row height, a small spinner, announced politely. */
+.g-voice-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 6px 12px;
+  border: 1.5px solid var(--g-line);
+  border-radius: 14px;
+  background: var(--g-surface-2);
+  color: var(--g-ink-soft);
+  font-size: 14px;
+}
+.g-voice-spinner {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--g-line);
+  border-top-color: var(--g-heading);
+  border-radius: 50%;
+  animation: g-voice-spin 0.9s linear infinite;
+}
+@keyframes g-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The hint that replaces the standing disclaimer while there is something to say about a transcript. */
+.g-voice-hint {
+  font-weight: 600;
+  color: var(--g-heading);
+}
+/* The empty-state invitation, under the hint, only while the mic is offered and nothing is typed. */
+.g-voice-invite {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--g-ink-soft);
+}
+
+/* A phone: the recording bar takes the row, so the Send button is not squeezed next to two buttons. */
+@media (max-width: 479px) {
+  .g-voice-rec {
+    gap: 6px;
+    padding-left: 10px;
+  }
+  .g-voice-clock {
+    min-width: 66px;
+    font-size: 12.5px;
+  }
+  .g-voice-cancel,
+  .g-voice-done {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+  .g-voice-wave {
+    gap: 2px;
+  }
+  .g-voice-wave > span {
+    width: 2px;
+  }
+}
+
+/* Motion off: no pulsing dot and no spinning ring; the clock still moves, which is the information. */
+@media (prefers-reduced-motion: reduce) {
+  .g-voice-dot,
+  .g-voice-spinner {
+    animation: none;
+  }
+  .g-voice-wave > span {
+    transition: none;
+  }
 }
 
 /* "Your recent requests" on ① (SentRequests.tsx): the last five sent from this device. */

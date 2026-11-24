@@ -11,28 +11,15 @@ import {
   type GuestDesignInput,
 } from '@sq/core/domain';
 import { metresLabel, shedOf } from '../designOps';
-import { closeTools, openAssistant, openTools, usePanels } from '../panels';
-import { sendToAssistant, useAssistant } from '../assistantStore';
-import { useAssistantOffered } from './AssistantPanel';
+import { closeTools, openTools, usePanels } from '../panels';
 import { GuestPlan } from './GuestPlan';
-import { IconChevronRight, IconList, IconWind } from './icons';
+import { IconList, IconWind } from './icons';
 
 type View = '2d' | '3d';
 
 const VIEWS: { id: View; label: string }[] = [
   { id: '2d', label: '2D plan' },
   { id: '3d', label: '3D model' },
-];
-
-/**
- * The chips under the stage. Each is a sentence the assistant already understands, so a person can
- * try it without knowing what to type. `needsDoors` marks the ones a carport must not offer.
- */
-const CHIPS: { text: string; needsDoors: boolean }[] = [
-  { text: 'Make it 9 metres wide', needsDoors: false },
-  { text: 'Add a roller door at the front', needsDoors: true },
-  { text: 'Add a window on the back', needsDoors: true },
-  { text: 'Change the roof colour', needsDoors: false },
 ];
 
 /**
@@ -95,11 +82,6 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const bp = usePanels((s) => s.bp);
   const leftOpen = usePanels((s) => s.leftOpen);
-  const rightOpen = usePanels((s) => s.rightOpen);
-  const assistant = useAssistantOffered();
-  const busy = useAssistant((s) => s.busy);
-  /* A type that takes no doors or windows must not offer a chip that asks for one (Review Focus 3). */
-  const doorsLocked = type.config.openings.rules.length === 0;
 
   useEffect(() => {
     const ok = webglAvailable();
@@ -165,11 +147,8 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
         ) : null}
 
         {/*
-          The two panel switches, at the right end of the toolbar so they sit where the stage is.
-
           "Tools" only exists on a phone, where the tools are a drawer with no rail to reopen them.
-          "AI Assistant" exists everywhere below 1280, where the assistant is a drawer or a sheet; at
-          1280 and above the column has its own hide button instead.
+          The assistant has one way in at every width: the "AI Assistant" dock, bottom-right.
         */}
         {bp === 'phone' ? (
           <button
@@ -183,19 +162,6 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
           >
             <IconList />
             Tools
-          </button>
-        ) : null}
-        {assistant && bp !== 'desktop' ? (
-          <button
-            type="button"
-            id="g-ai-btn"
-            className="g-stage-btn g-stage-btn-navy"
-            aria-expanded={rightOpen}
-            aria-controls="g-assistant"
-            onClick={() => openAssistant()}
-          >
-            <IconChevronRight />
-            AI Assistant
           </button>
         ) : null}
       </div>
@@ -223,27 +189,6 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
 
       {webgl === false ? (
         <p className="g-hint g-stage-3d-note">This browser cannot show the 3D model, so the plan is shown instead.</p>
-      ) : null}
-
-      {/*
-        "Ask the AI" chips: one click sends a sentence to the assistant without opening it, so a
-        person who is working on the plan does not lose it behind a drawer. Hidden while a turn is in
-        flight (the assistant is already answering one) and when there is no assistant at all.
-      */}
-      {assistant && !busy ? (
-        <div className="g-stage-asks" aria-label="Quick suggestions for the AI assistant">
-          <span className="g-stage-asks-label">Ask the AI:</span>
-          {CHIPS.filter((chip) => !(doorsLocked && chip.needsDoors)).map((chip) => (
-            <button
-              key={chip.text}
-              type="button"
-              className="g-chip-ask"
-              onClick={() => void sendToAssistant(chip.text, design, type.id)}
-            >
-              {chip.text}
-            </button>
-          ))}
-        </div>
       ) : null}
 
       <ul className="g-stage-chips" aria-label="Design summary">

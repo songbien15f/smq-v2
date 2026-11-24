@@ -8,21 +8,29 @@ import {
   type GuestDesignInput,
   type PlanGeometry,
   type WallSide,
+  wallLength,
 } from '@sq/core/domain';
 import {
   OPENING_SHORT,
+  WALLS,
   WALL_NAMES,
   addOpening,
   countOf,
   metresLabel,
   moveOpening,
+  positionOf,
+  positionOpening,
   removeOpening,
   ruleFor,
+  setMotorised,
   setOpeningSize,
+  setOpeningWall,
   shedOf,
   sizeLabel,
   snap,
+  SNAP_MM,
   type Fit,
+  type Position,
 } from '../designOps';
 import { updateDesign } from '../store';
 import { ChipRadios } from './ControlAccordion';
@@ -578,6 +586,9 @@ export function GuestPlan({ design, type }: { design: GuestDesignInput; type: Gu
               returnFocus.current = null;
             }
           }}
+          onChange={(fit, done) => {
+            apply(fit, done);
+          }}
           onClose={() => {
             setPopover(null);
             setMessage(null);
@@ -610,7 +621,73 @@ function arcPath(arc: { x: number; y: number; radius: number; rotation: number; 
 
 // ---------------------------------------------------------------- popovers
 
-const POP_W = 272;
+const POP_W = 288;
+const POP_MIN_H = 260;
+
+const POP_POSITIONS: { id: Position; label: string }[] = [
+  { id: 'left', label: 'Left' },
+  { id: 'centre', label: 'Centre' },
+  { id: 'right', label: 'Right' },
+];
+
+/**
+ * Distance from the wall's left corner (seen from outside), typed in metres. It commits on Enter or
+ * when focus leaves, and the placement rules pick the nearest legal spot; a key per offset resets it.
+ */
+function OffsetInput({
+  id,
+  offset,
+  run,
+  width,
+  onCommit,
+}: {
+  id: string;
+  offset: number;
+  run: number | null;
+  width: number;
+  onCommit: (mm: number) => void;
+}) {
+  const shown = (offset / 1000).toFixed(2);
+  const [text, setText] = useState(shown);
+  const max = run === null ? null : Math.max(0, run - width);
+  const commit = () => {
+    const m = Number(text.replace(',', '.'));
+    if (!Number.isFinite(m) || text.trim() === '') {
+      setText(shown);
+      return;
+    }
+    const mm = Math.round(m * 1000);
+    if (mm === offset) return;
+    onCommit(max === null ? Math.max(0, mm) : clamp(mm, 0, max));
+  };
+  return (
+    <div className="g-popover-offset">
+      <label htmlFor={id} className="g-chip-legend">
+        From left corner
+      </label>
+      <div className="g-popover-offset-row">
+        <input
+          id={id}
+          className="g-input"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            }
+          }}
+          aria-describedby={`${id}-hint`}
+        />
+        <span id={`${id}-hint`} className="g-popover-sub">
+          m{max === null ? '' : ` (0 – ${(max / 1000).toFixed(2)})`}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function PlanPopover({
   ref,
@@ -621,6 +698,7 @@ function PlanPopover({
   names,
   message,
   onApply,
+  onChange,
   onClose,
 }: {
   ref: React.Ref<HTMLDivElement>;
@@ -631,13 +709,21 @@ function PlanPopover({
   names: string[];
   message: string | null;
   onApply: (fit: Fit, done?: string) => void;
+  /** Like `onApply`, but the popover stays open: size, wall and position are tried one after another. */
+  onChange: (fit: Fit, done?: string) => void;
   onClose: () => void;
 }) {
   const left = clamp(popover.at.x - POP_W / 2, 8, Math.max(8, box.w - POP_W - 8));
   const below = popover.at.y < box.h / 2;
-  const style: CSSProperties = below
-    ? { left, top: popover.at.y + 16, width: POP_W }
-    : { left, bottom: box.h - popover.at.y + 16, width: POP_W };
+  // Room left between the anchor and the plan's edge. Too little (a short plan on a small screen)
+  // and the popover pins to the plan's top and scrolls inside, rather than running past the edge.
+  const room = below ? box.h - popover.at.y - 24 : popover.at.y - 24;
+  const style: CSSProperties =
+    room < POP_MIN_H
+      ? { left, top: 8, width: POP_W, maxHeight: Math.max(0, box.h - 16) }
+      : below
+        ? { left, top: popover.at.y + 16, width: POP_W, maxHeight: room }
+        : { left, bottom: box.h - popover.at.y + 16, width: POP_W, maxHeight: room };
 
   if (popover.kind === 'wall') {
     const { rules, lockedReason } = type.config.openings;
@@ -683,8 +769,9 @@ function PlanPopover({
   if (spec === undefined) return null;
   const rule = ruleFor(type, spec.type);
   const name = names[popover.index] ?? OPENING_SHORT[spec.type];
+  const shed = shedOf(design, type);
   return (
-    <div ref={ref} className="g-popover" style={style} role="dialog" aria-label={name}>
+    <div ref={ref} className="g-popover g-popover-opening" style={style} role="dialog" aria-label={name}>
       <p className="g-popover-title">
         {name} <span className="g-popover-sub">{WALL_NAMES[spec.wall]} wall</span>
       </p>
@@ -696,12 +783,66 @@ function PlanPopover({
           value={`${spec.size.width}x${spec.size.height}`}
           onPick={(id) => {
             const s = rule.sizes.find((x) => `${x.width}x${x.height}` === id);
-            if (s !== undefined) onApply(setOpeningSize(design, type, popover.index, s), `${name} is now ${sizeLabel(s)}.`);
+            if (s !== undefined) onChange(setOpeningSize(design, type, popover.index, s), `${name} is now ${sizeLabel(s)}.`);
           }}
         />
       ) : (
         <p className="g-popover-note">{sizeLabel(spec.size)}</p>
       )}
+      <ChipRadios
+        legend="Wall"
+        name={`g-pop-wall-${popover.index}`}
+        options={WALLS.map((w) => ({ id: w, label: WALL_NAMES[w] }))}
+        value={spec.wall}
+        onPick={(w) =>
+          onChange(setOpeningWall(design, type, popover.index, w as WallSide), `${name} moved to the ${WALL_NAMES[w as WallSide].toLowerCase()} wall.`)
+        }
+      />
+      <fieldset className="g-chip-set">
+        <legend className="g-chip-legend">Position</legend>
+        <div className="g-chips">
+          {POP_POSITIONS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="g-chip"
+              aria-pressed={positionOf(design, type, popover.index) === p.id}
+              onClick={() => onChange(positionOpening(design, type, popover.index, p.id), `${name} moved to the ${p.label.toLowerCase()}.`)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <OffsetInput
+        key={`${popover.index}-${spec.wall}-${spec.offset}`}
+        id={`g-pop-offset-${popover.index}`}
+        offset={spec.offset}
+        run={shed === null ? null : wallLength(shed, spec.wall)}
+        width={spec.size.width}
+        onCommit={(mm) => {
+          const fit = moveOpening(design, type, popover.index, snap(mm));
+          const landed = fit.ok ? fit.design.openings[popover.index]?.offset : undefined;
+          onChange(
+            fit,
+            landed === undefined
+              ? undefined
+              : `${name} moved to ${metresLabel(landed)} from the left corner${Math.abs(landed - mm) > SNAP_MM ? ', the nearest free spot' : ''}.`,
+          );
+        }}
+      />
+      {spec.type === 'roller_door' ? (
+        <label className="g-switch">
+          <input
+            type="checkbox"
+            className="g-switch-input"
+            checked={spec.motorised === true}
+            onChange={(e) => onChange({ ok: true, design: setMotorised(design, popover.index, e.target.checked) })}
+          />
+          <span className="g-switch-track" aria-hidden="true" />
+          <span>Motorised</span>
+        </label>
+      ) : null}
       {message === null ? null : (
         <p className="g-field-error" role="alert">
           {message}

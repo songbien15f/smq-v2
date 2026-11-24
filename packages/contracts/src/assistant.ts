@@ -138,3 +138,46 @@ export interface GuestAssistantTurnResponse {
   /** True when the assistant is switched off or out of quota: the page shows its "unavailable" strip. */
   unavailable?: boolean;
 }
+
+/* ---------------------------------------------------------------- voice (STT, plan 2026-11-22) */
+
+/**
+ * The audio containers a browser actually produces.
+ *
+ * Chrome/Edge record `audio/webm`, Firefox `audio/ogg`, Safari `audio/mp4`; the extra two are here
+ * because the probe script and a hand upload use them. The browser sends the part **before** `;`
+ * (`audio/webm;codecs=opus` → `audio/webm`), so a codec suffix never fails this list.
+ */
+export const GUEST_VOICE_MIME = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav'] as const;
+export type GuestVoiceMime = (typeof GUEST_VOICE_MIME)[number];
+
+/** The server's own ceiling. The recorder stops at 60 s and the route refuses more. */
+export const GUEST_VOICE_MAX_MS = 60_000;
+
+/**
+ * What the page posts: base64 audio, not multipart.
+ *
+ * This API has no multipart parser (see `routes/templateFiles.ts` for the same choice), and a JSON body
+ * keeps one content type across every bridge in the product. 1 400 000 characters of base64 is just
+ * over 1 MB of audio; the route checks the decoded length and answers 413.
+ */
+export const guestAssistantTranscribeRequest = z
+  .object({
+    audio: z.string().min(1).max(1_400_000),
+    mimeType: z.enum(GUEST_VOICE_MIME),
+    /** 300 ms is the shortest clip worth sending; the ceiling allows for the recorder's last chunk. */
+    durationMs: z.number().int().min(300).max(GUEST_VOICE_MAX_MS + 2_000),
+    /** Which building type the vocabulary prompt is built from. */
+    typeId: z.string().min(1).max(64),
+  })
+  .strict();
+export type GuestAssistantTranscribeRequest = z.infer<typeof guestAssistantTranscribeRequest>;
+
+export interface GuestAssistantTranscribeResponse {
+  /** Normalised and redacted. `''` means the audio could not be understood — the page says so. */
+  text: string;
+  /** Whether the words look like a shed request; the composer hints when they do not. */
+  onTopic: boolean;
+  /** Voice is switched off, out of daily budget or not configured: the page hides the mic. */
+  unavailable?: boolean;
+}

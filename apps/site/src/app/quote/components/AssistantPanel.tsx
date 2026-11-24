@@ -13,6 +13,8 @@ import {
   type AssistantTurn,
 } from '../assistantStore';
 import { IconChevronRight, IconList } from './icons';
+import { VoiceComposer } from './VoiceComposer';
+import { PanelSuggestions } from './AssistantFab';
 
 /**
  * "Shed Assistant" (plan G-g S11, laid out as a column by plan guest-template-3col Task 2).
@@ -203,12 +205,11 @@ function AssistantPanelBody({
       </div>
       <div className="g-assistant-head">
         <span className="g-assistant-avatar" aria-hidden="true">
-          S
+          AI
         </span>
         <div className="g-assistant-headtext">
           <h2 id="g-assistant-title" className="g-assistant-name">
-            Shed Assistant
-            <span className="g-assistant-badge">AI</span>
+            AI Assistant
           </h2>
           <p className="g-assistant-sub">With you for the whole design</p>
         </div>
@@ -273,6 +274,9 @@ function AssistantPanelBody({
             )}
           </ol>
 
+          {/* The dock's suggestions, in one slim row the visitor can fold away to give the chat room. */}
+          <PanelSuggestions design={design} type={type} />
+
           <form
             className="g-assistant-form"
             onSubmit={(e) => {
@@ -280,26 +284,18 @@ function AssistantPanelBody({
               send();
             }}
           >
-            <label className="g-sr-only" htmlFor="g-assistant-input">
-              Message the assistant
-            </label>
-            <div className="g-assistant-row">
-              <input
-                ref={inputRef}
-                id="g-assistant-input"
-                className="g-input"
-                type="text"
-                maxLength={1000}
-                placeholder="e.g. make it 9 metres wide"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                disabled={busy}
-              />
-              <button type="submit" className="g-btn g-btn-primary" disabled={busy || text.trim() === ''}>
-                {busy ? '…' : 'Send'}
-              </button>
-            </div>
-            <p className="g-hint">AI can make mistakes — check the plan. It never sends your request.</p>
+            {/*
+              The field, the microphone and the recording bar. Speech only ever fills the field: a
+              transcript is read and sent by the visitor, never by the recogniser (plan 2026-11-22).
+            */}
+            <VoiceComposer
+              typeId={type.id}
+              busy={busy}
+              value={text}
+              onChange={setText}
+              onSend={send}
+              inputRef={inputRef}
+            />
           </form>
         </>
       )}

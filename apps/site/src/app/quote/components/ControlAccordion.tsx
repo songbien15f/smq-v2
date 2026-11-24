@@ -41,11 +41,13 @@ import {
   type Position,
 } from '../designOps';
 import { updateDesign } from '../store';
+import { setToolsGroup, usePanels, type ToolsGroupId } from '../panels';
 import { IconChevronDown, IconLock, IconMinus, IconPlus, IconTrash } from './icons';
 import { SwatchGrid } from './SwatchGrid';
 
 /**
- * Tab ③'s controls (plan G-a S6, spec ③ "Khối điều khiển"): one `<details>` per group, group 1 open.
+ * Tab ③'s controls (plan G-a S6, spec ③ "Khối điều khiển"): one `<details>` per group, one open at a time
+ * (`panels.ts` `group`; Size by default).
  *
  * Every size the guest can reach is inside the building type's limits — the slider cannot leave them
  * and the number box clamps on blur — and every door position is one core's `placeOpening` accepts
@@ -66,10 +68,14 @@ export function ControlAccordion({
   const colourIssues = issues.filter((i) => i.path.startsWith('colours.'));
   const doorCount = design.openings.length;
   const locked = type.config.openings.rules.length === 0;
+  /* Single-open: the expanded group lives in the panels store, which the tools rail reads too. */
+  const group = usePanels((s) => s.group);
+  const toggle = (id: ToolsGroupId) => (event: React.SyntheticEvent<HTMLDetailsElement>) =>
+    setToolsGroup(id, event.currentTarget.open);
 
   return (
     <div className="g-accordion">
-      <details className="g-group" open>
+      <details className="g-group" open={group === 'g-group-size'} onToggle={toggle('g-group-size')}>
         <summary id="g-group-size" className="g-group-summary">
           <span className="g-group-title">Size &amp; structure</span>
           <span className="g-group-meta">{metresLabel(design.building.span)} × {metresLabel(guestLengthMm(design.building))}</span>
@@ -81,7 +87,7 @@ export function ControlAccordion({
         </div>
       </details>
 
-      <details className="g-group">
+      <details className="g-group" open={group === 'g-group-colours'} onToggle={toggle('g-group-colours')}>
         <summary id="g-group-colours" className="g-group-summary">
           <span className="g-group-title">Colours — Colorbond&reg;</span>
           <span className="g-group-meta">{design.colours.walls}</span>
@@ -93,7 +99,12 @@ export function ControlAccordion({
         </div>
       </details>
 
-      <details className="g-group" aria-disabled={locked || undefined}>
+      <details
+        className="g-group"
+        aria-disabled={locked || undefined}
+        open={group === 'g-group-doors'}
+        onToggle={toggle('g-group-doors')}
+      >
         <summary id="g-group-doors" className="g-group-summary">
           <span className="g-group-title">Doors &amp; windows</span>
           <span className="g-group-meta">
