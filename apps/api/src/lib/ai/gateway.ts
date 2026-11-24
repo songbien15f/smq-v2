@@ -259,6 +259,136 @@ export async function completeReply(
 }
 
 /**
+ * What the repair pass answers with: the transcript steered back to shed English, whether it is about
+ * a shed at all, and — when the recogniser plainly guessed — up to two other readings the visitor can
+ * pick instead. Strict shape, same rules as `REPLY_JSON_SCHEMA`.
+ */
+export const REPAIR_JSON_SCHEMA = {
+  name: 'guest_transcript_repair',
+  strict: true,
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['text', 'onTopic', 'confidence', 'alternatives'],
+    properties: {
+      text: {
+        type: 'string',
+        description: 'The corrected sentence. Empty only when the input was empty or pure noise.',
+      },
+      onTopic: {
+        type: 'boolean',
+        description: 'True when the sentence is a request or question about designing this shed.',
+      },
+      confidence: {
+        type: 'string',
+        enum: ['high', 'low'],
+        description: 'Low when a word or a number could reasonably have been something else.',
+      },
+      alternatives: {
+        type: 'array',
+        maxItems: 2,
+        items: { type: 'string' },
+        description: 'Other plausible readings of the same speech, most likely first. Empty when confident.',
+      },
+    },
+  },
+} as const;
+
+export interface TranscriptRepair {
+  text: string;
+  onTopic: boolean;
+  confidence: 'high' | 'low';
+  alternatives: string[];
+}
+
+/**
+ * The repair pass waits on a visitor who has just pressed Done, so it gets a shorter budget than a
+ * turn. On a timeout the route falls back to the raw transcript; nothing is lost but the polish.
+ */
+const REPAIR_TIMEOUT_MS = 8_000;
+
+/** The longest sentence the repair may hand back, so a model that rambles cannot fill the input. */
+const REPAIR_MAX_CHARS = 1_000;
+
+/**
+ * Steer a speech-to-text transcript into the shed domain with the language model.
+ *
+ * ## Why a model, not a correction table
+ *
+ * Mishearings are open-ended — accents, slurred words, half a sentence — and a hand-written list of
+ * "role a door → roller door" rules is never long enough. The model is told the vocabulary and the
+ * building in front of the visitor and asked to read the sentence the way a shed salesperson would.
+ *
+ * ## It suggests, it does not decide
+ *
+ * The answer only fills the visitor's input (and offers alternatives); the visitor still reads it and
+ * presses Send, and the turn's own scope guard still runs then. So a wrong repair costs a retype, not
+ * a design change. Returns `null` on any failure — the caller keeps the raw transcript.
+ *
+ * `system` is built by the caller (`lib/guestVoice.ts` `shedRepairPrompt`), because the vocabulary and
+ * the type's limits belong with the rest of the voice wording, not with the HTTP plumbing.
+ */
+export async function repairTranscript(
+  config: AssistantConfig,
+  system: string,
+  transcript: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<TranscriptRepair | null> {
+  try {
+    const response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: system },
+          // The visitor's words are data: fenced, so a sentence that reads like an instruction stays one.
+          { role: 'user', content: `Transcript:\n"""\n${transcript}\n"""` },
+        ],
+        temperature: 0,
+        response_format: { type: 'json_schema', json_schema: REPAIR_JSON_SCHEMA },
+      }),
+      signal: AbortSignal.timeout(REPAIR_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
+    const content = payload.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || content.trim() === '') return null;
+
+    const parsed = JSON.parse(content) as Partial<Record<keyof TranscriptRepair, unknown>>;
+    if (typeof parsed.text !== 'string' || typeof parsed.onTopic !== 'boolean') return null;
+
+    const text = parsed.text.replace(/\s+/g, ' ').trim().slice(0, REPAIR_MAX_CHARS);
+    // A blank answer to a non-blank sentence is the model giving up, not a repair.
+    if (text === '' && transcript.trim() !== '') return null;
+
+    const seen = new Set([text.toLowerCase()]);
+    const alternatives: string[] = [];
+    for (const alt of Array.isArray(parsed.alternatives) ? parsed.alternatives : []) {
+      if (typeof alt !== 'string') continue;
+      const clean = alt.replace(/\s+/g, ' ').trim().slice(0, REPAIR_MAX_CHARS);
+      if (clean === '' || seen.has(clean.toLowerCase())) continue;
+      seen.add(clean.toLowerCase());
+      alternatives.push(clean);
+      if (alternatives.length === 2) break;
+    }
+
+    return {
+      text,
+      onTopic: parsed.onTopic,
+      confidence: parsed.confidence === 'low' ? 'low' : 'high',
+      alternatives,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Speech to text. Returns `''` on any failure rather than throwing, because a transcript that cannot
  * be produced is "type it instead", not an error page.
  *

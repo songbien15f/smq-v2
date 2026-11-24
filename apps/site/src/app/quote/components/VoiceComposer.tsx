@@ -18,6 +18,15 @@
  * done           [ add a 3 metre roller door on the f ]  (mic)  [Send]
  * ```
  *
+ * ## After a transcript: three kinds of help, none of which sends
+ *
+ * - **Did you mean…?** — when the server's repair pass was unsure, its other readings are chips; a tap
+ *   swaps them into the field (and puts the replaced reading among the chips, so it can be swapped back).
+ * - **Off topic** — the hint says what the assistant is for and `examples` (the panel's dynamic
+ *   suggestions) become chips that fill the field.
+ * - **Number check** — a size this building cannot take gets an amber line, so "fifty" heard for
+ *   "fifteen" is noticed before Send, not after the change card.
+ *
  * ## Why it is not in `AssistantPanel`
  *
  * The panel owns the thread; this owns the microphone, its permission errors and the words it produced.
@@ -35,7 +44,7 @@ type Hint = 'ready' | 'offtopic' | 'empty' | 'voice_off' | 'denied' | 'no_device
 
 const HINTS: Record<Exclude<Hint, null>, string> = {
   ready: 'Check the words, then press Send.',
-  offtopic: 'I can only help with the shed design \u2014 try \u201cadd a window on the left wall\u201d.',
+  offtopic: 'I can only help design your shed \u2014 try one of these:',
   empty: 'Didn\u2019t catch that \u2014 try again or type it.',
   voice_off: 'Voice input isn\u2019t available right now \u2014 type your request instead.',
   denied: 'Microphone blocked \u2014 allow it in the browser\u2019s address bar, or type instead.',
@@ -64,6 +73,7 @@ export function VoiceComposer({
   onChange,
   onSend,
   inputRef,
+  examples,
 }: {
   typeId: string;
   busy: boolean;
@@ -71,10 +81,17 @@ export function VoiceComposer({
   onChange: (next: string) => void;
   onSend: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  /** Next steps that make sense for this design, offered when the visitor's words were off topic. */
+  examples: string[];
 }) {
   const recorder = useVoiceRecorder();
   const voiceUnavailable = useAssistant((s) => s.voiceUnavailable);
   const [hint, setHint] = useState<Hint>(null);
+  /** Other readings of the last transcript ("Did you mean…?") and size warnings for it. */
+  const [alternatives, setAlternatives] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  /** The reading now in the field, so a picked alternative replaces exactly those words. */
+  const lastTranscript = useRef('');
   /** What a screen reader is told, in words rather than every tick of the clock. */
   const [announce, setAnnounce] = useState('');
   const showMic = recorder.supported && !voiceUnavailable;
@@ -130,6 +147,9 @@ export function VoiceComposer({
           const current = latestRef.current.value;
           const next = current.trim() === '' ? result.text : `${current.trimEnd()} ${result.text}`;
           latestRef.current.onChange(next);
+          lastTranscript.current = result.text;
+          setAlternatives(result.onTopic ? result.alternatives : []);
+          setWarnings(result.numberWarnings);
           setHint(result.onTopic ? 'ready' : 'offtopic');
           setAnnounce('Transcript ready — check it, then send');
           focusEnd();
@@ -154,8 +174,40 @@ export function VoiceComposer({
     return () => window.removeEventListener('keydown', onKey);
   }, [recorder]);
 
+  /* Sent or cleared: the help was about words that are gone. */
+  useEffect(() => {
+    if (value.trim() !== '') return;
+    setAlternatives([]);
+    setWarnings([]);
+    setHint((h) => (h === 'ready' || h === 'offtopic' ? null : h));
+  }, [value]);
+
+  /** Swap the transcript in the field for another reading; the old one becomes a chip. */
+  const pickAlternative = (alt: string) => {
+    const current = latestRef.current.value;
+    const old = lastTranscript.current;
+    const next = old !== '' && current.includes(old) ? current.replace(old, alt) : alt;
+    onChange(next);
+    lastTranscript.current = alt;
+    setAlternatives((list) => [...list.filter((a) => a !== alt), ...(old === '' ? [] : [old])]);
+    setWarnings([]);
+    setAnnounce(`Changed to: ${alt}`);
+    focusEnd();
+  };
+
+  /** Off topic: an example replaces the field outright — the words there were not a shed request. */
+  const pickExample = (example: string) => {
+    onChange(example);
+    lastTranscript.current = '';
+    setHint('ready');
+    setAnnounce(`Filled in: ${example}`);
+    focusEnd();
+  };
+
   const startRecording = () => {
     setHint(null);
+    setAlternatives([]);
+    setWarnings([]);
     setAnnounce('Recording');
     void recorder.start();
   };
@@ -246,6 +298,38 @@ export function VoiceComposer({
       )}
 
       <p className={`g-hint${hint === null ? '' : ' g-voice-hint'}`}>{hintText}</p>
+      {hint === 'offtopic' && examples.length > 0 ? (
+        <ul className="g-voice-chips" aria-label="Things you can ask">
+          {examples.map((example) => (
+            <li key={example}>
+              <button type="button" className="g-chip-ask" onClick={() => pickExample(example)}>
+                {example}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {alternatives.length > 0 && hint === 'ready' ? (
+        <div className="g-voice-alts">
+          <span className="g-voice-alts-label">Did you mean</span>
+          <ul className="g-voice-chips" aria-label="Did you mean">
+            {alternatives.map((alt) => (
+              <li key={alt}>
+                <button type="button" className="g-chip-ask" onClick={() => pickAlternative(alt)}>
+                  {alt}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {warnings.length > 0 ? (
+        <ul className="g-voice-warn" role="status">
+          {warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      ) : null}
       {showMic && value.trim() === '' && hint === null ? (
         <p className="g-voice-invite">
           Tap the mic and say what you want — e.g. <em>add a roller door on the front</em>.

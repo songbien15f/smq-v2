@@ -178,6 +178,13 @@ export interface GuestAssistantTranscribeResponse {
   text: string;
   /** Whether the words look like a shed request; the composer hints when they do not. */
   onTopic: boolean;
+  /**
+   * Other readings of the same speech when the repair pass was unsure ("Did you mean…?"). Redacted
+   * like `text`. Empty when it was confident or did not run.
+   */
+  alternatives: string[];
+  /** One line per spoken size this building cannot take (e.g. 50 m wide on a 15 m type). */
+  numberWarnings: string[];
   /** Voice is switched off, out of daily budget or not configured: the page hides the mic. */
   unavailable?: boolean;
 }

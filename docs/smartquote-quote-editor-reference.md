@@ -132,13 +132,24 @@ Khách bấm mic trong khung "Shed Assistant", nói một câu về shed; server
 
 - **Đường đi:** `MediaRecorder` trong trình duyệt → blob → base64 trong JSON (không multipart) →
   `POST /public/guest/assistant/transcribe` → `transcribe()` gọi gateway → `normaliseShedTranscript`
-  (sửa lỗi nghe nhầm như "role a door" → "roller door") → `redact()` → trả `{ text, onTopic }`.
+  (chỉ gộp khoảng trắng) → `redact()` → `repairTranscript()` (một lượt model sửa nghe nhầm theo
+  `shedRepairPrompt(type)`) → trả `{ text, onTopic, alternatives, numberWarnings }`.
   Lượt chat thật vẫn là `/assistant/turn` khi khách bấm Send.
 - **Audio không lưu, không log** (không đĩa, không DB, không `request.log`); log lỗi chỉ có
   `mimeType`, `durationMs`, số byte. Transcript đã redact trước khi rời server.
-- **Chủ đề shed:** prompt từ vựng gửi cho STT, cộng bảng sửa lỗi nghe nhầm và `isShedTopic` (từ khoá +
-  mẫu số-kèm-đơn-vị). Không gọi model thêm. Transcript lạc chủ đề vẫn vào ô, kèm gợi ý "I can only help
-  with the shed design".
+- **Chủ đề shed (2026-11-24):** không còn bảng regex sửa lỗi viết tay. Sau STT, `repairTranscript`
+  (gateway, temperature 0, json_schema strict, timeout 8 s, không bao giờ throw) đọc câu như một yêu cầu
+  shed của đúng loại công trình (tên loại, mái, cửa, màu, giới hạn kích thước) và trả câu đã sửa,
+  `onTopic`, `confidence` và tối đa 2 cách đọc khác. Model được dặn giữ nguyên con số nghe được, kể cả
+  khi vượt giới hạn. Nếu lượt sửa lỗi thì dùng transcript thô và `isShedTopic` (từ khoá + mẫu
+  số-kèm-đơn-vị).
+  - **Did you mean:** `alternatives` thành chip dưới ô; bấm chip thì thay câu trong ô, câu cũ thành chip.
+  - **Lạc chủ đề:** gợi ý "I can only help design your shed — try one of these:" kèm 3 chip động
+    (`suggestionsFor(design, type)`); bấm chip thì thay toàn bộ ô.
+  - **Kiểm tra số:** `numberWarnings(text, type)` là code thuần, không tin model: số kèm đơn vị được gán
+    theo từ đứng sau rồi đứng trước (wide → span, high/walls → height, long → bayWidth×bays,
+    bay → bayWidth); kích thước cửa/cửa sổ bỏ qua; số không có ngữ cảnh chỉ cảnh báo khi lớn hơn mọi
+    kích thước của loại. Cảnh báo hiện thành dòng màu hổ phách, không chặn Send.
 - **Gateway và `prompt`:** đo 2026-11-22, `mgr/grok-stt` trả `400 BAD_REQUEST` cho `prompt` ở mọi độ dài
   (`language` và `response_format` thì nhận). Vì vậy `transcribe()` gửi prompt một lần rồi lùi về không
   prompt, nhớ theo model trong process. Hệ quả: với gateway hiện tại, phần "gợi ý từ vựng" của prompt

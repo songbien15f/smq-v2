@@ -97,8 +97,8 @@ import {
   resolveAssistantSession,
   runAssistantTurn,
 } from '../lib/guestAssistant.js';
-import { assistantConfigFromEnv, transcribe } from '../lib/ai/gateway.js';
-import { isShedTopic, normaliseShedTranscript, shedSttPrompt } from '../lib/guestVoice.js';
+import { assistantConfigFromEnv, repairTranscript, transcribe } from '../lib/ai/gateway.js';
+import { isShedTopic, normaliseShedTranscript, numberWarnings, shedRepairPrompt, shedSttPrompt } from '../lib/guestVoice.js';
 import { upgradeGuestDesign } from '@sq/core/domain';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -564,7 +564,7 @@ export function registerGuest(
       const voiceOn = voiceFlag === '1' || voiceFlag === 'true' || voiceFlag === 'on';
       const config = assistantEnabled() && voiceOn ? assistantConfigFromEnv() : null;
       if (config === null) {
-        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, unavailable: true };
+        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, alternatives: [], numberWarnings: [], unavailable: true };
         return sendOk(reply, data);
       }
 
@@ -610,7 +610,7 @@ export function registerGuest(
       );
       if (!cap.allowed) {
         request.log.info('guest voice daily budget spent');
-        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, unavailable: true };
+        const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, alternatives: [], numberWarnings: [], unavailable: true };
         return sendOk(reply, data);
       }
 
@@ -639,8 +639,24 @@ export function registerGuest(
         request.log.warn({ mimeType: body.mimeType, durationMs: body.durationMs, bytes: bytes.length }, 'guest voice: no transcript');
       }
 
-      const text = redact(normaliseShedTranscript(raw));
-      const data: GuestAssistantTranscribeResponse = { text, onTopic: isShedTopic(text) };
+      /*
+       * The model repairs what the recogniser misheard (lib/guestVoice.ts says why a model and not a
+       * table). Redacted before it is sent, so a number spoken by accident never reaches the gateway
+       * twice, and again after, because the model writes new text. It is counted by the voice quota
+       * already consumed above: one recording, one repair.
+       */
+      const heard = redact(normaliseShedTranscript(raw));
+      const repaired = heard === '' ? null : await repairTranscript(config, shedRepairPrompt(type), heard);
+      if (heard !== '' && repaired === null) request.log.warn('guest voice: repair unavailable, raw transcript kept');
+
+      const text = repaired === null ? heard : redact(repaired.text);
+      const alternatives = repaired === null ? [] : repaired.alternatives.map((a) => redact(a)).filter((a) => a !== text);
+      const data: GuestAssistantTranscribeResponse = {
+        text,
+        onTopic: repaired === null ? isShedTopic(text) : repaired.onTopic,
+        alternatives,
+        numberWarnings: numberWarnings(text, type),
+      };
       return sendOk(reply, data);
     },
   );

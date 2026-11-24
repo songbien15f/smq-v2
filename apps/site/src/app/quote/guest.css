@@ -3684,6 +3684,53 @@
   font-weight: 600;
   color: var(--g-heading);
 }
+/* After a transcript: "Did you mean" readings and off-topic examples, as compact chips that fill the field. */
+.g-voice-alts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+.g-voice-alts-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--g-ink-soft);
+}
+.g-voice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.g-voice-alts .g-voice-chips {
+  margin: 0;
+}
+.g-voice-chips .g-chip-ask {
+  min-height: 32px;
+  padding: 4px 12px;
+  border-width: 1px;
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .g-voice-chips .g-chip-ask {
+    min-height: 40px;
+  }
+}
+/* A spoken size the building cannot take: amber, so it is read before Send. */
+.g-voice-warn {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  list-style: none;
+  border: 1px solid var(--g-warn-line);
+  border-radius: 8px;
+  background: var(--g-warn-bg);
+  color: var(--g-heading);
+  font-size: 12px;
+  font-weight: 600;
+}
 /* The empty-state invitation, under the hint, only while the mic is offered and nothing is typed. */
 .g-voice-invite {
   margin: 2px 0 0;

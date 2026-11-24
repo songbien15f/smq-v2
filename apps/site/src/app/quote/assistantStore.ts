@@ -272,7 +272,7 @@ export async function transcribeVoice(
   mimeType: string,
   durationMs: number,
   typeId: string,
-): Promise<{ text: string; onTopic: boolean } | null> {
+): Promise<Omit<GuestAssistantTranscribeResponse, 'unavailable'> | null> {
   let audio: string;
   try {
     audio = await blobToBase64(blob);
@@ -290,5 +290,7 @@ export async function transcribeVoice(
     set({ voiceUnavailable: true });
     return null;
   }
-  return { text: result.data.text, onTopic: result.data.onTopic };
+  const { text, onTopic, alternatives, numberWarnings } = result.data;
+  // An older API answers without the two lists; treat that as "nothing to suggest".
+  return { text, onTopic, alternatives: alternatives ?? [], numberWarnings: numberWarnings ?? [] };
 }

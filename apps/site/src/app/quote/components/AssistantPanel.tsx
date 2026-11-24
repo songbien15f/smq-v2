@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GuestOpWire } from '@sq/contracts';
 import type { GuestBuildingTypeSpec, GuestDesignInput } from '@sq/core/domain';
 import { useGuest } from '../store';
@@ -14,7 +14,7 @@ import {
 } from '../assistantStore';
 import { IconChevronRight, IconList } from './icons';
 import { VoiceComposer } from './VoiceComposer';
-import { PanelSuggestions } from './AssistantFab';
+import { PanelSuggestions, suggestionsFor } from './AssistantFab';
 
 /**
  * "Shed Assistant" (plan G-g S11, laid out as a column by plan guest-template-3col Task 2).
@@ -167,6 +167,8 @@ function AssistantPanelBody({
   const unavailable = useAssistant((s) => s.unavailable);
   const pending = useAssistant((s) => s.pending);
   const [text, setText] = useState('');
+  /* Offered as chips when the visitor's spoken words were not about the shed. */
+  const examples = useMemo(() => suggestionsFor(design, type).slice(0, 3), [design, type]);
   const listRef = useRef<HTMLOListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -295,6 +297,7 @@ function AssistantPanelBody({
               onChange={setText}
               onSend={send}
               inputRef={inputRef}
+              examples={examples}
             />
           </form>
         </>
