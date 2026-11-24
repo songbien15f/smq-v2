@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Opening, ShedColors } from '../types';
 import { TEST_SHED } from '../defaults';
 import { openingParts, ROLLER_TRACK_WIDTH, TRACK_INSET } from '../openings3d';
+import { WALL_DEPTH } from '../structure3d';
 
 /**
  * The opening hardware, asserted as data.
@@ -52,8 +53,17 @@ describe('roller door', () => {
     expect(drum?.position[1] ?? 0).toBeGreaterThan(door.height);
   });
 
-  it('stands every piece of hardware proud of the wall, never inside the shed', () => {
-    for (const part of parts) expect(part.position[2]).toBeLessThan(0);
+  it('hangs the drum, brackets and springs inside the shed, everything else outside', () => {
+    const inside = (kind: string) => kind === 'drum' || kind.startsWith('bracket-') || kind.startsWith('spring-');
+    for (const part of parts) {
+      if (inside(part.kind)) {
+        // Wholly behind the inner face, so nothing of the drum shows from outside.
+        const reach = part.shape === 'box' ? (part.size?.[2] ?? 0) / 2 : (part.radius ?? 0);
+        expect(part.position[2] - reach).toBeGreaterThan(part.shape === 'box' ? 0 : WALL_DEPTH);
+      } else {
+        expect(part.position[2]).toBeLessThan(0);
+      }
+    }
   });
 
   it('never puts a face coplanar with the wall surface', () => {

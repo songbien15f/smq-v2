@@ -29,6 +29,8 @@
  */
 
 import type { Opening, ShedColors } from './types';
+/* The wall's cladding runs from z = 0 (outside face) to z = WALL_DEPTH (inside face). */
+import { WALL_DEPTH } from './structure3d';
 
 /** A point or an extent in wall-local millimetres. */
 export type Vec3 = [number, number, number];
@@ -118,7 +120,8 @@ function box(
  *
  * The desktop's `RDoor3D` draws the same set (`RDOOR_FRAME_THICK`, `ROLLER_RADIUS`,
  * `BRACKET_HEIGHT`) against a textured sheet. Here the sheet is sliced into real ribs, which stays
- * legible from every camera angle, and the hardware sits outside the wall (`z < 0`).
+ * legible from every camera angle. Curtain, guides and head sit outside the wall (`z < 0`); the
+ * drum, its brackets and springs are inside (`z > WALL_DEPTH`), hidden from outside.
  */
 export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors): OpeningPart[] {
   const w = opening.width;
@@ -177,11 +180,19 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
   );
 
   /*
-   * Drum, brackets and springs. The drum's lowest point sits above the head's top edge, or the
-   * rolled curtain appears to pass through its own frame.
+   * Drum, brackets and springs — **inside** the shed, on the inner face of the wall above the
+   * opening, as a roller door is actually hung: from outside only the curtain, guides and head
+   * show. The drum's lowest point sits above the head's top edge, or the rolled curtain appears to
+   * pass through its own frame. It clears the inner face (`z = WALL_DEPTH`) by 30 mm; each bracket
+   * reaches from the wall to past the drum's axis, its back face sunk 10 mm into the wall so it is
+   * never coplanar with the inner cladding surface.
    */
   const drumY = h + 250;
-  const drumZ = -140;
+  const drumZ = WALL_DEPTH + 30 + ROLLER_DRUM_RADIUS;
+  const bracketBack = WALL_DEPTH - 10;
+  const bracketFront = drumZ + 60;
+  const bracketZ = (bracketBack + bracketFront) / 2;
+  const bracketDepth = bracketFront - bracketBack;
   parts.push({
     kind: 'drum',
     shape: 'cylinder',
@@ -193,8 +204,8 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
     finish: 'metal',
   });
   parts.push(
-    box('bracket-left', [u + 35, h + 170, drumZ], [70, 220, 120], colors.barge, 'trim'),
-    box('bracket-right', [u + w - 35, h + 170, drumZ], [70, 220, 120], colors.barge, 'trim'),
+    box('bracket-left', [u + 35, h + 170, bracketZ], [70, 220, bracketDepth], colors.barge, 'trim'),
+    box('bracket-right', [u + w - 35, h + 170, bracketZ], [70, 220, bracketDepth], colors.barge, 'trim'),
   );
   for (const [index, at] of [0.3, 0.7].entries()) {
     parts.push({
