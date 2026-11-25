@@ -1,0 +1,80 @@
+{
+  "label": "before",
+  "at": "2026-11-24T09:39:31.095Z",
+  "design": {
+    "v": 2,
+    "typeId": "garage",
+    "typeVersion": 0,
+    "site": {
+      "suburb": "Ballarat",
+      "state": "VIC",
+      "postcode": "3350"
+    },
+    "building": {
+      "span": 6000,
+      "height": 3000,
+      "pitchDeg": 10,
+      "roof": "gable",
+      "bayWidths": [
+        3000,
+        3000
+      ],
+      "slab": "in_slab",
+      "kneeBrace": "standard",
+      "cladding": "vertical"
+    },
+    "openings": [
+      {
+        "type": "roller_door",
+        "wall": "front",
+        "offset": 1500,
+        "size": {
+          "width": 3000,
+          "height": 2100
+        },
+        "motorised": false
+      },
+      {
+        "type": "window",
+        "wall": "left",
+        "offset": 2400,
+        "size": {
+          "width": 900,
+          "height": 900
+        }
+      }
+    ],
+    "colours": {
+      "walls": "Shale Grey",
+      "roof": "Surfmist",
+      "trim": {
+        "barge": "Surfmist",
+        "gutter": "Surfmist",
+        "downpipe": "Surfmist"
+      }
+    }
+  },
+  "shots": [
+    "1919-3d-overview-roof.png",
+    "1919-3d-overview-noroof.png",
+    "1919-3d-eave-left-roof.png",
+    "1919-3d-eave-left-noroof.png",
+    "1919-3d-downpipe-front-left.png",
+    "1919-3d-downpipe-base.png",
+    "1919-3d-window-close.png",
+    "1919-3d-window-oblique.png",
+    "1919-2d-plan-fit.png",
+    "1919-2d-plan-window.png",
+    "390-3d-overview-roof.png",
+    "390-3d-overview-noroof.png",
+    "390-3d-eave-left-roof.png",
+    "390-3d-eave-left-noroof.png",
+    "390-3d-downpipe-front-left.png",
+    "390-3d-downpipe-base.png",
+    "390-3d-window-close.png",
+    "390-3d-window-oblique.png",
+    "390-2d-plan-fit.png",
+    "390-2d-plan-window.png"
+  ],
+  "commit": ""
+}

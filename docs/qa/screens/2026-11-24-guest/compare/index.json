@@ -1,0 +1,102 @@
+{
+  "made": [
+    {
+      "name": "m3-1919-3d-downpipe-base.png",
+      "file": "1919-3d-downpipe-base.png",
+      "pct": 2.98
+    },
+    {
+      "name": "m3-1919-3d-downpipe-front-left.png",
+      "file": "1919-3d-downpipe-front-left.png",
+      "pct": 4.27
+    },
+    {
+      "name": "m4-1919-3d-eave-left-noroof.png",
+      "file": "1919-3d-eave-left-noroof.png",
+      "pct": 1.49
+    },
+    {
+      "name": "m4-1919-3d-eave-left-roof.png",
+      "file": "1919-3d-eave-left-roof.png",
+      "pct": 2.32
+    },
+    {
+      "name": "m4-1919-3d-overview-noroof.png",
+      "file": "1919-3d-overview-noroof.png",
+      "pct": 0.65
+    },
+    {
+      "name": "e9-1919-3d-overview-roof.png",
+      "file": "1919-3d-overview-roof.png",
+      "pct": 0.56
+    },
+    {
+      "name": "cua-so-1919-3d-window-close.png",
+      "file": "1919-3d-window-close.png",
+      "pct": 3.04
+    },
+    {
+      "name": "cua-so-1919-3d-window-oblique.png",
+      "file": "1919-3d-window-oblique.png",
+      "pct": 3.6
+    },
+    {
+      "name": "m3-390-3d-downpipe-base.png",
+      "file": "390-3d-downpipe-base.png",
+      "pct": 3.25
+    },
+    {
+      "name": "m3-390-3d-downpipe-front-left.png",
+      "file": "390-3d-downpipe-front-left.png",
+      "pct": 7.19
+    },
+    {
+      "name": "m4-390-3d-eave-left-noroof.png",
+      "file": "390-3d-eave-left-noroof.png",
+      "pct": 1.75
+    },
+    {
+      "name": "m4-390-3d-eave-left-roof.png",
+      "file": "390-3d-eave-left-roof.png",
+      "pct": 3.27
+    },
+    {
+      "name": "m4-390-3d-overview-noroof.png",
+      "file": "390-3d-overview-noroof.png",
+      "pct": 0.89
+    },
+    {
+      "name": "e9-390-3d-overview-roof.png",
+      "file": "390-3d-overview-roof.png",
+      "pct": 1.47
+    },
+    {
+      "name": "cua-so-390-3d-window-close.png",
+      "file": "390-3d-window-close.png",
+      "pct": 1.69
+    },
+    {
+      "name": "cua-so-390-3d-window-oblique.png",
+      "file": "390-3d-window-oblique.png",
+      "pct": 4.61
+    }
+  ],
+  "skipped": [
+    {
+      "file": "1919-2d-plan-fit.png",
+      "why": "0.93 % — không có thay đổi có chủ đích (2D)"
+    },
+    {
+      "file": "1919-2d-plan-window.png",
+      "why": "0.93 % — không có thay đổi có chủ đích (2D)"
+    },
+    {
+      "file": "390-2d-plan-fit.png",
+      "why": "ảnh before rỗng 358×3 — panel 2D cao 2 px ở 390 (bug CSS, đã sửa vòng 4)"
+    },
+    {
+      "file": "390-2d-plan-window.png",
+      "why": "ảnh before rỗng 358×3 — panel 2D cao 2 px ở 390 (bug CSS, đã sửa vòng 4)"
+    }
+  ]
+}
