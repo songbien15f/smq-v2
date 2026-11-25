@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { cleanUpGuestRequests, guestEmail } from './guestCleanup';
 
 /**
  * The public Guest page (`apps/site` `/quote`): a visitor picks a building type, gives an address and
@@ -26,7 +27,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * Running the file more than about five times in an hour answers 429 `rate_limited`; that is the
  * limiter working, not the page failing.
  *
- * Rows from this suite carry "E2E" in their additional request and an `@example.com` address.
+ * Rows from this suite carry "E2E" in their additional request and an `@example.com` address, and
+ * are deleted again after the run (`guestCleanup.ts`; `E2E_KEEP_GUEST_REQUESTS=1` keeps them).
  */
 
 const PLACES_ROUTES = '**/api/sq/public/guest/places/**';
@@ -201,6 +203,8 @@ async function send(page: Page, email: string): Promise<void> {
 const ASSISTANT_ROUTE = '**/api/sq/public/guest/assistant/turn';
 
 test.describe('Guest quote page', () => {
+  test.afterAll(cleanUpGuestRequests);
+
   test('the assistant applies a change, and one Undo puts it back', async ({ page }) => {
     // `?assistant=1` shows the panel; the model call itself is stubbed below (a live model is not a
     // test dependency, and the server would spend money on every run).
@@ -228,7 +232,7 @@ test.describe('Guest quote page', () => {
 
     // `?assistant=1` from the first load: the contact details are memory-only, so a later reload
     // would lock step ② and there would be no panel to test.
-    const email = `test.guest+ai${Date.now()}@example.com`;
+    const email = guestEmail('ai');
     await fillStart(page, { phone: false }, email, '/quote?assistant=1');
 
     await expect(summary(page, false)).toContainText('6.00 ×');
@@ -257,7 +261,7 @@ test.describe('Guest quote page', () => {
       }),
     );
 
-    const email = `test.guest+ai${Date.now()}b@example.com`;
+    const email = guestEmail('aib');
     await fillStart(page, { phone: false }, email, '/quote?assistant=1');
 
     // The assistant starts closed on every width; the bottom-right "AI Assistant" dock opens it.
@@ -273,7 +277,7 @@ test.describe('Guest quote page', () => {
 
   test('the 3D tab is the default and draws the building', async ({ page }) => {
     // The model only mounts when WebGL answers; the phone test below covers the fallback path.
-    const email = `test.guest+3d${Date.now()}@example.com`;
+    const email = guestEmail('3d');
     await fillStart(page, { phone: false }, email);
 
     // 3D is the opening view on a machine that supports it (plan S8).
@@ -309,7 +313,7 @@ test.describe('Guest quote page', () => {
   });
 
   test('designs a building and sends a quote request (desktop)', async ({ page }) => {
-    const email = `test.guest+e2e${Date.now()}@example.com`;
+    const email = guestEmail('e2e');
     await fillStart(page, { phone: false }, email);
     await design(page, { phone: false });
 
@@ -333,7 +337,7 @@ test.describe('Guest quote page', () => {
 
   test('works at phone width (390)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    const email = `test.guest+e2emob${Date.now()}@example.com`;
+    const email = guestEmail('e2emob');
     await fillStart(page, { phone: true }, email);
     await design(page, { phone: true });
 

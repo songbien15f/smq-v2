@@ -2833,24 +2833,45 @@
   color: var(--g-ink-soft);
 }
 /* The fixed +61 sits inside the field's border, so a guest types only the national number. */
+/*
+ * The +61 box is drawn as one field: the frame carries the same 1.5px --g-ink-mute border, radius
+ * and 6px top margin as a plain .g-input, so it lines up with Email beside it. The focus ring and the
+ * invalid border move to the frame too (the inner input has no border of its own), and there is no
+ * `overflow: hidden`, which used to clip the ring.
+ */
 .g-input-with-prefix {
   display: flex;
   align-items: stretch;
-  border: 1px solid var(--g-line);
+  box-sizing: border-box;
+  min-height: 48px;
+  margin-top: 6px;
+  border: 1.5px solid var(--g-ink-mute);
   border-radius: 10px;
   background: var(--g-surface);
-  overflow: hidden;
+}
+.g-input-with-prefix:focus-within {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 1px;
+}
+.g-input-with-prefix:has(.g-input[aria-invalid='true']) {
+  border-color: var(--g-red-dark);
 }
 .g-input-with-prefix .g-input {
+  margin-top: 0;
+  min-height: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 0 8.5px 8.5px 0;
   min-width: 0;
+}
+.g-input-with-prefix .g-input:focus-visible {
+  outline: none;
 }
 .g-input-prefix {
   display: flex;
   align-items: center;
   padding: 0 10px;
   border-right: 1px solid var(--g-line);
+  border-radius: 8.5px 0 0 8.5px;
   background: var(--g-surface-2);
   color: var(--g-ink-soft);
   font-variant-numeric: tabular-nums;

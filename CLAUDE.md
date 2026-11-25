@@ -63,6 +63,7 @@ pnpm --filter @sq/api typecheck
 - **Tests need Postgres and `TEST_DATABASE_URL`.** The application database is Postgres everywhere (DECISIONS D1) — there is no SQLite fallback. The suites (`@sq/api`, `@sq/db`) **drop every table** in a database whose name contains `test`, and refuse any other name: `TEST_DATABASE_URL=postgres://…/smartquote_test pnpm test`. `@sq/db` uses its own schema (`db_suite`) inside that database because Turbo runs the two suites in parallel.
 - API test files run **serially** (`fileParallelism: false`) on purpose: each file resets a shared database.
 - E2E uses the machine's installed Chrome (`channel: 'chrome'`), one worker, and a saved session in `e2e/.auth/` (a session holds a licence seat — don't add per-test sign-ins). The vendor-dashboard spec needs `VENDOR_DASHBOARD_PASSWORD` from `.env`.
+- The Guest spec sends one real quote request per run and deletes the `guest_requests`/`guest_contacts` rows it created in `afterAll` (`e2e/guestCleanup.ts`, straight to Postgres via `DATABASE_URL`, only that run's `@example.com` addresses). `E2E_KEEP_GUEST_REQUESTS=1` keeps them.
 - Real-price-book check of the engine (prints, doesn't assert): `cd packages/core && npx tsx scripts/golden.ts [--sqd <file.sqd>]`.
 - No linter/formatter is configured.
 
