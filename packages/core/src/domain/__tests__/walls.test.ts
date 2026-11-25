@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { buildWallGeometries } from '../walls';
-import { placementToPlanRect } from '../placement';
+import { placementToPlanRect, resolveOpeningPlacement, wallLength } from '../placement';
 import { TEST_SHED } from '../defaults';
+import type { DimensionedShed, Opening, WallSide } from '../types';
 
 const shed = {
   ...TEST_SHED,
@@ -130,4 +131,99 @@ describe('buildWallGeometries', () => {
     expect(project(left, left.holes[0].u).Z).toBeCloseTo(leftRect.y + leftRect.height);
     expect(project(left, left.holes[0].u + left.holes[0].width).Z).toBeCloseTo(leftRect.y);
   });
+});
+
+/**
+ * Proves the 2026-11-25 refactor of `buildWallGeometries` changed **nothing**: the function now calls
+ * `wallHolesFor`, which is the old inline loop moved out. This rebuilds the old algorithm verbatim
+ * from `HEAD~` and compares both outputs for a spread of buildings, including ones whose openings are
+ * clamped, oversized or negative.
+ */
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), Math.max(min, max));
+
+/** The old `buildWallGeometries`, copied from git HEAD before the extraction. */
+function oldBuild(shed: DimensionedShed) {
+  const SIDES: WallSide[] = ['front', 'back', 'left', 'right'];
+  const wallTransform = (side: WallSide) => {
+    const { span, length } = shed;
+    switch (side) {
+      case 'back':
+        return { position: [span, 0, length] as [number, number, number], rotationY: Math.PI };
+      case 'left':
+        return { position: [0, 0, length] as [number, number, number], rotationY: Math.PI / 2 };
+      case 'right':
+        return { position: [span, 0, 0] as [number, number, number], rotationY: -Math.PI / 2 };
+      default:
+        return { position: [0, 0, 0] as [number, number, number], rotationY: 0 };
+    }
+  };
+  return SIDES.map((side) => {
+    const width = wallLength(shed, side);
+    const holes: { u: number; sill: number; width: number; height: number }[] = [];
+    for (const opening of shed.openings) {
+      if (opening.wall !== side) continue;
+      const { u } = resolveOpeningPlacement(opening, shed);
+      const holeWidth = clamp(opening.width, 0, width);
+      const sill = clamp(opening.sill, 0, shed.height);
+      const holeHeight = clamp(opening.height, 0, shed.height - sill);
+      holes.push({ u: clamp(u, 0, width - holeWidth), sill, width: holeWidth, height: holeHeight });
+    }
+    const height =
+      side === 'right'
+        ? shed.height +
+          (shed.structureType === 'gable' || shed.structureType === 'gable_carport'
+            ? 0
+            : Math.tan((shed.roofPitchDeg * Math.PI) / 180) * shed.span)
+        : shed.height;
+    return { side, width, height, holes, transform: wallTransform(side) };
+  });
+}
+
+const op = (patch: Partial<Opening> & Pick<Opening, 'type' | 'wall'>): Opening => ({
+  id: 'x',
+  width: 900,
+  height: 900,
+  sill: 0,
+  align: 'custom',
+  offset: 0,
+  swing: null,
+  track: null,
+  ...patch,
+});
+
+const cases: { name: string; shed: DimensionedShed }[] = [
+  { name: 'plain', shed: TEST_SHED },
+  {
+    name: 'oversized opening (clamped)',
+    shed: { ...TEST_SHED, openings: [op({ type: 'roller_door', wall: 'front', width: 30000 })] },
+  },
+  {
+    name: 'negative sill',
+    shed: { ...TEST_SHED, openings: [op({ type: 'window', wall: 'left', sill: -500 })] },
+  },
+  {
+    name: 'tall opening',
+    shed: { ...TEST_SHED, openings: [op({ type: 'window', wall: 'right', height: 99999, sill: 0 })] },
+  },
+  {
+    name: 'aligned, no offset',
+    shed: { ...TEST_SHED, openings: [op({ type: 'pa_door', wall: 'back', align: 'center' })] },
+  },
+  {
+    name: 'skillion',
+    shed: {
+      ...TEST_SHED,
+      structureType: 'skillion',
+      openings: [op({ type: 'window', wall: 'up' as WallSide })].filter(() => false),
+    },
+  },
+];
+
+describe('buildWallGeometries: refactor is behaviour-preserving', () => {
+  for (const { name, shed } of cases) {
+    it(name, () => {
+      expect(buildWallGeometries(shed)).toEqual(oldBuild(shed));
+    });
+  }
 });

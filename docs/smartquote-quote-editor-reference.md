@@ -1264,36 +1264,81 @@ lưu trong `detail_json`.
 
 | File | Trả về | Test |
 |---|---|---|
-| `packages/core/src/domain/openings3d.ts` | `openingParts(opening, u, colors)` — mảnh phần cứng của một cửa, toạ độ **wall-local mm** | `__tests__/openings3d.test.ts` (20) |
-| `packages/core/src/domain/structure3d.ts` | `roofParts` / `gableEndParts` / `gutterParts` / `frameParts` / `purlinAndGirtParts` / `structureParts` | `__tests__/structure3d.test.ts` (19) |
+| `packages/core/src/domain/openings3d.ts` | `openingParts(opening, u, colors)` — mảnh phần cứng của một cửa, toạ độ **wall-local mm** | `__tests__/openings3d.test.ts` (42) |
+| `packages/core/src/domain/structure3d.ts` | `roofParts` / `bargeParts` / `gableEndParts` / `gutterParts` / `baseTrimParts` / `cornerTrimParts` / `frameParts` / `purlinAndGirtParts` / `structureParts` | `__tests__/structure3d.test.ts` (40) |
 | `packages/client/.../three/PartMesh.tsx` | đặt mảnh vào scene, chọn material theo `finish` | — |
 
 Hai module core là **plain data**, không import three: một test khẳng định được "mọi cửa cuốn có 2
 ray", "tang cuốn nằm trên khung đầu", "không mảnh đặc nào phủ kính cửa sổ" mà không cần WebGL.
 
 **Hệ toạ độ** (ghi trong `openings3d.ts`): `x` dọc tường tính từ góc trái **nhìn từ ngoài**, `y` cao
-từ sàn, **`z` dương là đi vào trong nhà**. Phần cứng ngoài tường vì thế có `z < 0`. Đây từng là lỗi
-thật: khung cửa sổ cũ đặt `z = +8` nên nằm *sau* kính, không lộ ra.
+từ sàn, **`z` dương là đi vào trong nhà**, và `z = 0` là **mặt ngoài của tôn**. Đây từng là hai lỗi
+thật liên tiếp: khung cửa sổ cũ đặt `z = +8` nên nằm *sau* kính, không lộ ra; lượt sau đặt nó ở
+`z = −25`, tức nhô ra 25 mm. Luật hiện hành ở mục 12.6d.
 
 **Hằng số dùng chung với 2D**: `plan.ts` import `JAMB`, `ROLLER_*`, `WINDOW_*`, `TRACK_INSET` từ
 `openings3d.ts`, nên ký hiệu 2D và ray 3D là cùng một số đo.
+
+### 12.6d Hệ trim 3D — cửa bằng mặt tôn, viền 4 cạnh, base/corner/ridge/barge (2026-11-25)
+
+Góp ý của client, nguyên văn: *"WID, PAD vẽ trồi ra ngoài mặt sheeting cũng sai nha, phải bằng mặt
+ngoài / cái viền trim đỏ trên top mới có, ko có bottom / cái viền trim đỏ bottom của cái shed cũng ko
+có / thiếu viền trim ridge trên roof, corner trim trên wall"*. **WID** là window, **PAD** là PA door
+(desktop: `using WID = …Window; using PAD = …PADoor`, `Wall/WallCombo.cs:13-14`).
+
+**Luật: mọi mảnh của cửa sổ và PA door có mặt ngoài `z ≥ 0`.** Ngoại lệ duy nhất là **cánh PA door
+đang mở** (`leaf`, `leaf-handle`): cánh quay 22° quanh bản lề nên quét ra ngoài `z = 0`. Đó là cánh
+chuyển động, không phải khung đứng ngoài tường. Test ghi rõ ngoại lệ này
+(`openings3d.test.ts` → "flush with the sheeting — the client rule").
+
+Cách dựng, từ ngoài vào trong:
+
+| Lớp | `z` | Ghi chú |
+|---|---|---|
+| Viền trim (`trim-*`) | 0 … 25 | mặt trước **đúng mặt tôn**; 45 mm mỗi cạnh, cùng tiết diện cho cửa sổ và PA door |
+| Khung cửa sổ (`frame-*`) | 27 … 87 | lùi sau viền 2 mm, vẫn trong lỗ sâu 90 mm |
+| Kính | 70 … 80 | trong khung, nhìn xuyên qua |
+| Ngưỡng PA door (`trim-sill`) | 0 … 25 | nay cao bằng 3 cạnh kia, sát sàn |
+
+**Chống z-fighting, ba lớp:** (1) viền nằm **trong lỗ**, không đè lên tôn nên không cùng mặt với tôn;
+(2) mọi mảnh lùi vào lỗ 1,5 mm (`OPENING_CLEARANCE`) nên không mặt nào trùng mặt cắt của lỗ; (3) các
+thanh của viền không chồng nhau — đầu và ngưỡng chạy hết bề rộng, hai cạnh đứng lấp khoảng giữa.
+
+**Trim vỏ nhà** (`structure3d.ts`), tất cả màu `colors.barge`:
+
+| Mảnh | Số đo | Số lượng |
+|---|---|---|
+| Base trim | cao **75 mm**, dày 4 mm (1 mm lấp vào tôn + 3 mm nhô) | mỗi tường có tôn một dải, **ngắt** ở mọi ô cửa chạm sàn |
+| Corner trim | mỗi cánh **60 mm**, nhô 4 mm (1 mm hơn base để không đồng phẳng) | 4 góc × 2 cánh; **bỏ** góc có một phía tường mở; carport **0** |
+| Ridge cap | 2 cánh **175 mm** nằm trên hai slope, gặp nhau đúng đỉnh đã nâng | gable 2; skillion **0** |
+| Barge flashing | mặt **100 mm**, dày 3 mm; chạy từ chỗ ridge cap dừng tới **5 mm trước tang gutter** | gable **4**, skillion **3** (2 dốc + 1 mép cao) — đúng `KNOWN-DEVIATIONS` dòng 58 |
+
+Base trim và corner trim là **tường**, nên vẫn còn khi tắt mái (`showRoof: false`); barge và ridge là
+**trim mép mái**, đi theo mái. Base trim **không có trong BOM**: desktop chỉ có
+`ROLLTOP_RIDGE_CAPPING`, `CORNER_FLASHING`, `GABLE_BARGE`, `CORO_CAPPING` (`EFlashingType.cs`), nên
+đây là "3D only, không có trong BOM".
+
+**Còn nhô khỏi `z = 0` và cố ý chưa sửa** (ngoài phạm vi góp ý): roller door — curtain −39, gờ slat
+−53, ray −45, khung đầu −130, thanh đáy −64; sliding door — `track-top` −125 (double −245),
+`track-bottom` −72, cánh −99 / −159. Số này được **chốt trong test** để lần sau ai đổi cũng thấy.
 
 ### Cửa — mỗi loại một bộ phần cứng
 
 | Loại | Mảnh |
 |---|---|
 | `roller_door` | curtain + gờ slat 150 mm + 2 ray (45 mm) + khung đầu + tang cuốn Ø300 + 2 bracket + 2 lò xo + thanh đáy |
-| `pa_door` | khung 3 cạnh 70 mm + ngưỡng + cánh mở 22° + tay nắm + 3 bản lề; cánh lật theo `hinge` |
+| `pa_door` | viền 4 cạnh 45 mm (`barge`) + ngưỡng cao bằng 3 cạnh kia + cánh mở 22° (`paDoor`) + tay nắm + 3 bản lề; cánh lật theo `hinge` |
 | `sliding_door` | 1–2 cánh (theo `leaves`), mỗi cánh 4 thanh + panel; ray 1 hoặc 2 lớp (60/120 mm), dài đúng khoảng cánh chiếm |
-| `window` | vòng 4 thanh 45 mm + đố giữa khi rộng > 900 + kính lùi 30 mm + flashing đầu/sill |
+| `window` | viền 4 thanh 45 mm (`barge`) + khung 4 thanh (`window`, lùi sau viền) + đố giữa khi rộng > 900 + kính lùi |
 | `opening` | không có gì — tường khoét, không lắp |
 
 ### Vỏ nhà
 
-- **Mái**: 2 slope đúng pitch + ridge cap (chỉ gable; skillion 1 slope, không ridge).
+- **Mái**: 2 slope đúng pitch + ridge cap hai cánh (chỉ gable; skillion 1 slope, không ridge).
 - **Đầu hồi**: tam giác kín ở hai đầu khi nhà có tường đầu hồi; **bỏ** nếu đầu đó đã có option
   `gable_infill` để không vẽ đôi. Carport không có tường đầu hồi nên không đóng.
 - **Máng xối + ống thoát**: luôn có (BOM luôn tính), đặt ngoài tường dưới eave.
+- **Trim chân/góc tường**: base + corner, theo bảng ở 12.6d; ở lại khi tắt mái.
 - **Khung**: cột + bản mã ở mỗi grid line, rìa theo pitch.
 - **Purlin / girt**: chỉ vẽ **sau khi evaluate**, đọc `frameLayout` từ `EvaluationView`
   (`purlinRows`, `purlinSpanMm`, `girtRows`, `girtSpanMm`) — đó là số của sách giá, không đoán.

@@ -96,30 +96,41 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function buildWallGeometries(shed: DimensionedShed): WallGeometry[] {
   return SIDES.map((side) => {
-    const width = wallLength(shed, side);
-    const holes: WallHole[] = [];
-
-    for (const opening of shed.openings) {
-      if (opening.wall !== side) continue;
-      const { u } = resolveOpeningPlacement(opening, shed);
-      const holeWidth = clamp(opening.width, 0, width);
-      // Clamp vertically too. A hole that leaves the counter-clockwise outline
-      // has no defined result in `ExtrudeGeometry` (it silently renders as a
-      // malformed or solid wall), so `sill` and `height` are bounded to the wall
-      // face in the same pass as the horizontal clamp. Clamp `sill` first, then
-      // `height` against the space that remains above it.
-      const sill = clamp(opening.sill, 0, shed.height);
-      const holeHeight = clamp(opening.height, 0, shed.height - sill);
-      holes.push({
-        u: clamp(u, 0, width - holeWidth),
-        sill,
-        width: holeWidth,
-        height: holeHeight,
-      });
-    }
-
     // A skillion's right wall carries the high side of the roof, so it is taller than the others.
     const height = side === 'right' ? shed.height + skillionRiseMm(shed) : shed.height;
-    return { side, width, height, holes, transform: wallTransform(shed, side) };
+    return { side, width: wallLength(shed, side), height, holes: wallHolesFor(shed, side), transform: wallTransform(shed, side) };
   });
+}
+
+/**
+ * The holes one wall was cut with, in wall-local millimetres.
+ *
+ * Extracted from `buildWallGeometries` so a second reader — the base trim, which has to stop where a
+ * door reaches the floor — measures the same holes the wall was actually cut with. Re-deriving them
+ * from `opening.offset` would leave the trim short or over-long wherever a hole was clamped.
+ */
+export function wallHolesFor(shed: DimensionedShed, side: WallSide): WallHole[] {
+  const width = wallLength(shed, side);
+  const holes: WallHole[] = [];
+
+  for (const opening of shed.openings) {
+    if (opening.wall !== side) continue;
+    const { u } = resolveOpeningPlacement(opening, shed);
+    const holeWidth = clamp(opening.width, 0, width);
+    // Clamp vertically too. A hole that leaves the counter-clockwise outline
+    // has no defined result in `ExtrudeGeometry` (it silently renders as a
+    // malformed or solid wall), so `sill` and `height` are bounded to the wall
+    // face in the same pass as the horizontal clamp. Clamp `sill` first, then
+    // `height` against the space that remains above it.
+    const sill = clamp(opening.sill, 0, shed.height);
+    const holeHeight = clamp(opening.height, 0, shed.height - sill);
+    holes.push({
+      u: clamp(u, 0, width - holeWidth),
+      sill,
+      width: holeWidth,
+      height: holeHeight,
+    });
+  }
+
+  return holes;
 }

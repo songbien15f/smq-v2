@@ -1,0 +1,87 @@
+{
+  "label": "after",
+  "at": "2026-11-25T10:01:48.194Z",
+  "design": {
+    "v": 2,
+    "typeId": "garage",
+    "typeVersion": 0,
+    "site": {
+      "suburb": "Ballarat",
+      "state": "VIC",
+      "postcode": "3350"
+    },
+    "building": {
+      "span": 6000,
+      "height": 3000,
+      "pitchDeg": 10,
+      "roof": "gable",
+      "bayWidths": [
+        3000,
+        3000
+      ],
+      "slab": "in_slab",
+      "kneeBrace": "standard",
+      "cladding": "vertical"
+    },
+    "openings": [
+      {
+        "type": "roller_door",
+        "wall": "front",
+        "offset": 1500,
+        "size": {
+          "width": 3000,
+          "height": 2100
+        },
+        "motorised": false
+      },
+      {
+        "type": "window",
+        "wall": "left",
+        "offset": 3900,
+        "size": {
+          "width": 900,
+          "height": 900
+        }
+      },
+      {
+        "type": "pa_door",
+        "wall": "back",
+        "offset": 2400,
+        "size": {
+          "width": 820,
+          "height": 2040
+        }
+      }
+    ],
+    "colours": {
+      "walls": "Shale Grey",
+      "roof": "Surfmist",
+      "trim": {
+        "barge": "Manor Red",
+        "gutter": "Surfmist",
+        "downpipe": "Surfmist"
+      }
+    }
+  },
+  "derived": {
+    "WINDOW": {
+      "x": 0,
+      "y": 1.35,
+      "z": 1.6500000000000004
+    },
+    "PA": {
+      "x": 3.19,
+      "y": 1.02,
+      "z": 6
+    }
+  },
+  "shots": [
+    "1919-overview.png",
+    "1919-window.png",
+    "1919-pa-door.png",
+    "1919-wall-base.png",
+    "1919-ridge.png",
+    "1919-corner.png",
+    "1919-barge.png"
+  ]
+}

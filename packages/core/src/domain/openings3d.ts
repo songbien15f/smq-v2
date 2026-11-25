@@ -13,9 +13,17 @@
  *
  * Wall-local millimetres, the same frame `buildWallGeometries` uses: `x` runs along the wall from
  * its left corner **as seen from outside**, `y` is height above the floor, and `z` points **into**
- * the shed. Hardware that stands proud of the wall therefore has `z < 0`. This is stated once here
- * because getting it backwards is invisible until somebody looks at the render: the editor's
- * window frame was written into the wall for exactly that reason.
+ * the shed. The cladding occupies `z ∈ [0, WALL_DEPTH]`, so `z = 0` is the outside face.
+ *
+ * ## Nothing fitted into a window or a PA door stands proud of the sheeting
+ *
+ * A client reading the model said the window and the PA door "vượt ra ngoài mặt sheeting cũng sai,
+ * phải bằng mặt ngoài" — they must be flush with the outer face. That is now a rule with a test:
+ * every part of a window or a PA door has its outer face at `z ≥ 0`. The frame and its trim ring sit
+ * **inside the hole**, so they never overlap the sheeting and cannot z-fight with it.
+ *
+ * The one exception is the PA door's **leaf**, which is drawn swung open and therefore sweeps outside
+ * `z = 0`. That is the leaf's own movement, not the frame standing off the wall.
  *
  * ## Where the numbers come from
  *
@@ -89,12 +97,46 @@ export const ROLLER_TRACK_WIDTH = JAMB / 2;
 export const ROLLER_DRUM_RADIUS = 150;
 /** Roller door slat pitch, mm. 150 is a common commercial slat. */
 export const ROLLER_SLAT_PITCH = 150;
-/** PA door frame section, mm — the desktop's `PADOOR_COLUMN_THICK` is 30; 70 reads at 20 m. */
-export const PA_FRAME = 70;
+/**
+ * Face width of the trim ring around a window or a PA door, mm.
+ *
+ * One width on **all four** sides and for **both** openings, because a visitor reads a window as
+ * framed or not framed at all: a flashing across the head and none at the sill reads as a mistake
+ * (the client said so — "cái viền trim đỏ trên top mới có, ko có bottom"). 45 mm is wide enough to
+ * read at 20 m and narrow enough that the glass is still the window.
+ */
+export const OPENING_TRIM_FACE = 45;
+/**
+ * How far the trim ring reaches into the wall, mm.
+ *
+ * It sits **inside the hole**, from the sheeting plane inwards, so it never laps the sheeting and
+ * cannot z-fight with it. A trim that lapped the outside face would have to stand proud of it, which
+ * is exactly what the client objected to.
+ */
+export const OPENING_TRIM_DEPTH = 25;
+/**
+ * Gap between anything fitted into a hole and the hole's own cut edges, mm.
+ *
+ * A frame whose side face lay exactly on the hole's inner face would share a plane with the extruded
+ * cladding and flicker as the camera moved. 1.5 mm of clearance is invisible at 20 m and puts every
+ * fitted face a hair inside the opening, where nothing can be coplanar.
+ */
+export const OPENING_CLEARANCE = 1.5;
+/**
+ * Gap between a fitted part and the sheeting plane it sits behind, mm.
+ *
+ * The trim ring's front face is **flush** with the sheeting at `z = 0`; the window frame behind it
+ * starts 2 mm further in, so the ring's back face and the frame's front face never coincide.
+ */
+export const OPENING_STACK_GAP = 2;
+/** PA door section, mm — the desktop's `PADOOR_COLUMN_THICK` is 30; the ring's 45 reads at 20 m. */
+export const PA_FRAME = OPENING_TRIM_FACE;
 /** Window frame section, mm. Twice `WINDOW_INSET`, so a frame matches the 2D inset. */
 export const WINDOW_FRAME = WINDOW_INSET * 2;
 /** How far a PA door leaf stands open, radians. */
 export const PA_OPEN_ANGLE = (22 * Math.PI) / 180;
+/** Thickness of a PA door's leaf, mm. */
+export const PA_LEAF_THICK = 45;
 /** Glass tint. Not a paint colour: the book's `window` role is the *frame*. */
 export const GLASS_COLOR = '#9fc3d0';
 
@@ -228,60 +270,127 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
   return parts;
 }
 
+/* ------------------------------------------------------------------ trim ring */
+
+/**
+ * A closed four-sided trim ring around a hole, in **barge** colour.
+ *
+ * ## Why four sides and not two
+ *
+ * The head and the sill used to be different objects — a head flashing wider than the frame and a
+ * sill cover under it — so a window read as "framed on top, unframed below". A client described
+ * exactly that: *"cái viền trim đỏ trên top mới có, ko có bottom"*. One section on all four sides
+ * makes the window read as one object.
+ *
+ * ## Why the bars do not overlap
+ *
+ * Head and sill run the full width; the jambs fill the height **between** them. Two bars crossing at
+ * a corner would put two front faces at exactly the same plane, and a coplanar pair flickers as the
+ * camera moves — the "chớp chớp" this codebase has already been bitten by twice.
+ *
+ * ## Why it sits inside the hole
+ *
+ * The whole ring lies in `z ∈ [0, depth]`: its front face is the sheeting plane and it grows
+ * *inward*. A ring that lapped the sheeting would have to stand proud of it, which is the thing the
+ * client objected to. Inside the hole it covers no sheeting, so it cannot z-fight with it either.
+ */
+function trimRing(
+  u: number,
+  sill: number,
+  width: number,
+  height: number,
+  color: string,
+  face: number,
+  depth: number,
+): OpeningPart[] {
+  const z = depth / 2;
+  // Inside the hole by a clearance all round, so no face lies on the hole's cut edge.
+  const inset = OPENING_CLEARANCE;
+  const innerW = width - inset * 2;
+  const innerH = height - inset * 2;
+  // A narrow opening would otherwise ask for a negative jamb height.
+  const jambHeight = Math.max(0, innerH - face * 2);
+  const x = u + inset;
+  const y = sill + inset;
+  return [
+    box('trim-head', [x + innerW / 2, y + innerH - face / 2, z], [innerW, face, depth], color, 'trim'),
+    box('trim-sill', [x + innerW / 2, y + face / 2, z], [innerW, face, depth], color, 'trim'),
+    box('trim-left', [x + face / 2, y + innerH / 2, z], [face, jambHeight, depth], color, 'trim'),
+    box('trim-right', [x + innerW - face / 2, y + innerH / 2, z], [face, jambHeight, depth], color, 'trim'),
+  ];
+}
+
 /* ------------------------------------------------------------------ PA door */
 
 /**
- * Personal access door: a three-sided frame, a leaf swung open, handle and hinges.
+ * Personal access door: a four-sided trim frame, a leaf swung open, handle and hinges.
  *
- * The leaf hangs on the jamb `hinge` names (left as seen from outside by default) and swings
- * outward, which is negative `z`. Its rotation is carried on the part rather than applied by the
- * renderer, so a right-hinged door is a different set of numbers, not a different code path.
+ * ## Flush with the sheeting
+ *
+ * Every part of the door except the swinging leaf lies in `z ∈ [0, …]`, so nothing stands off the
+ * outside face. The surround is `colors.barge` like every other piece of trim on the building; the
+ * leaf keeps `colors.paDoor`, which is the door's own paint. Before this the whole frame was
+ * `paDoor` and 70 mm proud of the wall.
+ *
+ * The leaf is drawn **open** on the `hinge` jamb and therefore sweeps outside `z = 0`. That is the
+ * leaf's own movement, not the frame standing off the wall, and the flushness test allows for it.
  */
 export function paDoorParts(opening: Opening, u: number, colors: ShedColors): OpeningPart[] {
   const w = opening.width;
   const h = opening.height;
-  const cx = u + w / 2;
   const hingedRight = opening.hinge === 'right';
   const parts: OpeningPart[] = [];
 
-  // Frame: two stiles, a head, a threshold. The threshold closes the bottom.
-  parts.push(
-    box('frame-left', [u + PA_FRAME / 2, h / 2, -PA_FRAME / 2], [PA_FRAME, h, PA_FRAME * 1.4], colors.paDoor, 'trim'),
-    box('frame-right', [u + w - PA_FRAME / 2, h / 2, -PA_FRAME / 2], [PA_FRAME, h, PA_FRAME * 1.4], colors.paDoor, 'trim'),
-    box('frame-head', [cx, h - PA_FRAME / 2, -PA_FRAME / 2], [w, PA_FRAME, PA_FRAME * 1.4], colors.paDoor, 'trim'),
-    box('threshold', [cx, 10, -PA_FRAME], [w, 20, PA_FRAME * 1.8], colors.barge, 'metal'),
-  );
+  // The surround, closed on all four sides: two stiles, a head and a threshold at the floor.
+  parts.push(...trimRing(u, 0, w, h, colors.barge, PA_FRAME, OPENING_TRIM_DEPTH));
 
-  const leafWidth = w - PA_FRAME * 2;
-  const leafHeight = h - PA_FRAME * 2;
+  /*
+   * The leaf fills the ring's opening, a clearance inside it — not the whole hole, or it would pass
+   * through its own surround.
+   */
+  const jamb = PA_FRAME + OPENING_CLEARANCE;
+  const leafWidth = Math.max(0, w - jamb * 2);
+  const leafHeight = Math.max(0, h - jamb * 2);
   const angle = PA_OPEN_ANGLE;
-  const hingeX = hingedRight ? u + w - PA_FRAME : u + PA_FRAME;
+  const hingeX = hingedRight ? u + w - jamb : u + jamb;
   // A leaf hinged on the right opens the other way, so its sweep is mirrored.
   const swing = hingedRight ? -1 : 1;
 
+  /*
+   * The hinge axis sits on the outside face, so a closed leaf would fill the reveal from `z = 0` to
+   * `z = PA_LEAF_THICK`. Swinging it about that axis moves the free edge out (`z < 0`) and leaves the
+   * hinge edge exactly where the frame is — which is what stops the leaf drifting out of its own hole.
+   */
+  const zHinge = PA_LEAF_THICK / 2;
   const leafCentreX = hingeX + swing * (leafWidth / 2) * Math.cos(angle);
-  const leafCentreZ = -(leafWidth / 2) * Math.sin(angle) - PA_FRAME;
+  const leafCentreZ = zHinge - (leafWidth / 2) * Math.sin(angle);
 
   parts.push(
     box(
       'leaf',
-      [leafCentreX, PA_FRAME + leafHeight / 2, leafCentreZ],
-      [leafWidth, leafHeight, 45],
+      [leafCentreX, jamb + leafHeight / 2, leafCentreZ],
+      [leafWidth, leafHeight, PA_LEAF_THICK],
       colors.paDoor,
       'door',
       [0, swing * angle, 0],
     ),
   );
 
-  // Handle near the free edge, at the same rotation as the leaf.
+  /*
+   * Handle near the free edge, at the same rotation as the leaf, on its outside face.
+   *
+   * Named `leaf-handle` rather than `handle` so the flushness rule can except the **leaf assembly**
+   * with one prefix: a handle is bolted to the leaf, and a leaf swung open carries it outside the
+   * wall. Anything not named `leaf*` must stay behind the sheeting plane.
+   */
   const handleAt = 0.88;
   parts.push(
     box(
-      'handle',
+      'leaf-handle',
       [
         hingeX + swing * leafWidth * handleAt * Math.cos(angle),
-        PA_FRAME + leafHeight * 0.48,
-        -leafWidth * handleAt * Math.sin(angle) - PA_FRAME - 60,
+        jamb + leafHeight * 0.48,
+        zHinge - leafWidth * handleAt * Math.sin(angle) - PA_LEAF_THICK / 2 - 14,
       ],
       [150, 28, 28],
       colors.barge,
@@ -290,12 +399,12 @@ export function paDoorParts(opening: Opening, u: number, colors: ShedColors): Op
     ),
   );
 
-  // Three hinges on the hinge stile.
+  // Three hinges on the hinge stile, inside the reveal so no barrel stands off the wall.
   for (const at of [0.18, 0.5, 0.82]) {
     parts.push(
       box(
         `hinge-${at}`,
-        [hingeX + swing * 10, PA_FRAME + leafHeight * at, -PA_FRAME - 20],
+        [hingeX + swing * 10, jamb + leafHeight * at, 22],
         [36, 90, 40],
         colors.barge,
         'metal',
@@ -385,11 +494,26 @@ export function slidingDoorParts(opening: Opening, u: number, colors: ShedColors
 /* ------------------------------------------------------------------ window */
 
 /**
- * Window: a ring of four bars, a centre mullion above 900 mm, glass set back, flashing above and
- * a sill cover below.
+ * Window: a four-sided trim ring, a set-back frame, glass, and one mullion above 900 mm.
  *
- * The frame is four separate bars on purpose. A single box larger than the hole reads as a solid
- * rectangle — which is what the editor drew for a while — because nothing is left open for glass.
+ * ## Flush with the sheeting
+ *
+ * Every part lies in `z ∈ [0, …]`. The ring is the outermost thing the visitor sees, its front face
+ * on the sheeting plane; the frame sits behind it inside the hole; the glass sits behind the frame.
+ * Nothing stands off the wall — the client's "phải bằng mặt ngoài".
+ *
+ * ## Why four separate frame bars
+ *
+ * A single box larger than the hole reads as a solid rectangle — which is what the editor drew for a
+ * while — because nothing is left open for glass. The bars of the ring and the frame are each sized to
+ * their own edge, and the jambs stop short of the head and sill bars, so no two front faces share a
+ * plane.
+ *
+ * ## Colours
+ *
+ * The **ring** is `colors.barge`, the same trim colour as the ridge, the barge and the base. The
+ * window's own frame inside it stays `colors.window` — the book prices a window frame separately from
+ * the flashing, and one colour for every piece of trim is what the client asked for.
  */
 export function windowParts(opening: Opening, u: number, colors: ShedColors): OpeningPart[] {
   const w = opening.width;
@@ -398,50 +522,59 @@ export function windowParts(opening: Opening, u: number, colors: ShedColors): Op
   const parts: OpeningPart[] = [];
 
   /*
-   * Depth in the wall, not a crate bolted to it.
+   * Depths, measured from the sheeting plane and growing inward.
    *
-   * The frame used to be `WINDOW_FRAME * 1.4` (126 mm) deep, centred at z = −35, so 98 mm of it stood
-   * outside a 50 mm cladding, and the flashings reached 125 mm. At grazing angles it read as a box
-   * stuck on the wall (measured 2026-11-24). Drawn in three planes now:
+   *   ring       z ∈ [0, 25]          front face on the sheeting plane
+   *   frame      z ∈ [27, 87]         behind the ring, still inside the 90 mm hole depth
+   *   glass      z ∈ [70, 80]         inside the frame, visible through it
    *
-   *   outside face  z = −25   the frame's front, 25 mm proud of the cladding
-   *   glass         z = −10   inside the frame, still visible through it
-   *   flashing      z = −15   outer face at −45, so it reads as a drip, not a shelf
+   * The hole is `WINDOW_DEPTH` (90 mm) deep, so the frame's back face lands 3 mm inside the reveal —
+   * never on it. The 2 mm between ring and frame is `OPENING_STACK_GAP`.
    */
-  const FRAME_DEPTH = 60;
-  const frameZ = -25 + FRAME_DEPTH / 2;
-  const FLASH_DEPTH = 60;
-  const flashZ = -45 + FLASH_DEPTH / 2;
+  const frameDepth = 60;
+  const frameFront = OPENING_TRIM_DEPTH + OPENING_STACK_GAP;
+  const frameZ = frameFront + frameDepth / 2;
+
+  /*
+   * The frame sits inside the ring's opening, a clearance in from it, so no frame face shares a plane
+   * with a ring face either.
+   */
+  const clearance = OPENING_CLEARANCE;
+  const frameInset = clearance + OPENING_TRIM_FACE + clearance;
+  const frameW = w - frameInset * 2;
+  const frameH = h - frameInset * 2;
+  const fx = u + frameInset;
+  const fy = sill + frameInset;
 
   parts.push({
     kind: 'glass',
     shape: 'box',
-    position: [u + w / 2, sill + h / 2, -10],
-    size: [w - WINDOW_FRAME, h - WINDOW_FRAME, 10],
+    position: [u + w / 2, sill + h / 2, 75],
+    size: [Math.max(0, frameW - WINDOW_FRAME * 2), Math.max(0, frameH - WINDOW_FRAME * 2), 10],
     color: GLASS_COLOR,
     finish: 'glass',
     opacity: 0.34,
   });
 
   parts.push(
-    box('frame-left', [u + WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, h, FRAME_DEPTH], colors.window, 'trim'),
-    box('frame-right', [u + w - WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, h, FRAME_DEPTH], colors.window, 'trim'),
-    box('frame-head', [u + w / 2, sill + h - WINDOW_FRAME / 2, frameZ], [w, WINDOW_FRAME, FRAME_DEPTH], colors.window, 'trim'),
-    box('frame-sill', [u + w / 2, sill + WINDOW_FRAME / 2, frameZ], [w, WINDOW_FRAME, FRAME_DEPTH], colors.window, 'trim'),
+    box('frame-left', [fx + WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, frameH, frameDepth], colors.window, 'trim'),
+    box('frame-right', [fx + frameW - WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, frameH, frameDepth], colors.window, 'trim'),
+    box('frame-head', [fx + frameW / 2, fy + frameH - WINDOW_FRAME / 2, frameZ], [frameW, WINDOW_FRAME, frameDepth], colors.window, 'trim'),
+    box('frame-sill', [fx + frameW / 2, fy + WINDOW_FRAME / 2, frameZ], [frameW, WINDOW_FRAME, frameDepth], colors.window, 'trim'),
   );
 
   // One centre mullion on a wide window, as the desktop's `Window3D` draws.
   if (w > 900) {
     parts.push(
-      box('mullion', [u + w / 2, sill + h / 2, frameZ], [46, h - WINDOW_FRAME * 2, FRAME_DEPTH], colors.window, 'trim'),
+      box('mullion', [u + w / 2, sill + h / 2, frameZ], [46, Math.max(0, frameH - WINDOW_FRAME * 2), frameDepth], colors.window, 'trim'),
     );
   }
 
-  // Flashing: a drip above and a sill cover below, both wider than the frame.
-  parts.push(
-    box('head-flashing', [u + w / 2, sill + h + 15, flashZ], [w + 160, 30, FLASH_DEPTH], colors.barge, 'trim'),
-    box('sill-flashing', [u + w / 2, sill - 20, flashZ], [w + 120, 40, FLASH_DEPTH], colors.barge, 'trim'),
-  );
+  /*
+   * The trim ring is the last thing pushed so a renderer that draws in order puts it in front of the
+   * frame, and so does a reader of the part list.
+   */
+  parts.push(...trimRing(u, sill, w, h, colors.barge, OPENING_TRIM_FACE, OPENING_TRIM_DEPTH));
 
   return parts;
 }
