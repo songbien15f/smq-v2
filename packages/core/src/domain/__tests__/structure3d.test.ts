@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TEST_SHED } from '../defaults';
 import type { DimensionedShed, Opening } from '../types';
+import { buildWallGeometries } from '../walls';
 import {
   BASE_TRIM_HEIGHT,
   BARGE_FACE,
@@ -236,6 +237,94 @@ describe('base trim', () => {
     };
     const front = baseTrimParts(shed({ openings: [window] })).filter((part) => part.kind === 'base-trim-front');
     expect(front).toHaveLength(1);
+  });
+
+  /*
+   * Four walls, four chances to be wrong.
+   *
+   * The test above only ever put its door on the **front** wall, and the front wall is the one wall whose
+   * transform is the identity. Three of the four walls are rotated or mirrored, so a run computed from
+   * the wall-local `u` was right on the front and wrong on the other three — measured on 2026-11-25: a
+   * PA door at `offset` 2 400 on the back wall has its hole at world x 2 780…3 600 while the trim was cut
+   * at 2 400…3 220, which left a red 380 mm bar **under the door** and 380 mm of bare wall beside it.
+   *
+   * The world position is derived from `buildWallGeometries(...).transform` — the same data the renderer
+   * uses to place the wall — rather than from a table of flips copied into the test. A copy would agree
+   * with a wrong implementation as easily as with a right one.
+   */
+  describe('on every wall, not just the front one', () => {
+    const SIDES: Opening['wall'][] = ['front', 'back', 'left', 'right'];
+    // 6 × 6 m, a PA door at 2 400 which is 820 wide: off-centre on every wall, so a mirrored run cannot
+    // accidentally land on the right place.
+    const OFF_CENTRE = { offset: 2400, width: 820 };
+
+    /** The wall's own local→world mapping, as a point on its sheeting plane. */
+    const wallFrame = (side: Opening['wall']) => {
+      const wall = buildWallGeometries(shed({ openings: [door(side, OFF_CENTRE.offset, OFF_CENTRE.width)] })).find(
+        (w) => w.side === side,
+      )!;
+      const [px, , pz] = wall.transform.position;
+      const t = wall.transform.rotationY;
+      /*
+       * `wallTransform` places the wall with `position` and `rotationY` and extrudes its shape from
+       * local x = 0 along local +x, so a local point (u, y, 0) lands at
+       * (px + u·cos t, y, pz − u·sin t). That is a rotation, not a case table: it holds for all four.
+       */
+      const toWorld = (u: number): [number, number] => [px + u * Math.cos(t), pz - u * Math.sin(t)];
+      // Which world axis the wall runs along, read from the same rotation.
+      const runsAlongX = Math.abs(Math.cos(t)) > 0.5;
+      return { wall, toWorld, runsAlongX };
+    };
+
+    /**
+     * A part's extent on one world axis, as drawn.
+     *
+     * A base trim part carries its wall's `rotationY` and its size in the wall's own axes, so its
+     * footprint on `x`/`z` is the rotated projection — reading `size` straight would be the same
+     * mistake the trim itself made.
+     */
+    const extentOn = (
+      part: { position: number[]; size?: number[]; rotation?: number[] },
+      axis: 'x' | 'z',
+    ): [number, number] => {
+      const [sx = 0, , sz = 0] = part.size ?? [];
+      const t = part.rotation?.[1] ?? 0;
+      const half =
+        axis === 'x'
+          ? (sx / 2) * Math.abs(Math.cos(t)) + (sz / 2) * Math.abs(Math.sin(t))
+          : (sx / 2) * Math.abs(Math.sin(t)) + (sz / 2) * Math.abs(Math.cos(t));
+      const p = axis === 'x' ? part.position[0] : part.position[2];
+      return [p - half, p + half];
+    };
+
+    for (const side of SIDES) {
+      it(`${side}: the run stops at the door's own edges`, () => {
+        const { wall, toWorld, runsAlongX } = wallFrame(side);
+        const axis = runsAlongX ? 'x' : 'z';
+        const [hole] = wall.holes;
+        const a = toWorld(hole!.u)[runsAlongX ? 0 : 1];
+        const b = toWorld(hole!.u + hole!.width)[runsAlongX ? 0 : 1];
+        const holeStart = Math.min(a, b);
+        const holeEnd = Math.max(a, b);
+
+        const runs = baseTrimParts(shed({ openings: [door(side, OFF_CENTRE.offset, OFF_CENTRE.width)] }))
+          .filter((part) => part.kind === `base-trim-${side}`)
+          .map((part) => extentOn(part, axis));
+        // A door in the middle of the wall leaves a run on each side of it.
+        expect(runs, `${side} runs`).toHaveLength(2);
+
+        runs.sort((m, n) => m[0] - n[0]);
+        const [before, after] = runs as [[number, number], [number, number]];
+
+        // 1. Nothing is drawn across the opening.
+        expect(before[1], `${side} run ends before the hole starts`).toBeLessThanOrEqual(holeStart + 1e-6);
+        expect(after[0], `${side} second run starts after the hole ends`).toBeGreaterThanOrEqual(holeEnd - 1e-6);
+
+        // 2. Neither is it held back: each end sits on its edge of the hole, within 1 mm.
+        expect(Math.abs(holeStart - before[1]), `${side} left end vs hole`).toBeLessThanOrEqual(1);
+        expect(Math.abs(after[0] - holeEnd), `${side} right end vs hole`).toBeLessThanOrEqual(1);
+      });
+    }
   });
 });
 

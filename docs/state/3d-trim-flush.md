@@ -71,3 +71,73 @@ dừng ở `x = −150` (trái) / `x = span + 150` (phải).
 | `pnpm build:inc` | chạy sau mỗi lần sửa core |
 | `pnpm --filter @sq/site-app typecheck` | sạch |
 | `pnpm test:e2e --project=guest` | **5/5 passed**, GR-000053 tự xoá |
+
+---
+
+## Vòng 2 (2026-11-25) — base trim ngắt sai ở tường sau/trái, và màu sàn
+
+Plan: `docs/plans/2026-11-25-3d-trim-flush-round2-prompt.md`. Chỉ hai việc, không thêm gì khác.
+
+### Lỗi 1 — base trim ngắt sai chỗ trên tường sau và tường trái
+
+**Triệu chứng** (review đo bằng probe trên garage 6 × 6 m, PA door 820 mm, `offset` 2 400): trên
+tường **back** lỗ cửa thật nằm ở x 2 780…3 600 nhưng base trim bị cắt ở x 2 400…3 220; trên tường
+**left** đúng cùng kiểu lệch, theo `z`. Kết quả: dải đỏ chạy 380 mm **dưới cửa** và 380 mm chân tường
+cạnh cửa không có trim.
+
+**Nguyên nhân.** `baseTrimParts` lấy `hole.u` từ `wallHolesFor` — toạ độ **cục bộ của tường** — rồi dùng
+thẳng làm toạ độ thế giới. Điều đó chỉ đúng ở tường **front**, tường duy nhất có transform là identity.
+Tường back bị xoay π (`x = span − u`) và tường left xoay π/2 (`z = length − u`). Tệ hơn: file có **hai**
+mô tả vị trí tường — `wallTransform` (walls.ts, dùng để đặt tường) và một bảng 4 trường hợp `wallPlane`
+(structure3d.ts, dùng để đặt trim) — và chúng đã lệch nhau.
+
+**Cách sửa.** Xoá hẳn `wallPlane`/`WallPlane`. Thêm `wallPlacement(shed, wall)` đọc **chính transform**
+của `buildWallGeometries` và trả `{ length, rotationY, toWorld(u, d) }` theo một phép xoay duy nhất:
+
+```
+world x = px + u·cos t + d·sin t
+world z = pz − u·sin t + d·cos t
+```
+
+Base trim tính run trong `u` rồi đặt bằng `placement.toWorld(centre, localDepth)`, và mỗi part mang
+`rotation: [0, rotationY, 0]` với size trong hệ trục của tường. Vì thế cả 4 tường đi **một** đường code.
+
+**Test viết trước, và nó đỏ đúng chỗ.** Khối `'on every wall, not just the front one'` trong
+`structure3d.test.ts` đặt cửa lệch tâm lần lượt trên 4 tường, lấy toạ độ thế giới của lỗ từ
+`buildWallGeometries(...).transform` (không chép công thức lật vào test), rồi kiểm hai điều: không run
+nào giao lỗ, và hai đầu run cách mép lỗ ≤ 1 mm. Trước khi sửa: **front ✓, right ✓, back ✗, left ✗**.
+Sau khi sửa: **4/4 xanh**.
+
+**Rà các hàm trim khác** — đã rà, **không có** chỗ nào khác dùng `u` cục bộ làm toạ độ thế giới:
+
+- `cornerTrimParts`: dựng trực tiếp bằng toạ độ thế giới từ 4 mép `x ∈ {0, span}`, `z ∈ {0, length}`,
+  không dùng `wallHolesFor`. Probe 6 × 6 m: 8 part đúng ở x −1/6 002 và z −1/6 002, mỗi cánh 60 mm.
+- `bargeParts`: chỉ dùng hình học mái (`span`, `length`, `slope`, `EAVE`), không có lỗ, không có `u`.
+- `wallHolesFor`: chỉ còn `baseTrimParts` gọi.
+
+### Lỗi 2 — sàn bê tông tô bằng màu trim
+
+`Shed3D.tsx` vẽ slab bằng `config.colors.barge`. Với trim đỏ, cả mép sàn quanh chân nhà thành một dải
+đỏ liền chạy dưới mọi cửa; nó nằm ngay dưới base trim nên đọc thành hai lớp trim, và rất có thể là một
+phần lý do client nói "viền trim đỏ bottom" trông sai.
+
+Sửa: hằng số `SLAB_COLOR = '#b9b6ae'` (xám bê tông trung tính) trong `Shed3D.tsx`, có comment lý do.
+Sàn **không** thuộc hệ trim, không theo `colors.barge`, không thêm vai trò màu nào vào `ShedColors`.
+Kích thước/vị trí sàn không đổi; option (skylight, mezzanine…) vẫn dùng `colors.barge` như cũ — ngoài
+phạm vi vòng này.
+
+### Kiểm tra vòng 2
+
+| Việc | Kết quả |
+|---|---|
+| `pnpm --filter @sq/core test` | **1215 passed**, 16 skipped (vòng 1: 1 211) |
+| `structure3d.test.ts` | **44** (vòng 1: 40 — thêm 4 ca, một ca mỗi tường) |
+| `pnpm --filter @sq/core typecheck` | sạch |
+| `pnpm --filter @sq/viewer3d typecheck` | sạch |
+| `pnpm build:inc` | chạy (core + contracts); `@sq/viewer3d` tự rebuild qua `tsup --watch` của `pnpm dev` |
+| `pnpm --filter @sq/site-app typecheck` | sạch |
+| `pnpm test:e2e --project=guest` | **5/5 passed**, GR-000055 tự xoá (lần chạy đầu fail vì dev server đang biên dịch lại; chạy lại xanh) |
+
+**Ảnh:** ghi đè `after/1919-pa-door.png` và `after/1919-wall-base.png` từ **đúng camera vòng 1**, thêm
+`after/1919-pa-door-foot.png`. Số đo trong README của thư mục ảnh. **Phiên này vẫn không xem được ảnh**;
+mọi khẳng định hình ảnh là phép đo pixel, không phải mô tả bằng mắt.

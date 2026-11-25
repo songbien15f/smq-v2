@@ -27,7 +27,7 @@ import type { DimensionedShed, WallSide } from './types';
 import { fallsToBothSides } from './types';
 import { skillionRiseMm } from './roof';
 import { bayWidthsFor, positionsFromWidths } from './bays';
-import { wallHolesFor } from './walls';
+import { buildWallGeometries, wallHolesFor } from './walls';
 import type { OpeningPart } from './openings3d';
 
 /** A part of the shell — the same descriptor the opening hardware uses. */
@@ -340,30 +340,46 @@ export function wallHasCladding(shed: DimensionedShed, wall: WallSide): boolean 
   }
 }
 
-/** Where a wall sits in the shed's own frame: its outside plane and which way is "out". */
-interface WallPlane {
-  /** True when the wall runs along `z` (left/right), false when it runs along `x` (front/back). */
-  runsAlongZ: boolean;
-  /** The outside plane's coordinate on the axis the wall faces. */
-  plane: number;
-  /** −1 when outside is towards the origin, +1 when outside is away from it. */
-  outward: 1 | -1;
-  /** The wall's length, mm. */
-  length: number;
-}
-
-function wallPlane(shed: DimensionedShed, wall: WallSide): WallPlane {
-  switch (wall) {
-    case 'left':
-      return { runsAlongZ: true, plane: 0, outward: -1, length: shed.length };
-    case 'right':
-      return { runsAlongZ: true, plane: shed.span, outward: 1, length: shed.length };
-    case 'back':
-      return { runsAlongZ: false, plane: shed.length, outward: 1, length: shed.span };
-    case 'front':
-    default:
-      return { runsAlongZ: false, plane: 0, outward: -1, length: shed.span };
-  }
+/**
+ * Where a wall sits in the shed's frame, read from `buildWallGeometries`'s own transform.
+ *
+ * `buildWallGeometries` places each wall with a `position` and a `rotationY`, and extrudes its shape
+ * from local `x = 0` along local `+x`. So wall-local `(u, d)` — `u` along the wall from its left
+ * corner as seen from outside, `d` the local `z`, into the shed — lands at
+ *
+ *   world x = px + u·cos t + d·sin t
+ *   world z = pz − u·sin t + d·cos t
+ *
+ * ## Why this exists
+ *
+ * `baseTrimParts` first used `hole.u` straight as a world coordinate. That is right on the front
+ * wall — the one wall whose transform is the identity — and wrong on the other three, which are
+ * mirrored or rotated. Measured 2026-11-25 on a 6 × 6 m garage: a PA door at `offset` 2 400 on the
+ * **back** wall has its hole at world x 2 780…3 600, but the trim was cut at 2 400…3 220 — a 380 mm
+ * red bar under the door and 380 mm of bare wall beside it. Same on the left wall, in `z`.
+ *
+ * There used to be a four-case `wallPlane` helper here saying which way each wall faced; the trim read
+ * *that* and the renderer read `wallTransform`, and the two drifted. The case table is gone: the
+ * transform is the single description of where a wall is, and this reads it.
+ */
+function wallPlacement(shed: DimensionedShed, wall: WallSide) {
+  const built = buildWallGeometries(shed).find((candidate) => candidate.side === wall);
+  // All four walls are always built, so this cannot be undefined in practice; throwing beats placing
+  // trim at the origin if that ever changes.
+  if (built === undefined) throw new Error(`no wall geometry for '${wall}'`);
+  const [px, , pz] = built.transform.position;
+  const t = built.transform.rotationY;
+  return {
+    /** The wall's length along `u`, mm. */
+    length: built.width,
+    /** The wall's own rotation, for a part whose size is expressed in this wall's axes. */
+    rotationY: t,
+    /** Wall-local `(u, d)` as a point on the shed's floor plan. */
+    toWorld: (u: number, d = 0): [number, number] => [
+      px + u * Math.cos(t) + d * Math.sin(t),
+      pz - u * Math.sin(t) + d * Math.cos(t),
+    ],
+  };
 }
 
 /**
@@ -383,18 +399,24 @@ function wallPlane(shed: DimensionedShed, wall: WallSide): WallPlane {
  * face is `z = 0`, so a flashing lying *in* that plane flickers. 3 mm out is a lap, not a gap, and is
  * the same order as a real flashing's material thickness.
  *
- * ## Not in the bill
+ * ## One code path for four walls
  *
- * The desktop's flashing list has no base profile and this build's BOM emits none. This is a drawing
- * of the bottom detail only — see `KNOWN-DEVIATIONS.md`.
+ * The run is computed in wall-local `u` and then placed with `wallPlacement`, so the mirrored back wall and
+ * the rotated left wall get the same treatment as the front one. Each part carries its wall's
+ * `rotationY` and its size is expressed in the wall's own axes (length along `u`, thickness across).
  */
 export function baseTrimParts(shed: DimensionedShed): StructurePart[] {
   const parts: StructurePart[] = [];
   const walls: WallSide[] = ['front', 'back', 'left', 'right'];
+  /*
+   * The strip runs from `BASE_TRIM_LAP` inside the sheeting to `BASE_TRIM_PROUD` outside it, so its
+   * centre sits at the midpoint of those two — a hair outside the wall line, in local `z`.
+   */
+  const localDepth = -(BASE_TRIM_PROUD - BASE_TRIM_LAP) / 2;
 
   for (const wall of walls) {
     if (!wallHasCladding(shed, wall)) continue;
-    const { runsAlongZ, plane, outward, length } = wallPlane(shed, wall);
+    const placement = wallPlacement(shed, wall);
 
     /*
      * The holes that reach the floor, in wall-local `u`, sorted and merged. A door's reveal usually
@@ -415,25 +437,19 @@ export function baseTrimParts(shed: DimensionedShed): StructurePart[] {
       if (from > cursor) runs.push({ from: cursor, to: from });
       cursor = Math.max(cursor, to);
     }
-    if (cursor < length) runs.push({ from: cursor, to: length });
+    if (cursor < placement.length) runs.push({ from: cursor, to: placement.length });
 
     for (const run of runs) {
       const span = run.to - run.from;
       if (span <= 1) continue;
       const centre = (run.from + run.to) / 2;
-      /*
-       * The strip runs from `BASE_TRIM_LAP` inside the sheeting to `BASE_TRIM_PROUD` outside it, so
-       * its centre sits at the midpoint of those two — a hair outside the wall line.
-       */
-      const reach = (outward * (BASE_TRIM_PROUD - BASE_TRIM_LAP)) / 2;
-      const [alongX, alongZ] = runsAlongZ ? [plane + reach, centre] : [centre, plane + reach];
+      const [x, z] = placement.toWorld(centre, localDepth);
       parts.push({
         kind: `base-trim-${wall}`,
         shape: 'box',
-        position: [alongX, BASE_TRIM_HEIGHT / 2, alongZ],
-        size: runsAlongZ
-          ? [BASE_TRIM_THICK, BASE_TRIM_HEIGHT, span]
-          : [span, BASE_TRIM_HEIGHT, BASE_TRIM_THICK],
+        position: [x, BASE_TRIM_HEIGHT / 2, z],
+        size: [span, BASE_TRIM_HEIGHT, BASE_TRIM_THICK],
+        rotation: [0, placement.rotationY, 0],
         color: shed.colors.barge,
         finish: 'trim',
       });

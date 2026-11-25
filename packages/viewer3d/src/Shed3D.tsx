@@ -51,6 +51,18 @@ const MEZZANINE_SLAB = 150;
 const AWNING_PANEL = 60;
 /** Thickness of a dividing wall, mm. */
 const DIVIDING_WALL_THICKNESS = 100;
+/**
+ * Colour of the floor slab, a fixed concrete grey.
+ *
+ * It used to be `config.colors.barge` — the customer's **trim** colour. With Manor Red trim the slab's
+ * edge became one continuous red band round the foot of the building, running under every door, and
+ * because it sits directly beneath the new base flashing it read as a second course of trim. The
+ * client's complaint about "viền trim đỏ bottom" is partly this: concrete is not a painted sheet.
+ *
+ * A slab is not part of the trim system, so it takes no colour role. `ShedColors` has no concrete
+ * role and is not gaining one for a drawing constant.
+ */
+const SLAB_COLOR = '#b9b6ae';
 
 /** One box (or prism) the 3D layer draws for an option, in millimetres. */
 export interface OptionMesh {
@@ -262,10 +274,10 @@ export function Shed3D({
 
   return (
     <group scale={[MM_TO_M, MM_TO_M, MM_TO_M]}>
-      {/* Floor slab. */}
+      {/* Floor slab. Concrete, not trim — see `SLAB_COLOR`. */}
       <mesh position={[config.span / 2, -25, config.length / 2]} receiveShadow>
         <boxGeometry args={[config.span, 50, config.length]} />
-        <meshStandardMaterial color={config.colors.barge} roughness={0.95} />
+        <meshStandardMaterial color={SLAB_COLOR} roughness={0.95} />
       </mesh>
 
       {/* Four holed walls, each positioned and rotated by its domain transform. */}

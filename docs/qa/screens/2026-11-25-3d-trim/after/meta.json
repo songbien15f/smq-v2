@@ -82,6 +82,55 @@
     "1919-wall-base.png",
     "1919-ridge.png",
     "1919-corner.png",
-    "1919-barge.png"
-  ]
+    "1919-barge.png",
+    "1919-pa-door-foot.png"
+  ],
+  "round2": {
+    "at": "2026-11-25T14:26:10.989Z",
+    "overwritten": [
+      "1919-pa-door.png",
+      "1919-wall-base.png"
+    ],
+    "added": [
+      "1919-pa-door-foot.png"
+    ],
+    "cameras": {
+      "pa-door": [
+        [
+          3.69,
+          1.25,
+          9.2
+        ],
+        [
+          3.19,
+          1.05,
+          6
+        ]
+      ],
+      "wall-base": [
+        [
+          -1.5,
+          0.75,
+          4.6
+        ],
+        [
+          0,
+          0.35,
+          3.4
+        ]
+      ],
+      "pa-door-foot": [
+        [
+          3.19,
+          0.5,
+          7.4
+        ],
+        [
+          3.19,
+          0.12,
+          6
+        ]
+      ]
+    }
+  }
 }

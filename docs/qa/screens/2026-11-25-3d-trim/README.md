@@ -22,6 +22,7 @@ asserted in `packages/core/src/domain/__tests__/`.
 | `overview` | viewer's own framing | the whole building as a visitor first sees it |
 | `window` | (−2.2, 1.35, 1.65) → (0, 1.35, 1.65) | square on the left-wall window: frame depth and the trim ring |
 | `pa-door` | (3.69, 1.25, 9.2) → (3.19, 1.05, 6.0) | the back PA door, head **and** threshold in one frame |
+| `pa-door-foot` | (3.19, 0.50, 7.4) → (3.19, 0.12, 6.0) | **round 2 only:** the PA door's foot, low and square on — both ends of the back wall's base trim |
 | `wall-base` | (−1.5, 0.75, 4.6) → (0, 0.35, 3.4) | along the wall foot: base flashing, its cut at the doors |
 | `ridge` | (−1.6, 5.2, −1.4) → (3.0, 3.5, 3.2) | the ridge cap as a V, from above and to one side |
 | `corner` | (−2.4, 1.7, −2.4) → (0, 1.5, 0) | the front-left corner post |
@@ -49,6 +50,34 @@ The ridge shot is the one place the red share **falls**. That is expected and is
 old cap was a 280 × 80 box standing off the apex with its broad face toward this camera; the new cap
 is two 175 mm wings lying on the 10° slopes, so the same roof edge presents a narrower face from above
 while the cap now actually covers 350 mm across the ridge instead of floating over it.
+
+## Round 2 — two images re-shot, one added (2026-11-25)
+
+Round 1's review found the base trim cut in the wrong place on the **back** and **left** walls (see
+`docs/state/3d-trim-flush.md` → "Vòng 2"), and that the floor slab was painted in the trim colour, which
+put a continuous red band round the building's foot. Both are fixed, so `pa-door` and `wall-base` were
+re-shot **from round 1's own cameras** and `pa-door-foot` was added.
+
+"The floor slab" is `Shed3D.tsx`'s slab: it used `config.colors.barge`, so a Manor Red trim painted the
+whole slab edge red. It is now a fixed concrete grey (`#b9b6ae`), `SLAB_COLOR` in that file.
+
+| Shot | Pixels changed vs round 1 | Manor Red, round 1 | Manor Red, round 2 | Red in the bottom 18 % of the frame |
+|---|---|---|---|---|
+| `pa-door` | 1.63 % | 5.242 % | **3.968 %** | 14.147 % → **7.444 %** |
+| `wall-base` | 1.16 % | 3.405 % | **2.315 %** | 0.793 % → **0.456 %** |
+| `pa-door-foot` | new | — | 3.244 % | 0.006 % |
+
+The single reddest row in `pa-door` (the slab's edge, which ran the full width) drops from **697** red
+pixels to **439** — that is the slab band leaving the picture, with the base trim still there beside the
+door. In `pa-door-foot` the bottom of the frame has **0.006 %** red: no red line under the door, which
+is the point of the shot.
+
+What the geometry change did is asserted numerically rather than in pixels: the new
+`'on every wall, not just the front one'` block in `structure3d.test.ts` puts an off-centre door on each
+of the four walls and checks, from each wall's own `transform`, that no base trim run crosses the hole
+and that both runs end within 1 mm of it. Round 1's hole on the back wall was at world x 2 780…3 600
+while the trim was cut at 2 400…3 220 — a 380 mm bar under the door. That test is red on a reverted
+`baseTrimParts` and green now.
 
 ## What the "before" images still show
 
