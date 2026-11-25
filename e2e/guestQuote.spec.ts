@@ -53,11 +53,22 @@ function summary(page: Page, phone: boolean): Locator {
   return phone ? page.locator('.g-mbar-text') : page.locator('.g-summary-value');
 }
 
-/** Open an accordion group if it is closed. `head` is the group's `<summary>` (id or locator). */
-async function openGroup(page: Page, id: string | Locator): Promise<void> {
-  const head = typeof id === 'string' ? page.locator(`#${id}`) : id;
-  const open = await head.evaluate((el) => (el.parentElement as HTMLDetailsElement).open);
-  if (!open) await head.click();
+/**
+ * Select one group of the "Your design" card.
+ *
+ * The card shows one group at a time (2026-11-25): from 1024 px up the rail is the tab strip, and at
+ * phone width the drawer carries the same three tabs as words. Selecting a tab opens the card.
+ */
+async function openGroup(page: Page, group: 'size' | 'colours' | 'doors'): Promise<void> {
+  const rail = page.locator(`#g-rail-${group}`);
+  if (await rail.isVisible()) {
+    await rail.click();
+    return;
+  }
+  if ((await page.locator('.g-design').getAttribute('data-left')) === 'closed') {
+    await page.locator('#g-tools-btn').click();
+  }
+  await page.locator(`#g-grouptab-${group}`).click();
 }
 
 /** Path 1: pick a type, an address from the suburb list, and contact details, on step ①. */
@@ -88,7 +99,9 @@ async function fillStart(page: Page, { phone }: { phone: boolean }, email: strin
   await page.getByRole('option', { name: /^Ballarat\s*VIC 3350$/ }).click();
   await expect(page.getByRole('button', { name: /Change/ })).toBeVisible();
   await expect(page.locator('.g-address-chosen-text')).toContainText(/Ballarat VIC 3350/);
-  await expect(page.getByText(/Wind region confirmed in your quote/)).toBeVisible();
+  // The estimate is one indicative sentence now (D2, 2026-11-24); the old wording claimed the
+  // region was "confirmed in your quote", which read as already settled.
+  await expect(page.getByText(/Indicative — an estimator confirms these in your quote/)).toBeVisible();
   expect(placesCalls()).toBeGreaterThan(0);
 
   // 3. Contact details, only on ①: a bad mobile is refused next to the field, then fixed.
@@ -114,13 +127,10 @@ async function fillStart(page: Page, { phone }: { phone: boolean }, email: strin
  * away in the toolbar.
  */
 async function design(page: Page, { phone }: { phone: boolean }): Promise<void> {
-  if (phone) {
-    // Off-canvas, not hidden: the drawer keeps its box and slides out of the way, so the panel state
-    // is what says whether it is open.
-    await expect(page.locator('.g-design')).toHaveAttribute('data-left', 'closed');
-    await page.locator('#g-tools-btn').click();
-    await expect(page.locator('.g-design')).toHaveAttribute('data-left', 'open');
-  }
+  // The card starts closed at every width (client request 2026-11-25); the controls are behind a tab.
+  await expect(page.locator('.g-design')).toHaveAttribute('data-left', 'closed');
+  await openGroup(page, 'size');
+  await expect(page.locator('.g-design')).toHaveAttribute('data-left', 'open');
 
   // Width 7.5 m: the summary changes.
   const span = page.locator('#g-span');
@@ -147,7 +157,7 @@ async function design(page: Page, { phone }: { phone: boolean }): Promise<void> 
 
   // Doors & windows still work: a garage starts with one roller door. Scoped to the controls,
   // because the "AI Assistant" dock's suggestion chips carry a sentence that starts with the same words.
-  await openGroup(page, 'g-group-doors');
+  await openGroup(page, 'doors');
   await page.locator('#g-tools').getByRole('button', { name: 'Add a roller door', exact: true }).click();
   await expect(page.locator('.g-opening-name', { hasText: 'Roller door 2' })).toBeVisible();
 
@@ -166,15 +176,22 @@ async function send(page: Page, email: string): Promise<void> {
 
   // The contact details live on ① and show read-only here.
   await expect(page.getByText('Test Guest')).toBeVisible();
-  await expect(page.getByText(email)).toBeVisible();
+  // The hint under Send now names the address it will email a copy to (E12), so this matches the
+  // read-only row exactly rather than any text containing the address.
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send quote request' })).toBeVisible();
 
   // Without consent the send is refused with the field message. The consent label carries the same
   // words, so scope to the error paragraph rather than the text.
-  await page.getByRole('button', { name: 'Send quote request' }).click();
+  //
+  // `force: true` because the button carries `aria-disabled="true"` while the box is unticked (D1,
+  // 2026-11-24): a person can still press it and gets the error summary, but Playwright treats an
+  // aria-disabled control as not actionable and would otherwise wait for it to become enabled.
+  await page.getByRole('button', { name: 'Send quote request' }).click({ force: true });
   await expect(page.locator('.g-field-error', { hasText: /Tick the box so we can contact you/ })).toBeVisible();
 
   await page.getByRole('checkbox').check();
+  // Once ticked the attribute is gone, so this is an ordinary click.
   await page.locator('form').getByRole('button', { name: 'Send quote request' }).click();
   await expect(page.getByRole('heading', { name: 'Request received' })).toBeVisible();
   await expect(page.locator('.g-confirm-number strong')).toHaveText(/^GR-\S+$/);
@@ -249,7 +266,8 @@ test.describe('Guest quote page', () => {
     await page.locator('.g-assistant-form').getByRole('button', { name: 'Send' }).click();
 
     await expect(page.locator('.g-assistant-strip')).toContainText('The assistant is unavailable');
-    // The designer keeps working: the controls are still there.
+    // The designer keeps working: the card opens on its Size tab and the controls are there.
+    await openGroup(page, 'size');
     await expect(page.locator('#g-span')).toBeVisible();
   });
 
@@ -275,8 +293,12 @@ test.describe('Guest quote page', () => {
       return { x: Math.round(r.x + 20), y: Math.round(r.y + 20), width: 400, height: 300 };
     });
     const withRoof = await page.screenshot({ clip });
-    await page.getByRole('button', { name: 'Hide roof' }).click();
-    await expect(page.getByRole('button', { name: 'Show roof' })).toBeVisible();
+    const roofToggle = page.getByRole('button', { name: 'Hide roof' });
+    // The label no longer changes ("Hide roof" always); the state moved to aria-pressed, where a
+    // toggle's state belongs (E6, 2026-11-24).
+    await expect(roofToggle).toHaveAttribute('aria-pressed', 'false');
+    await roofToggle.click();
+    await expect(roofToggle).toHaveAttribute('aria-pressed', 'true');
     await page.waitForTimeout(600);
     const withoutRoof = await page.screenshot({ clip });
     expect(Buffer.compare(withRoof, withoutRoof)).not.toBe(0);
@@ -290,6 +312,14 @@ test.describe('Guest quote page', () => {
     const email = `test.guest+e2e${Date.now()}@example.com`;
     await fillStart(page, { phone: false }, email);
     await design(page, { phone: false });
+
+    // The design-check popover must be on screen, not merely in the DOM: it opens upwards from the chip
+    // row, which sits at the bottom of the clipped workspace (review, round 5b).
+    await page.locator('.g-check-chip').click();
+    const pop = page.locator('.g-check-pop');
+    await expect(pop).toBeVisible();
+    await expect(pop).toBeInViewport();
+    await page.keyboard.press('Escape');
 
     const designLine = await summary(page, false).textContent();
 

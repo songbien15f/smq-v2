@@ -41,96 +41,110 @@ import {
   type Position,
 } from '../designOps';
 import { updateDesign } from '../store';
-import { setToolsGroup, usePanels, type ToolsGroupId } from '../panels';
-import { IconChevronDown, IconLock, IconMinus, IconPlus, IconTrash } from './icons';
+import type { ToolsGroupId } from '../panels';
+import { IconLock, IconMinus, IconPlus, IconTrash } from './icons';
 import { SwatchGrid } from './SwatchGrid';
 
 /**
- * Tab ③'s controls (plan G-a S6, spec ③ "Khối điều khiển"): one `<details>` per group, one open at a time
- * (`panels.ts` `group`; Size by default).
+ * Tab ③'s controls (plan G-a S6, spec ③ "Khối điều khiển"): **one group at a time**, as a tab set.
+ *
+ * ## Why not an accordion
+ *
+ * It was three `<details>` with one open, which left three headings stacked above each other and made the
+ * card look like a form twice its height. The client asked for the panel to show one group; a tab set is
+ * also what a screen reader expects when the rail beside it is a strip of choices (2026-11-25).
+ *
+ * ## One store field
+ *
+ * The selected group is `panels.ts`' `group`, so the rail (`role="tablist"`, desktop/tablet) and the
+ * drawer's word tabs (phone) drive the same state and cannot disagree. Every group's panel stays in the
+ * DOM with `hidden` on the others: focus and `focusSelector` need to *find* a control that belongs to a
+ * tab that is not showing (select it, then focus), and `hidden` still keeps it out of the tab order.
  *
  * Every size the guest can reach is inside the building type's limits — the slider cannot leave them
  * and the number box clamps on blur — and every door position is one core's `placeOpening` accepts
- * (`designOps`). A group the type switches off stays visible, locked, with the admin's reason.
+ * (`designOps`). A group the type switches off stays selectable, locked, with the admin's reason.
  * Extras (group 4) is slice G-h.
  */
+
+/** The three groups, in the order the card and both tab strips show them. */
+export const GROUP_TABS = [
+  { id: 'g-group-size', title: 'Size & structure', short: 'Size', name: 'Size and structure' },
+  { id: 'g-group-colours', title: 'Colours — Colorbond®', short: 'Colours', name: 'Colours' },
+  { id: 'g-group-doors', title: 'Doors & windows', short: 'Doors', name: 'Doors and windows' },
+] as const;
+
+/** The panel id for a group (`g-group-size` → `g-tools-panel-size`). */
+export function panelIdFor(groupId: ToolsGroupId): string {
+  return groupId.replace('g-group-', 'g-tools-panel-');
+}
+
+/** Which group a `validateGuestDesign` path belongs to. */
+export function groupForIssuePath(path: string): ToolsGroupId {
+  if (path.startsWith('colours.')) return 'g-group-colours';
+  if (path.startsWith('openings')) return 'g-group-doors';
+  return 'g-group-size';
+}
+
 export function ControlAccordion({
   design,
   type,
   issues,
+  group,
 }: {
   design: GuestDesignInput;
   type: GuestBuildingTypeSpec;
   issues: readonly GuestDesignIssue[];
+  group: ToolsGroupId;
 }) {
   const buildIssues = issues.filter((i) => i.path.startsWith('building.'));
   const openingIssues = issues.filter((i) => i.path.startsWith('openings'));
   const colourIssues = issues.filter((i) => i.path.startsWith('colours.'));
-  const doorCount = design.openings.length;
   const locked = type.config.openings.rules.length === 0;
-  /* Single-open: the expanded group lives in the panels store, which the tools rail reads too. */
-  const group = usePanels((s) => s.group);
-  const toggle = (id: ToolsGroupId) => (event: React.SyntheticEvent<HTMLDetailsElement>) =>
-    setToolsGroup(id, event.currentTarget.open);
+  const panels: Record<ToolsGroupId, React.ReactNode> = {
+    'g-group-size': (
+      <>
+        <SizeControls design={design} type={type} />
+        <IssueList issues={buildIssues} />
+      </>
+    ),
+    'g-group-colours': (
+      <>
+        <SwatchGrid colours={design.colours} allowed={type.config.colours.allowed} />
+        <IssueList issues={colourIssues} />
+      </>
+    ),
+    'g-group-doors': locked ? (
+      <>
+        <p className="g-locked">
+          <IconLock />
+          {type.config.openings.lockedReason ?? 'This building type takes no doors or windows.'}
+        </p>
+        <IssueList issues={openingIssues} />
+      </>
+    ) : (
+      <>
+        <OpeningControls design={design} type={type} />
+        <IssueList issues={openingIssues} />
+      </>
+    ),
+  };
 
   return (
-    <div className="g-accordion">
-      <details className="g-group" open={group === 'g-group-size'} onToggle={toggle('g-group-size')}>
-        <summary id="g-group-size" className="g-group-summary">
-          <span className="g-group-title">Size &amp; structure</span>
-          <span className="g-group-meta">{metresLabel(design.building.span)} × {metresLabel(guestLengthMm(design.building))}</span>
-          <IconChevronDown className="g-group-chevron" />
-        </summary>
-        <div className="g-group-body">
-          <SizeControls design={design} type={type} />
-          <IssueList issues={buildIssues} />
+    <div className="g-single">
+      {GROUP_TABS.map((tab) => (
+        <div
+          key={tab.id}
+          id={panelIdFor(tab.id)}
+          role="tabpanel"
+          data-group={tab.id}
+          aria-label={tab.title}
+          hidden={group !== tab.id}
+          className="g-group-body"
+        >
+          {panels[tab.id]}
         </div>
-      </details>
-
-      <details className="g-group" open={group === 'g-group-colours'} onToggle={toggle('g-group-colours')}>
-        <summary id="g-group-colours" className="g-group-summary">
-          <span className="g-group-title">Colours — Colorbond&reg;</span>
-          <span className="g-group-meta">{design.colours.walls}</span>
-          <IconChevronDown className="g-group-chevron" />
-        </summary>
-        <div className="g-group-body">
-          <SwatchGrid colours={design.colours} allowed={type.config.colours.allowed} />
-          <IssueList issues={colourIssues} />
-        </div>
-      </details>
-
-      <details
-        className="g-group"
-        aria-disabled={locked || undefined}
-        open={group === 'g-group-doors'}
-        onToggle={toggle('g-group-doors')}
-      >
-        <summary id="g-group-doors" className="g-group-summary">
-          <span className="g-group-title">Doors &amp; windows</span>
-          <span className="g-group-meta">
-            {locked ? (
-              <>
-                <IconLock className="g-group-lock" />
-                Not available
-              </>
-            ) : (
-              `${doorCount} ${doorCount === 1 ? 'opening' : 'openings'}`
-            )}
-          </span>
-          <IconChevronDown className="g-group-chevron" />
-        </summary>
-        <div className="g-group-body">
-          {locked ? (
-            <p className="g-locked">
-              <IconLock />
-              {type.config.openings.lockedReason ?? 'This building type takes no doors or windows.'}
-            </p>
-          ) : (
-            <OpeningControls design={design} type={type} />
-          )}
-          <IssueList issues={openingIssues} />
-        </div>
-      </details>
+      ))}
     </div>
   );
 }

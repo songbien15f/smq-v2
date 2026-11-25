@@ -89,14 +89,34 @@ export function assessGuestDesign(
     });
   }
 
+  /*
+   * A bay wider than the book is worth an estimator's eye — but when it is the **type's own starting
+   * size**, the guest has not done anything unusual: a carport is offered at 5.90 m bays (customer Q6)
+   * and every visitor who keeps the default used to be told, in warning colours, that their building
+   * was out of the ordinary. It is now a neutral note with the same honest content (E3 / D2).
+   */
+  const presetBay = type.config.start.bayWidths[0];
   const wideBay = bays.findIndex((w) => w > BOOK_MAX_BAY_MM);
   if (wideBay !== -1) {
-    items.push({
-      level: 'review',
-      title: `Bay ${wideBay + 1} is wider than the book prices`,
-      detail: `The book prices bays up to ${metres(BOOK_MAX_BAY_MM)}. Bay ${wideBay + 1} is ${metres(bays[wideBay]!)}; an estimator will confirm the frame.`,
-      focus: `#g-bay-${wideBay}`,
-    });
+    const isPreset =
+      presetBay !== undefined &&
+      type.config.start.bayWidths.length === bays.length &&
+      type.config.start.bayWidths.every((w, i) => bays[i] === w);
+    items.push(
+      isPreset
+        ? {
+            level: 'note',
+            title: `Carport bays over ${metres(BOOK_MAX_BAY_MM)} are confirmed by an estimator`,
+            detail: `This is the normal size for a carport like this one. The book prices bays up to ${metres(BOOK_MAX_BAY_MM)}, so an estimator confirms the frame with the quote.`,
+            focus: `#g-bay-${wideBay}`,
+          }
+        : {
+            level: 'review',
+            title: `Bay ${wideBay + 1} is wider than the book prices`,
+            detail: `The book prices bays up to ${metres(BOOK_MAX_BAY_MM)}. Bay ${wideBay + 1} is ${metres(bays[wideBay]!)}; an estimator will confirm the frame.`,
+            focus: `#g-bay-${wideBay}`,
+          },
+    );
   }
 
   if (building.span > BOOK_SPAN_MM.max) {

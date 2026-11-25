@@ -8,6 +8,7 @@ import { guestApi } from '../api';
 import {
   chooseType,
   contactStarted,
+  explainStart,
   focusSelector,
   goTo,
   hydrate,
@@ -103,8 +104,21 @@ export function GuestQuote() {
   const type = typeList?.find((t) => t.id === design?.typeId);
   const missing = missingSteps(design, type, contact);
   const go = (s: GuestStep) => void goTo(s, type);
-  /** The summary bar's Send: ③, unless a step before it is still missing something. */
-  const send = () => go(missing[0]?.step ?? 'send');
+  /**
+   * The summary bar's Send (header and phone bar): ③, unless a step before it is missing something.
+   *
+   * It shares `goTo`'s answer, so a locked ③ lands on ① with the field to fix focused rather than doing
+   * nothing; a design that is not ready opens ② with its first failing check focused.
+   */
+  const send = () => {
+    const target = missing[0]?.step ?? 'send';
+    // `goTo` explains a refusal itself (back to ①, offending field focused), so there is no second call.
+    /*
+     * On ② the chip is the thing worth reaching when something needs attention; when nothing does the
+     * selector matches nothing and focus stays where the frame put it (the panel heading).
+     */
+    if (goTo(target, type) && target === 'design') focusSelector('.g-check-chip-review');
+  };
 
   /*
    * ① goes straight to ③ for an enquiry (Class 1 House, Q1): there is nothing to design, and ② is

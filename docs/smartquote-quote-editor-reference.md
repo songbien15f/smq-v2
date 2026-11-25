@@ -125,6 +125,21 @@ phía sau" hay "đặt cửa sổ cách góc 2 m" là phép tính trên số, kh
 **front** (`y = 0`) của tường **right**. Nói cách khác, với mỗi tường, offset 0 là đầu "trái" khi
 đứng **ngoài** nhìn vào tường đó.
 
+### 3.5b Trang Guest — luật khoá bước (2026-11-24)
+
+Từ 2026-11-24, **một cổng duy nhất** cho bước ②③: `stepLocked` dùng `contactValid` (email đúng dạng +
+`normaliseAuMobile`, chấp nhận số gõ sau tiền tố `+61` cố định, tức `412 345 678`), không còn
+`contactStarted` (chỉ kiểm "có gõ gì"). Trước đó tab mở với mobile `123` trong khi nút Continue từ chối.
+
+- Tab bị khoá vẫn **bấm được**: bấm → về ①, focus ô sai đầu tiên (địa chỉ → tên → họ → mobile → email)
+  và hiện lỗi inline của ô đó (`startProblem`). Nút header/phone bar đi cùng đường.
+- Dấu "đã xong" (tick) trên tab: `locked` ⇒ **không bao giờ** complete; Start cần `site` **và**
+  contact hợp lệ; Building cần đã mở và design không còn mục nào thiếu.
+- Nút Send ở ③: khi chưa tick consent (hoặc còn bước thiếu) thì `aria-disabled="true"`, mờ, kèm dòng lý
+  do phía trên; bấm vẫn chạy error summary như cũ (không có lỗ hổng consent).
+- Hộp wind region nằm cạnh địa chỉ đã chọn (không phải cạnh ô tìm), ẩn khi đang Change; `setSite(undefined)`
+  xoá luôn `estimate` để không còn số của địa chỉ cũ.
+
 ### 3.6 Trợ lý Guest — nhập bằng giọng nói (STT)
 
 Khách bấm mic trong khung "Shed Assistant", nói một câu về shed; server chuyển thành chữ. Điểm cốt lõi:
@@ -4459,3 +4474,25 @@ hai nền tảng.
 **Hệ quả cần biết:** migration 010, 011, 012 chưa từng chạy trên Postgres dev trước 2026-11-05 —
 lỗi này đã che chúng. Nếu một route báo `column "…" does not exist`, chạy `pnpm db:migrate` trước
 khi tìm lỗi trong code.
+
+### 3.5c Trang Guest step ② — thẻ điều khiển dạng tab, chip Design check (2026-11-25)
+
+- **Thẻ "Your design" đóng khi vào ② ở mọi bề rộng.** Từ 1024 px trở lên, thanh icon bên trái là dải tab
+  (`role="tablist"`, mỗi icon `role="tab"` với `aria-selected` + `aria-controls`); bấm icon mở thẻ đúng
+  nhóm đó, bấm lại icon đang mở thì đóng. Dưới 1024 thanh icon bị ẩn, drawer có hàng tab chữ
+  Size / Colours / Doors điều khiển cùng một trạng thái.
+- **Mỗi lần một nhóm.** Thẻ chỉ hiện tabpanel của nhóm đang chọn (hai nhóm kia `hidden`, vẫn có trong DOM
+  để `focusSelector` tìm được ô điều khiển). Tiêu đề thẻ là tên nhóm, có dòng phụ "Your design".
+- **Chấm lỗi.** Nhóm có lỗi `validateGuestDesign` mang chấm cam + số lỗi trong tên truy cập; lỗi của nhóm
+  không mở vẫn thấy được. Nút Send vẫn bị chặn như trước.
+- **Design check là chip trên sàn**, cạnh Ridge / Bays / Roof / Walls / Wind: `N to check` (nền cảnh báo),
+  `N notes`, hoặc `Nothing to flag`. Danh sách xếp `review` trước `note`, ẩn `ok`; desktop là popover neo
+  vào chip — **mở lên trên** (`bottom: 100% + 8px`), vì hàng chip nằm sát đáy vùng làm việc bị cắt; vị trí
+  ngang và `max-height` được đo lại mỗi lần mở/đổi cỡ cửa sổ để popover không tràn khỏi stage và tự cuộn
+  khi màn hình thấp (1024×600, 1280×720). Trên phone là một hàng mở rộng dưới hàng chip; khi mở, trang
+  cuộn hàng đó lên trên thanh tóm tắt cố định (`scroll-margin-bottom` bằng chiều cao thanh) và nút AI nổi
+  tạm ẩn. Trên desktop/tablet, dock AI (`gợi ý + AI Assistant`) nằm đúng góc dưới-phải mà popover vươn tới,
+nên **dock ẩn đi trong lúc danh sách mở** (`visibility: hidden`, ra khỏi thứ tự tab và cây a11y) và hiện
+lại khi đóng bằng Esc. Bấm một mục thì mở đúng nhóm và focus ô điều khiển.
+  Cuối danh sách giữ câu "Rules, not a guess. An estimator checks every design before quoting." — luật của
+  `assessGuestDesign`, không phải AI, và không có giá ở bất kỳ đâu.

@@ -551,10 +551,18 @@ export function GuestPlan({ design, type }: { design: GuestDesignInput; type: Gu
       ) : null}
 
       <div className="g-plan-zoom" role="group" aria-label="Zoom the plan">
-        <button type="button" className="g-icon-btn" aria-label="Zoom in" disabled={zoom >= ZOOM_MAX} onClick={() => zoomAt(zoom * 1.5, { x: size.w / 2, y: size.h / 2 })}>
+        <button type="button" className="g-icon-btn" aria-label="Zoom in" title="Zoom in" disabled={zoom >= ZOOM_MAX} onClick={() => zoomAt(zoom * 1.5, { x: size.w / 2, y: size.h / 2 })}>
           <IconZoomIn />
         </button>
-        <button type="button" className="g-icon-btn" aria-label="Zoom out" disabled={zoom <= ZOOM_MIN} onClick={() => zoomAt(zoom / 1.5, { x: size.w / 2, y: size.h / 2 })}>
+        <button
+          type="button"
+          className="g-icon-btn"
+          aria-label="Zoom out"
+          /* At the minimum the whole plan is already on screen; say so rather than just going dead. */
+          title={zoom <= ZOOM_MIN ? 'Already showing the whole plan' : 'Zoom out'}
+          disabled={zoom <= ZOOM_MIN}
+          onClick={() => zoomAt(zoom / 1.5, { x: size.w / 2, y: size.h / 2 })}
+        >
           <IconZoomOut />
         </button>
         <button

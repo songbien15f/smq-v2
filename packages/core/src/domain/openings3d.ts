@@ -397,10 +397,26 @@ export function windowParts(opening: Opening, u: number, colors: ShedColors): Op
   const sill = opening.sill;
   const parts: OpeningPart[] = [];
 
+  /*
+   * Depth in the wall, not a crate bolted to it.
+   *
+   * The frame used to be `WINDOW_FRAME * 1.4` (126 mm) deep, centred at z = −35, so 98 mm of it stood
+   * outside a 50 mm cladding, and the flashings reached 125 mm. At grazing angles it read as a box
+   * stuck on the wall (measured 2026-11-24). Drawn in three planes now:
+   *
+   *   outside face  z = −25   the frame's front, 25 mm proud of the cladding
+   *   glass         z = −10   inside the frame, still visible through it
+   *   flashing      z = −15   outer face at −45, so it reads as a drip, not a shelf
+   */
+  const FRAME_DEPTH = 60;
+  const frameZ = -25 + FRAME_DEPTH / 2;
+  const FLASH_DEPTH = 60;
+  const flashZ = -45 + FLASH_DEPTH / 2;
+
   parts.push({
     kind: 'glass',
     shape: 'box',
-    position: [u + w / 2, sill + h / 2, -30],
+    position: [u + w / 2, sill + h / 2, -10],
     size: [w - WINDOW_FRAME, h - WINDOW_FRAME, 10],
     color: GLASS_COLOR,
     finish: 'glass',
@@ -408,23 +424,23 @@ export function windowParts(opening: Opening, u: number, colors: ShedColors): Op
   });
 
   parts.push(
-    box('frame-left', [u + WINDOW_FRAME / 2, sill + h / 2, -35], [WINDOW_FRAME, h, WINDOW_FRAME * 1.4], colors.window, 'trim'),
-    box('frame-right', [u + w - WINDOW_FRAME / 2, sill + h / 2, -35], [WINDOW_FRAME, h, WINDOW_FRAME * 1.4], colors.window, 'trim'),
-    box('frame-head', [u + w / 2, sill + h - WINDOW_FRAME / 2, -35], [w, WINDOW_FRAME, WINDOW_FRAME * 1.4], colors.window, 'trim'),
-    box('frame-sill', [u + w / 2, sill + WINDOW_FRAME / 2, -35], [w, WINDOW_FRAME, WINDOW_FRAME * 1.4], colors.window, 'trim'),
+    box('frame-left', [u + WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, h, FRAME_DEPTH], colors.window, 'trim'),
+    box('frame-right', [u + w - WINDOW_FRAME / 2, sill + h / 2, frameZ], [WINDOW_FRAME, h, FRAME_DEPTH], colors.window, 'trim'),
+    box('frame-head', [u + w / 2, sill + h - WINDOW_FRAME / 2, frameZ], [w, WINDOW_FRAME, FRAME_DEPTH], colors.window, 'trim'),
+    box('frame-sill', [u + w / 2, sill + WINDOW_FRAME / 2, frameZ], [w, WINDOW_FRAME, FRAME_DEPTH], colors.window, 'trim'),
   );
 
   // One centre mullion on a wide window, as the desktop's `Window3D` draws.
   if (w > 900) {
     parts.push(
-      box('mullion', [u + w / 2, sill + h / 2, -38], [46, h - WINDOW_FRAME * 2, WINDOW_FRAME], colors.window, 'trim'),
+      box('mullion', [u + w / 2, sill + h / 2, frameZ], [46, h - WINDOW_FRAME * 2, FRAME_DEPTH], colors.window, 'trim'),
     );
   }
 
   // Flashing: a drip above and a sill cover below, both wider than the frame.
   parts.push(
-    box('head-flashing', [u + w / 2, sill + h + 15, -55], [w + 160, 30, 130], colors.barge, 'trim'),
-    box('sill-flashing', [u + w / 2, sill - 20, -55], [w + 120, 40, 140], colors.barge, 'trim'),
+    box('head-flashing', [u + w / 2, sill + h + 15, flashZ], [w + 160, 30, FLASH_DEPTH], colors.barge, 'trim'),
+    box('sill-flashing', [u + w / 2, sill - 20, flashZ], [w + 120, 40, FLASH_DEPTH], colors.barge, 'trim'),
   );
 
   return parts;

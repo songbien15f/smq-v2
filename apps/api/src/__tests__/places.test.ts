@@ -117,15 +117,22 @@ describe('the Google transport', () => {
     expect(mask).not.toBe('*');
   });
 
-  it('restricts suggestions to Australia', async () => {
-    let body: { includedRegionCodes?: string[] } = {};
+  it('restricts suggestions to Australia, and to places a shed can stand on', async () => {
+    let body: { includedRegionCodes?: string[]; includedPrimaryTypes?: string[] } = {};
     const fake = (async (_url: string, init?: RequestInit) => {
-      body = JSON.parse(String(init?.body ?? '{}')) as { includedRegionCodes?: string[] };
+      body = JSON.parse(String(init?.body ?? '{}')) as typeof body;
       return new Response(JSON.stringify({ suggestions: [] }), { status: 200 });
     }) as unknown as typeof fetch;
 
     await createGooglePlacesTransport('k', fake).autocomplete('12 Example');
+
     expect(body.includedRegionCodes).toEqual(['au']);
+    /*
+     * `premise` and `subpremise` are here on purpose: a rural lot with no street number and a unit
+     * inside a block are typed that way, and filtering to `street_address` alone removed them from the
+     * customer's list (E5, 2026-11-24 round 3). An `establishment` is still not an address.
+     */
+    expect(body.includedPrimaryTypes).toEqual(['street_address', 'premise', 'subpremise']);
   });
 
   it('resolves details into the four parts, not just a formatted string', async () => {

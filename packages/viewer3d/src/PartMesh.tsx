@@ -12,6 +12,7 @@
  * from the shed's own colour roles, so a quote's palette reaches the model.
  */
 
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import type { OpeningPart } from '@sq/core/domain';
 
@@ -29,6 +30,29 @@ function geometryFor(part: OpeningPart) {
 export function PartMesh({ part, castShadow = true }: { part: OpeningPart; castShadow?: boolean }) {
   const glass = part.finish === 'glass';
   const metal = part.finish === 'metal';
+  const sheet = part.finish === 'sheet';
+  /*
+   * Roof and wall are usually the *same paint* in the customer's palette (Surfmist on Surfmist is the
+   * default), so telling them apart cannot rely on colour.
+   *
+   * Material alone was not enough: measured 2026-11-24, making the roof glossier moved its luminance
+   * *towards* the wall's and narrowed the gap from ΔL 0.131 to 0.083. So the sheet keeps a modest
+   * metalness (0.5) and roughness (0.42) against the wall's 0.35 / 0.5, and what does the separating
+   * is the **outline**: how a person reads an eave is the line where the plane turns. It is drawn in
+   * the navy the rest of the product already uses — no new colour, no change to the customer's palette.
+   */
+  const edge = useMemo(() => {
+    if (!sheet || (part.shape ?? 'box') !== 'box') return null;
+    const [w, h, d] = part.size ?? [10, 10, 10];
+    // The box exists only to be read: its edges are copied out, then it is released immediately.
+    const box = new THREE.BoxGeometry(w, h, d);
+    const geometry = new THREE.EdgesGeometry(box);
+    box.dispose();
+    return geometry;
+  }, [sheet, part.shape, part.size?.[0], part.size?.[1], part.size?.[2]]);
+
+  // A geometry that is replaced (a resize) or abandoned (unmount) must free its GPU buffers.
+  useEffect(() => () => edge?.dispose(), [edge]);
 
   return (
     <mesh
@@ -40,13 +64,20 @@ export function PartMesh({ part, castShadow = true }: { part: OpeningPart; castS
       {geometryFor(part)}
       <meshStandardMaterial
         color={part.color}
-        metalness={metal ? 0.85 : glass ? 0.05 : 0.35}
-        roughness={metal ? 0.3 : glass ? 0.04 : part.finish === 'sheet' ? 0.45 : 0.5}
-        envMapIntensity={metal ? 1.25 : 1}
+        // A roof panel is a sheet of steel: keep the light metalness, and let the outline do the
+        // separating rather than bending the paint's brightness.
+        metalness={metal ? 0.85 : glass ? 0.05 : sheet ? 0.5 : 0.35}
+        roughness={metal ? 0.26 : glass ? 0.04 : sheet ? 0.42 : 0.5}
+        envMapIntensity={metal ? 1.4 : sheet ? 1.2 : 1}
         transparent={glass}
         opacity={part.opacity ?? 1}
-        side={part.finish === 'sheet' ? THREE.DoubleSide : THREE.FrontSide}
+        side={sheet ? THREE.DoubleSide : THREE.FrontSide}
       />
+      {edge === null ? null : (
+        <lineSegments geometry={edge}>
+          <lineBasicMaterial color="#0b1d4d" transparent opacity={0.3} />
+        </lineSegments>
+      )}
     </mesh>
   );
 }

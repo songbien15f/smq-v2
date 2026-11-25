@@ -11,14 +11,16 @@
  * on their phone, where a different default is correct: on a phone both panels start closed, because a
  * drawer covering the stage would be the first thing they saw.
  *
- * Defaults: **desktop and tablet tools open (Size expanded), assistant closed · phone both closed.**
- * The assistant starts closed everywhere so the model has the room; the bottom-right "AI Assistant"
- * dock is what a person sees first.
+ * Defaults: **every breakpoint starts with the tools card closed** (client request 2026-11-25): the rail
+ * of icons is always there from 1024 up, and the stage is what a person should see first. The assistant
+ * starts closed everywhere too, so the model has the room; the bottom-right dock is what a person sees.
  *
  * ## One group at a time
  *
- * `group` is the one "Your design" group that is expanded. The accordion is single-open and reads it,
- * and the always-visible tools rail shows it as the active icon, so the two can never disagree.
+ * `group` is the one "Your design" group the card shows — a real tab set, not an accordion: the card
+ * renders that group's controls and nothing else, and the rail is the tab strip (`role="tablist"`) whose
+ * active icon is the open group. On a phone the rail is hidden, so the drawer carries the same tabs as
+ * words. One store field, so the two strips can never disagree.
  *
  * ## The server render
  *
@@ -42,10 +44,9 @@ export interface PanelsState {
   group: ToolsGroupId | null;
 }
 
-/** What each breakpoint starts with (D1, D4, and the template's own defaults). */
+/** What each breakpoint starts with: the card closed, the assistant closed, Size selected. */
 export function defaultsFor(bp: Bp): { leftOpen: boolean; rightOpen: boolean; group: ToolsGroupId | null } {
-  if (bp === 'desktop') return { leftOpen: true, rightOpen: false, group: 'g-group-size' };
-  if (bp === 'tablet') return { leftOpen: true, rightOpen: false, group: 'g-group-size' };
+  void bp;
   return { leftOpen: false, rightOpen: false, group: 'g-group-size' };
 }
 
@@ -133,23 +134,20 @@ export function watchBreakpoint(): () => void {
   };
 }
 
+/**
+ * Open the card, on `groupId` when one is given.
+ *
+ * There is no group to expand any more — the card shows exactly the selected group — so this is the whole
+ * of "open these controls": set the tab and the open flag in one store write, which is why the rail, the
+ * phone drawer's tabs and the card cannot show different groups.
+ */
 export function openTools(groupId?: ToolsGroupId): void {
-  // On a phone the rail does not exist, so opening a group means opening the drawer and scrolling.
-  if (groupId === undefined) {
-    set({ leftOpen: true });
-    return;
-  }
-  set({ leftOpen: true, group: groupId });
-  // After the DOM has the panel open (a drawer animates in), bring the group into view.
-  const scroll = () => {
-    const summary = document.getElementById(groupId);
-    if (summary === null) return;
-    const details = summary.closest('details');
-    if (details !== null && !details.open) details.open = true;
-    summary.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  };
-  if (typeof window === 'undefined') return;
-  window.requestAnimationFrame(scroll);
+  set(groupId === undefined ? { leftOpen: true } : { leftOpen: true, group: groupId });
+}
+
+/** Select the group shown in the card. Used by both tab strips. */
+export function selectToolsGroup(groupId: ToolsGroupId): void {
+  set({ group: groupId, leftOpen: true });
 }
 
 /**
@@ -162,19 +160,6 @@ export function toggleToolsGroup(groupId: ToolsGroupId): void {
     return;
   }
   openTools(groupId);
-}
-
-/**
- * The accordion reports a group header click here (its `toggle` event), so opening one group collapses
- * the others. A close only counts for the group that is the open one: React closing the others fires
- * their `toggle` too, after `group` already names the new one.
- */
-export function setToolsGroup(groupId: ToolsGroupId, open: boolean): void {
-  if (open) {
-    if (state.group !== groupId) set({ group: groupId });
-  } else if (state.group === groupId) {
-    set({ group: null });
-  }
 }
 
 /** The rail button's id for a group (`g-group-size` → `g-rail-size`). */

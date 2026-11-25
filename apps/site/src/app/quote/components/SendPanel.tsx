@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { guestContactSchema, normaliseAuMobile, type GuestRequestAccepted, type GuestRequestBody } from '@sq/contracts';
+import { guestContactSchema, type GuestRequestAccepted, type GuestRequestBody } from '@sq/contracts';
+import { formatAuMobile, mobileE164 } from '../mobile';
 import type { GuestBuildingTypeSpec, GuestDesignInput } from '@sq/core/domain';
 import { guestApi } from '../api';
 import { GUEST_CONTENT } from '../content';
@@ -24,16 +25,6 @@ const FIELD_ID: Record<Field, string> = {
 const REQUEST_ID = 'g-additional-request';
 /** The API caps the free text at 4000; the revision line goes in front of what the guest typed. */
 const REQUEST_MAX = 3900;
-
-/**
- * `0412 345 678`, `412 345 678` or `+61 412 345 678` → `+61412345678`, or `null`.
- *
- * The box sits behind a fixed "+61", so a guest may leave the 0 off; the contract's
- * `normaliseAuMobile` is still the one that decides (the API runs it again).
- */
-export function mobileE164(raw: string): string | null {
-  return normaliseAuMobile(raw) ?? normaliseAuMobile(`+61${raw.replace(/^\s*\+?/, '')}`);
-}
 
 function fieldError(field: Field, c: ContactDraft): string | null {
   switch (field) {
@@ -157,6 +148,8 @@ function SendForm({ design, type }: { design: GuestDesignInput; type: GuestBuild
   const address = addressLines(design);
   const rows = summaryRows(design, type, contact);
   const sending = send.status === 'sending';
+  /** Consent is the one thing the visitor can fix right here; a missing earlier step is a link away. */
+  const notReady = !contact.consent || missing.length > 0;
   const summaryErrors = submitted ? FIELDS.filter((f) => shown(f) !== undefined) : [];
 
   return (
@@ -251,7 +244,13 @@ function SendForm({ design, type }: { design: GuestDesignInput; type: GuestBuild
         <dl className="g-sum g-sum-compact">
           <ReadOnlyRow label="Name" value={`${contact.firstName} ${contact.lastName}`.trim()} step="start" focus="#g-first-name" type={type} />
           <ReadOnlyRow label="Email" value={contact.email} step="start" focus="#g-email" type={type} />
-          <ReadOnlyRow label="Mobile" value={contact.mobile === '' ? '' : `+61 ${contact.mobile}`} step="start" focus="#g-mobile" type={type} />
+          <ReadOnlyRow
+            label="Mobile"
+            value={contact.mobile === '' ? '' : (formatAuMobile(contact.mobile) ?? contact.mobile)}
+            step="start"
+            focus="#g-mobile"
+            type={type}
+          />
           <div className="g-sum-row">
             <dt>Site address</dt>
             <dd>
@@ -313,14 +312,35 @@ function SendForm({ design, type }: { design: GuestDesignInput; type: GuestBuild
         </div>
 
         <div className="g-send-actions">
-          <button type="submit" className="g-btn g-btn-primary g-send-btn" disabled={sending}>
+          {/*
+            Why the Send is not ready, said before it is pressed.
+
+            The button stays pressable on purpose: a keyboard or screen-reader visitor still reaches the
+            error summary that `onSubmit` builds, which is where the checkbox error is announced. What
+            changes is that it *looks* not-ready and says what is missing, instead of looking ready and
+            refusing.
+          */}
+          {notReady ? (
+            <p id="g-send-reason" className="g-hint g-send-reason">
+              {contact.consent ? `Pressing Send takes you to ${STEP_LABELS[missing[0]!.step].long.toLowerCase()} first.` : 'Tick the box above so we can send your request.'}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            className={`g-btn g-btn-primary g-send-btn${notReady ? ' g-send-btn-wait' : ''}`}
+            disabled={sending}
+            {...(notReady ? { 'aria-disabled': true, 'aria-describedby': 'g-send-reason' } : {})}
+          >
             {sending ? <span className="g-spinner" aria-hidden="true" /> : null}
             {sending ? 'Sending…' : 'Send quote request'}
           </button>
           {missing.length > 0 ? (
             <p className="g-hint">Pressing Send takes you to {STEP_LABELS[missing[0]!.step].long.toLowerCase()} first.</p>
           ) : (
-            <p className="g-hint">No payment, no account. We reply by email.</p>
+            <p className="g-hint">
+              No payment, no account. After you send you&rsquo;ll see a reference number, and we&rsquo;ll email a copy
+              to {contact.email.trim() === '' ? 'you' : contact.email.trim()}.
+            </p>
           )}
         </div>
       </form>

@@ -3,14 +3,21 @@
 import { useEffect, useMemo } from 'react';
 import { validateGuestDesign, type GuestBuildingTypeSpec } from '@sq/core/domain';
 import { useGuest } from '../store';
-import { closeAssistant, closeTools, handleEscape, openTools, usePanels, watchBreakpoint } from '../panels';
+import {
+  closeAssistant,
+  closeTools,
+  handleEscape,
+  openTools,
+  selectToolsGroup,
+  usePanels,
+  watchBreakpoint,
+} from '../panels';
 import { setAssistantVisible, useAssistant } from '../assistantStore';
-import { ControlAccordion } from './ControlAccordion';
-import { DesignCheck } from './DesignCheck';
+import { ControlAccordion, GROUP_TABS, panelIdFor } from './ControlAccordion';
 import { AssistantFab } from './AssistantFab';
 import { AssistantPanel, useAssistantOffered } from './AssistantPanel';
 import { Stage } from './Stage';
-import { ToolsRail } from './ToolsRail';
+import { ToolsRail, problemCounts } from './ToolsRail';
 import { IconChevronLeft } from './icons';
 
 /**
@@ -47,6 +54,9 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
 
   const bp = usePanels((s) => s.bp);
   const leftOpen = usePanels((s) => s.leftOpen);
+  const group = usePanels((s) => s.group) ?? 'g-group-size';
+  const problems = useMemo(() => problemCounts(issues), [issues]);
+  const activeTab = GROUP_TABS.find((tab) => tab.id === group) ?? GROUP_TABS[0];
   const rightOpen = usePanels((s) => s.rightOpen);
   const assistant = useAssistantOffered();
   const pending = useAssistant((s) => s.pending);
@@ -99,13 +109,21 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
       ) : null}
 
       {/* Always visible from 1024 up (the CSS hides it on a phone, where the tools are a drawer). */}
-      <ToolsRail />
+      <ToolsRail counts={problems} />
 
       <section id="g-tools" className="g-design-controls" aria-labelledby="g-tools-title">
         <div className="g-controls-head">
-          <h2 id="g-tools-title" className="g-controls-title">
-            Your design
-          </h2>
+          {/*
+            The card's title is the group it shows, not "Your design": with one group on screen a generic
+            heading says nothing about what is under it. The phone's word tabs sit here because the rail is
+            hidden at that width; from 1024 up the rail is the tab strip and this row is not drawn.
+          */}
+          <div className="g-controls-headings">
+            <h2 id="g-tools-title" className="g-controls-title">
+              {activeTab.title}
+            </h2>
+            <p className="g-controls-kicker">Your design</p>
+          </div>
           <button
             type="button"
             id="g-left-toggle"
@@ -118,9 +136,38 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
             <IconChevronLeft />
           </button>
         </div>
+        <div className="g-grouptabs" role="tablist" aria-label="Your design groups">
+          {GROUP_TABS.map((tab, index) => (
+            <button
+              key={tab.id}
+              id={`g-grouptab-${tab.id.replace('g-group-', '')}`}
+              type="button"
+              role="tab"
+              className="g-grouptab"
+              aria-selected={group === tab.id}
+              aria-controls={panelIdFor(tab.id)}
+              tabIndex={group === tab.id ? 0 : -1}
+              onClick={() => selectToolsGroup(tab.id)}
+              onKeyDown={(event) => {
+                const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+                const backward = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
+                const ends = event.key === 'Home' || event.key === 'End';
+                if (!forward && !backward && !ends) return;
+                event.preventDefault();
+                const n = GROUP_TABS.length;
+                const next =
+                  event.key === 'Home' ? 0 : event.key === 'End' ? n - 1 : (index + (forward ? 1 : -1) + n) % n;
+                selectToolsGroup(GROUP_TABS[next]!.id);
+                document.getElementById(`g-grouptab-${GROUP_TABS[next]!.id.replace('g-group-', '')}`)?.focus();
+              }}
+            >
+              {tab.short}
+              {problems[tab.id] === 0 ? null : <span className="g-grouptab-dot" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
         <div className="g-controls-body">
-          <ControlAccordion design={design} type={type} issues={issues} />
-          <DesignCheck design={design} type={type} />
+          <ControlAccordion design={design} type={type} issues={issues} group={group} />
         </div>
       </section>
 

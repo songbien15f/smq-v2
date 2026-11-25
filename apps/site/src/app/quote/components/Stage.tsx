@@ -11,7 +11,9 @@ import {
   type GuestDesignInput,
 } from '@sq/core/domain';
 import { metresLabel, shedOf } from '../designOps';
+import { useGuest } from '../store';
 import { closeTools, openTools, usePanels } from '../panels';
+import { DesignCheckChip } from './DesignCheckChip';
 import { GuestPlan } from './GuestPlan';
 import { IconList, IconWind } from './icons';
 
@@ -80,6 +82,7 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
   const [showRoof, setShowRoof] = useState(true);
   const [resetView, setResetView] = useState(0);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  const region = useGuest((s) => s.estimate);
   const bp = usePanels((s) => s.bp);
   const leftOpen = usePanels((s) => s.leftOpen);
 
@@ -135,16 +138,39 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
             {v.label}
           </button>
         ))}
-        {view === '3d' && config !== null ? (
-          <div className="g-stage-tools">
-            <button type="button" className="g-btn g-btn-ghost" aria-pressed={showRoof} onClick={() => setShowRoof((r) => !r)}>
-              {showRoof ? 'Hide roof' : 'Show roof'}
+        {/*
+          The 3D switches hold their place on the 2D tab. They used to be removed, which moved the
+          toolbar a row every time the visitor switched view (E6, 2026-11-24); `visibility: hidden`
+          keeps the space and still takes them out of the tab order and the a11y tree, because they do
+          nothing to a plan.
+        */}
+        <div className={`g-stage-tools${view === '3d' && config !== null ? '' : ' g-stage-tools-off'}`}
+          aria-hidden={view === '3d' && config !== null ? undefined : true}
+        >
+            {/*
+              `aria-pressed` is the state of the button's **action**, not of the thing it describes: a
+              pressed "Hide roof" means the roof is hidden. It used to be `showRoof`, so it said the
+              opposite of what the label offered (E6). The label stays fixed, which is what a toggle
+              should do; the state is in `aria-pressed`.
+            */}
+            <button
+              type="button"
+              className="g-btn g-btn-ghost"
+              aria-pressed={!showRoof}
+              disabled={!(view === '3d' && config !== null)}
+              onClick={() => setShowRoof((r) => !r)}
+            >
+              Hide roof
             </button>
-            <button type="button" className="g-btn g-btn-ghost" onClick={() => setResetView((n) => n + 1)}>
+            <button
+              type="button"
+              className="g-btn g-btn-ghost"
+              disabled={!(view === '3d' && config !== null)}
+              onClick={() => setResetView((n) => n + 1)}
+            >
               Reset view
             </button>
-          </div>
-        ) : null}
+        </div>
 
         {/*
           "Tools" only exists on a phone, where the tools are a drawer with no rail to reopen them.
@@ -214,8 +240,17 @@ export function Stage({ design, type }: { design: GuestDesignInput; type: GuestB
         </li>
         <li className="g-stat g-stat-wind">
           <IconWind />
-          <span className="g-stat-value">Wind: confirmed in your quote</span>
+          {/*
+            The same `estimate` the wind box on ① reads, so the two cannot disagree. "Confirmed in your
+            quote" claimed more than the page knows: with a suburb-only address there is no region at
+            all, and an estimator has not seen anything yet.
+          */}
+          <span className="g-stat-value">
+            {region === null ? 'Wind: an estimator confirms' : `Wind: Region ${region} (indicative)`}
+          </span>
         </li>
+        {/* The design check lives here now, next to the numbers it is about (2026-11-25). */}
+        <DesignCheckChip design={design} type={type} />
       </ul>
     </div>
   );

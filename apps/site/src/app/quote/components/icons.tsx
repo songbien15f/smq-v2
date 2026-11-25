@@ -263,3 +263,21 @@ export const IconStop = (p: IconProps) => (
     <rect x="7" y="7" width="10" height="10" rx="2" />
   </Svg>
 );
+
+/** A triangle with an exclamation: something needs a person's attention. */
+export const IconAlert = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4.5l8.5 15h-17z" />
+    <path d="M12 10v4.5" />
+    <path d="M12 17.2h.01" strokeWidth="2.5" />
+  </Svg>
+);
+
+/** A circled "i": a note rather than a problem. */
+export const IconInfo = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11v5.5" />
+    <path d="M12 7.8h.01" strokeWidth="2.5" />
+  </Svg>
+);

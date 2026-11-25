@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { GuestBuildingTypeSpec, GuestDesignInput } from '@sq/core/domain';
-import { STEPS, stepLocked, contactStarted, type ContactDraft, type GuestStep } from '../store';
+import { STEPS, contactValid, stepLocked, type ContactDraft, type GuestStep } from '../store';
 import type { MissingStep } from '../summary';
 import { IconCheck } from './icons';
 
@@ -17,13 +17,26 @@ export const panelId = (step: GuestStep) => `g-panel-${step}`;
 const LOCK_HINT_ID = 'g-tab-lock-hint';
 
 /**
- * Done = filled in, and not missing anything for Send. ③ is never "done": it is the goal.
- * ② also needs to have been opened: a type's default design is already valid, so without that ②
- * ticked itself the moment a type was picked on ①.
+ * Done = filled in, **unlocked**, and not missing anything for Send. ③ is never "done": it is the goal.
+ *
+ * `locked` is the first test on purpose. It used to be possible to reload with a design in storage and
+ * no contact details and see ② with a tick: `designSeen` comes back from `localStorage`, so the "you have
+ * opened this" memory survived while the details that unlock it did not (measured 2026-11-24). A locked
+ * step cannot be complete, however much of it the visitor has seen.
+ *
+ * ② also needs to have been opened: a type's default design is already valid, so without that ② ticked
+ * itself the moment a type was picked on ①. ① needs a real email and mobile, not just a site.
  */
-function complete(step: GuestStep, design: GuestDesignInput | null, missing: string | null, designSeen: boolean): boolean {
-  if (design === null || step === 'send' || missing !== null) return false;
-  if (step === 'start') return design.site !== undefined;
+function complete(
+  step: GuestStep,
+  design: GuestDesignInput | null,
+  missing: string | null,
+  designSeen: boolean,
+  locked: boolean,
+  contact: ContactDraft,
+): boolean {
+  if (locked || design === null || step === 'send' || missing !== null) return false;
+  if (step === 'start') return design.site !== undefined && contactValid(contact);
   return designSeen;
 }
 
@@ -55,7 +68,7 @@ export function StepTabs({
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const [focusIndex, setFocusIndex] = useState(STEPS.indexOf(step));
-  const anyLocked = design === null || design.site === undefined || !contactStarted(contact);
+  const anyLocked = design === null || design.site === undefined || !contactValid(contact);
 
   useEffect(() => setFocusIndex(STEPS.indexOf(step)), [step]);
 
@@ -97,7 +110,7 @@ export function StepTabs({
               const locked = stepLocked(s, design, type, contact);
               const selected = s === step;
               const lack = missing.find((m) => m.step === s)?.reason ?? null;
-              const done = !selected && complete(s, design, lack, designSeen);
+              const done = !selected && complete(s, design, lack, designSeen, locked, contact);
               return (
                 <button
                   key={s}
@@ -113,8 +126,13 @@ export function StepTabs({
                   {...(locked ? { 'aria-disabled': true, 'aria-describedby': LOCK_HINT_ID } : {})}
                   tabIndex={i === focusIndex ? 0 : -1}
                   onFocus={() => setFocusIndex(i)}
+                  {...(locked ? { title: 'Finish Start first' } : {})}
                   onClick={() => {
-                    if (!locked) onActivate(s);
+                    /*
+                     * Always ask to activate. A locked tab used to swallow the press, which reads as a
+                     * broken tab; `goTo` answers it by returning to ① and focusing the field to fix.
+                     */
+                    onActivate(s);
                   }}
                 >
                   <span className="g-tab-num" aria-hidden="true">

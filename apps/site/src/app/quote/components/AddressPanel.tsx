@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { AU_STATES, type GuestPlaceSuggestion, type GuestSuburb } from '@sq/contracts';
-import type { GuestSite, StateCode } from '@sq/core/domain';
+import type { GuestEnclosure, GuestSite, StateCode } from '@sq/core/domain';
 import { createPlacesClient, searchSuburbs, type SearchResult } from '../addressSearch';
 import { setEstimate, setSite, useGuest } from '../store';
 import { SearchCombobox, type ComboOption } from './SearchCombobox';
 import { IconPin, IconSearch } from './icons';
+import { SiteEstimate } from './SiteEstimate';
 
 /**
  * ①'s address field (plan G-a2 S4): **one box**, and the address must come from the suggestions.
@@ -79,7 +80,13 @@ const suburbSearch = async (q: string, signal: AbortSignal): Promise<SearchResul
  * The region goes to the store rather than to a callback so step ②'s "Design check" can talk about
  * the same estimate step ① showed, without the frame threading it through two components.
  */
-export function AddressPanel() {
+export function AddressPanel({
+  enclosure,
+  mode: buildingMode,
+}: {
+  enclosure: GuestEnclosure;
+  mode: 'design' | 'enquiry';
+}) {
   const site = useGuest((s) => s.design?.site);
   const [mode, setMode] = useState<Mode>(placesUnavailable ? 'suburb' : 'places');
   const [notice, setNotice] = useState<string | null>(
@@ -149,7 +156,7 @@ export function AddressPanel() {
     }
     const next: GuestSite = { suburb: s.suburb, state: s.state, postcode: s.postcode };
     setSite(next);
-    // The suburb list carries no coordinates, so no estimate: the page says "confirmed in your quote".
+    // The suburb list carries no coordinates, so no estimate: the wind box says "an estimator confirms".
     setEstimate(null);
     setEditing(false);
     setPickError(null);
@@ -176,8 +183,13 @@ export function AddressPanel() {
   };
 
   if (site !== undefined && !editing) {
+    const suburbOnly = site.street === undefined || site.street === '';
     return (
-      <div className="g-address">
+      /*
+       * One column: the picked line, then the wind box directly under it. The two-column grid belongs to
+       * the search branch; inside this one it pushed the wind box into the right-hand column.
+       */
+      <div className="g-address g-address-stack">
         <div className="g-address-chosen">
           <span className="g-address-chosen-icon" aria-hidden="true">
             <IconPin />
@@ -185,6 +197,10 @@ export function AddressPanel() {
           <p className="g-address-chosen-text">
             <span className="g-sr-only">Address selected: </span>
             {addressLine(site)}
+            {/* A suburb is a legitimate address here, but the estimator will ring to confirm the site. */}
+            {suburbOnly ? (
+              <span className="g-address-suburb-only">Suburb only — no street number or name</span>
+            ) : null}
           </p>
           <button
             type="button"
@@ -198,6 +214,12 @@ export function AddressPanel() {
             Change
           </button>
         </div>
+        {/*
+          The estimate belongs to the *chosen* address, so it lives here rather than beside the whole
+          panel. It used to sit under the picker in `StartPanel`, which kept showing the old address's
+          region while the guest was changing it.
+        */}
+        <SiteEstimate enclosure={enclosure} mode={buildingMode} />
         <p className="g-sr-only" role="status" aria-live="polite">
           {announce}
         </p>
@@ -208,6 +230,19 @@ export function AddressPanel() {
   return (
     <div className="g-address">
       <div className="g-address-search">
+        {site === undefined ? null : (
+          <button
+            type="button"
+            className="g-btn g-btn-ghost"
+            onClick={() => {
+              setEditing(false);
+              setPickError(null);
+            }}
+          >
+            Keep this address
+          </button>
+        )}
+
         {notice === null ? null : (
           <p className="g-notice" role="status">
             {notice}
@@ -336,6 +371,26 @@ export function AddressPanel() {
           >
             <IconSearch />
             Can&rsquo;t find it? Pick your suburb instead
+          </button>
+        ) : null}
+        {/*
+          The way back. Once a visitor was on the suburb list there was no route to the street search
+          at all — the button above only ever went one way — so a second visit was stuck with suburbs.
+          Not offered when Places has actually failed: the link would lead to a box that cannot answer.
+        */}
+        {mode !== 'places' && !placesUnavailable ? (
+          <button
+            type="button"
+            className="g-btn g-btn-ghost"
+            onClick={() => {
+              setPickError(null);
+              setNotice(null);
+              setMode('places');
+              setFocusNext('g-address-search');
+            }}
+          >
+            <IconSearch />
+            Search by street address instead
           </button>
         ) : null}
       </div>

@@ -71,6 +71,53 @@ function FrameCamera({
   return null;
 }
 
+/**
+ * A fixed camera, for the screenshot script only (`scripts/qa-guest-shots.mjs`).
+ *
+ * ## Why it is in the shipped bundle at all
+ *
+ * The bug it has to photograph is a few centimetres wide and only visible from a chosen angle: a rafter
+ * end 300 mm past the wall, a downpipe 180 mm off it. Aiming OrbitControls by dragging a mouse cannot be
+ * repeated exactly twice — before the fix and after it — so the coordinates have to be scriptable.
+ *
+ * ## Why it is harmless in production
+ *
+ * The whole effect is behind a `NODE_ENV` test, which the bundler replaces at build time, so the body is
+ * dead code in a production build and `window.__sqQaCamera` is never defined. It sets nothing on the
+ * scene: it moves the same camera and the same controls a drag would, then asks for one frame
+ * (`frameloop="demand"` means nothing redraws on its own).
+ *
+ * Units are **metres**, the scene's own: x across the span (0 = outside face of the left wall), y up,
+ * z along the length (0 = the front end).
+ */
+function QaCamera({ controls }: { controls: React.RefObject<OrbitControlsHandle | null> }) {
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return undefined;
+    const host = window as unknown as {
+      __sqQaCamera?: (position: [number, number, number], target: [number, number, number]) => void;
+    };
+    host.__sqQaCamera = (position, target) => {
+      camera.position.set(position[0], position[1], position[2]);
+      const aim = new THREE.Vector3(target[0], target[1], target[2]);
+      camera.lookAt(aim);
+      if (camera instanceof THREE.PerspectiveCamera) camera.updateProjectionMatrix();
+      if (controls.current !== null) {
+        controls.current.target.copy(aim);
+        controls.current.update();
+      }
+      invalidate();
+    };
+    return () => {
+      delete host.__sqQaCamera;
+    };
+  }, [camera, controls, invalidate]);
+
+  return null;
+}
+
 export interface ShedViewerProps {
   /** The building, in millimetres. `withDimensions()` narrows a stored `ShedConfig` to this. */
   config: DimensionedShed;
@@ -201,6 +248,7 @@ export function ShedViewer({
           writes straight to it every frame — so a prop is how a "go home" request has to arrive.
         */}
         <FrameCamera key={resetView} frame={frame} controls={controlsRef} />
+        <QaCamera controls={controlsRef} />
         <OrbitControls
           ref={controlsRef}
           makeDefault

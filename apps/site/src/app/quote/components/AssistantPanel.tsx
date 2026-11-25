@@ -328,17 +328,23 @@ function ChangeCard({ turn, index }: { turn: Extract<AssistantTurn, { kind: 'cha
               Undo
             </button>
           )}
-          <button
-            type="button"
-            className="g-btn g-btn-ghost"
-            onClick={() => {
-              window.location.hash = '';
-              document.getElementById('g-view-2d')?.click();
-            }}
-          >
-            <IconList />
-            View on plan
-          </button>
+          {/*
+            After an Undo there is nothing of this change left on the plan, so "View on plan" would
+            show the visitor a plan without the thing they just reverted (E8).
+          */}
+          {turn.undone ? null : (
+            <button
+              type="button"
+              className="g-btn g-btn-ghost"
+              onClick={() => {
+                window.location.hash = '';
+                document.getElementById('g-view-2d')?.click();
+              }}
+            >
+              <IconList />
+              View on plan
+            </button>
+          )}
         </div>
       </div>
     </li>

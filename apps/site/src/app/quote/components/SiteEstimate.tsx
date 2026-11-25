@@ -7,7 +7,7 @@ import { IconWind } from './icons';
 /**
  * The wind/hazard line under the address (plan G-a2 S4, Q3).
  *
- * "Region B · 10a Enclosed · Importance Level 2", with **"Indicative — confirmed in your quote"**
+ * "Region B · 10a Enclosed · Importance Level 2", with **"Indicative — an estimator confirms these"**
  * always beneath it. The customer asked for exactly this line; the disclaimer is what keeps it honest.
  *
  * ## What is deliberately absent
@@ -18,7 +18,7 @@ import { IconWind } from './icons';
  * - **No line at all for a Class 1 House.** A dwelling is not a Class 10a building, and the page has
  *   no estimate to give it (`guestSiteEstimate` answers `null` for an `enquiry` type).
  * - **No guessed region.** `region === null` means "near a boundary, or we could not place the
- *   address"; the component then says "Wind region confirmed in your quote" instead of a letter.
+ *   address"; the component then says "Wind region" and lists the building facts without a letter.
  */
 
 const ENCLOSURE: Record<GuestEnclosure, string> = {
@@ -37,10 +37,14 @@ export function SiteEstimate({
   const region = useGuest((s) => s.estimate);
   if (mode === 'enquiry') return null;
 
-  const line =
-    region === null
-      ? `Wind region confirmed in your quote · 10a ${ENCLOSURE[enclosure]} · Importance Level 2`
-      : `Region ${region} · 10a ${ENCLOSURE[enclosure]} · Importance Level 2`;
+  /*
+   * One message, one direction: "this is our reading; an estimator confirms it".
+   *
+   * "Wind region confirmed in your quote" was ambiguous — it could read as "already confirmed" or as
+   * "will be". With no region letter there is nothing to confirm yet, so the line simply drops the
+   * letter and keeps the building facts.
+   */
+  const facts = `10a ${ENCLOSURE[enclosure]} · Importance Level 2`;
 
   return (
     <aside className="g-wind" aria-labelledby="g-wind-title">
@@ -51,8 +55,14 @@ export function SiteEstimate({
         <h3 id="g-wind-title" className="g-wind-title">
           {region === null ? 'Wind region' : `Region ${region}`}
         </h3>
-        <p className="g-wind-line">{line}</p>
-        <p className="g-wind-note">Indicative — confirmed in your quote.</p>
+        <p className="g-wind-line">
+          {region === null ? null : `Region ${region} · `}
+          {/* `title` alone is hover-only; the line under it says the same thing on a phone. */}
+          <abbr title="Class 10a: a non-habitable building such as a shed, garage or carport">10a</abbr>{' '}
+          {ENCLOSURE[enclosure]} · Importance Level 2
+        </p>
+        <p className="g-wind-note">Indicative — an estimator confirms these in your quote.</p>
+        <p className="g-wind-note">Class 10a = shed, garage or carport (non-habitable).</p>
       </div>
     </aside>
   );

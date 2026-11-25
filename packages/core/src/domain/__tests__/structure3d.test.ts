@@ -87,7 +87,51 @@ describe('gutters', () => {
     const s = shed();
     const parts = gutterParts(s, roofGeometry(s));
     expect(parts.filter((part) => part.kind.startsWith('gutter-'))).toHaveLength(2);
-    expect(parts.filter((part) => part.kind.startsWith('downpipe-'))).toHaveLength(4);
+    // The body only: each pipe also gains an offset piece and a shoe, which are checked below.
+    const bodies = parts.filter(
+      (part) => part.kind.startsWith('downpipe-') && !part.kind.startsWith('downpipe-offset') && !part.kind.startsWith('downpipe-shoe'),
+    );
+    expect(bodies).toHaveLength(4);
+  });
+
+  it('holds the downpipe against the wall, feet on the ground, with an offset and a shoe', () => {
+    const s = shed();
+    const parts = gutterParts(s, roofGeometry(s));
+    const bodies = parts.filter(
+      (part) => part.kind.startsWith('downpipe-') && !part.kind.startsWith('downpipe-offset') && !part.kind.startsWith('downpipe-shoe'),
+    );
+    expect(bodies).toHaveLength(4);
+
+    for (const body of bodies) {
+      const [x] = body.position;
+      const face = x < 0 ? 0 : s.span;
+      const radius = body.radius ?? 0;
+      // Centre one radius plus 10 mm off the face, so the pipe touches the sheeting without sinking in.
+      expect(Math.abs(Math.abs(x - face) - (radius + 10))).toBeLessThanOrEqual(1);
+      const bottom = body.position[1] - (body.height ?? 0) / 2;
+      expect(bottom).toBeGreaterThanOrEqual(-50);
+      expect(bottom).toBeLessThanOrEqual(0);
+    }
+
+    const offsets = parts.filter((part) => part.kind.startsWith('downpipe-offset'));
+    const shoes = parts.filter((part) => part.kind.startsWith('downpipe-shoe'));
+    expect(offsets).toHaveLength(4);
+    expect(shoes).toHaveLength(4);
+  });
+
+  it('attaches a carport downpipe to the column, because a carport has no wall', () => {
+    const carport = shed({ structureType: 'gable_carport' });
+    const bodies = gutterParts(carport, roofGeometry(carport)).filter(
+      (part) => part.kind.startsWith('downpipe-') && !part.kind.startsWith('downpipe-offset') && !part.kind.startsWith('downpipe-shoe'),
+    );
+    expect(bodies).toHaveLength(4);
+    for (const body of bodies) {
+      const [x] = body.position;
+      const radius = body.radius ?? 0;
+      // The outermost solid is the column: its outside face is WALL_DEPTH in from the wall line.
+      const columnFace = x < 0 ? 50 : carport.span - 50;
+      expect(Math.abs(Math.abs(x - columnFace) - (radius + 10))).toBeLessThanOrEqual(1);
+    }
   });
 
   it('places the gutters outside the walls, under the eave overhang', () => {
@@ -150,20 +194,59 @@ describe('frame', () => {
   });
 
   it('leaves nothing standing proud of the outside face', () => {
-    // A base plate wider than its column poked 75 mm through the cladding, which read as a bracket
-    // floating on the wall. Everything *inside* the walls stays inside; rafters and purlins are
-    // excluded because they legitimately run out over the eave.
+    /*
+     * A base plate wider than its column poked 75 mm through the cladding, which read as a bracket
+     * floating on the wall. The same was true of the portal rafter: it was drawn for the **roof sheet**,
+     * which runs out over the eave, so its lower end stood ~315 mm outside the wall as a grey tab under
+     * the gutter (measured 2026-11-24 on a 6 m span). It is no longer excluded here.
+     *
+     * The eave overhang itself is the roof sheet's business: `roof-left`/`roof-right` are still not
+     * "steel inside the walls" and stay out of this list.
+     */
     const s = shed();
-    const overEave = new Set(['rafter-left', 'rafter-right', 'rafter-single', 'purlin']);
+    const overEave = new Set(['purlin', 'roof-left', 'roof-right', 'roof-single', 'ridge-cap']);
     const parts = [
       ...frameParts(s, roofGeometry(s)),
       ...purlinAndGirtParts(s, { purlinRows: 4, purlinSpanMm: 900, girtRows: 3, girtSpanMm: 1200 }),
     ].filter((part) => part.shape === 'box' && !overEave.has(part.kind));
     for (const part of parts) {
-      const [width] = part.size ?? [0, 0, 0];
+      const [width, height] = part.size ?? [0, 0, 0];
       const [x] = part.position;
-      expect(x - width / 2).toBeGreaterThan(-0.5);
-      expect(x + width / 2).toBeLessThan(s.span + 0.5);
+      // A rotated box projects more than its own length onto x: half of each side, by the cosine of the
+      // other axis. Without this a rafter's end is invisible to the check.
+      const angle = Math.abs(part.rotation?.[2] ?? 0);
+      const halfX = (width / 2) * Math.abs(Math.cos(angle)) + (height / 2) * Math.abs(Math.sin(angle));
+      const [, y] = part.position;
+      expect(x - halfX, `${part.kind} near edge`).toBeGreaterThan(-0.5);
+      expect(x + halfX, `${part.kind} far edge`).toBeLessThan(s.span + 0.5);
+      expect(Number.isFinite(y)).toBe(true);
+    }
+  });
+
+  it('meets the two gable rafters at the ridge, inside the walls', () => {
+    const s = shed();
+    const roof = roofGeometry(s);
+    const rafters = frameParts(s, roof).filter((p) => p.kind === 'rafter-left' || p.kind === 'rafter-right');
+    // One pair at every bay line: the same count as the column pairs the frame draws.
+    const columns = frameParts(s, roof).filter((p) => p.kind === 'column');
+    expect(rafters).toHaveLength(columns.length);
+
+    /** Where a rotated box's `+x` end lands (its centre plus half its length along the rotation). */
+    const ends = (p: (typeof rafters)[number]) => {
+      const [len] = p.size ?? [0, 0, 0];
+      const angle = p.rotation?.[2] ?? 0;
+      const cx = p.position[0];
+      return { near: cx - (len / 2) * Math.cos(angle), far: cx + (len / 2) * Math.cos(angle) };
+    };
+
+    for (const p of rafters) {
+      const { near, far } = ends(p);
+      const apex = p.kind === 'rafter-left' ? far : near;
+      expect(Math.abs(apex - s.span / 2), `${p.kind} apex`).toBeLessThanOrEqual(1);
+      // The low end of each rafter sits against the inside face of its own wall's cladding.
+      const foot = p.kind === 'rafter-left' ? near : far;
+      const wallFoot = p.kind === 'rafter-left' ? 50 : s.span - 50;
+      expect(Math.abs(foot - wallFoot), `${p.kind} foot`).toBeLessThanOrEqual(1);
     }
   });
 

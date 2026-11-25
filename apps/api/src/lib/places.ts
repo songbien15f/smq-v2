@@ -187,7 +187,17 @@ export function createGooglePlacesTransport(apiKey: string, fetchImpl: typeof fe
           input,
           // Australia only: this app quotes Australian sheds, and an address in another country is a
           // typo or a mistake, not a delivery.
+          //
+          /*
+           * Street addresses — and the two forms that are still a *place to build on*.
+           *
+           * The first version of this filter named only `street_address`, which a rural lot without a
+           * number and a unit inside a block do not have: Google types those `premise` and
+           * `subpremise`, so the suggestion disappeared from a customer's list entirely (E5, round 3).
+           * A business (`establishment`) or a station still does not belong here.
+           */
           includedRegionCodes: ['au'],
+          includedPrimaryTypes: ['street_address', 'premise', 'subpremise'],
           ...(options.sessionToken === undefined ? {} : { sessionToken: options.sessionToken }),
         }),
       });

@@ -2,12 +2,12 @@
 
 import { useRef, useState } from 'react';
 import type { GuestBuildingTypeSpec, GuestDesignInput } from '@sq/core/domain';
+import { nationalMobile } from '../mobile';
 import { contactStarted, contactValid, updateContact, chooseType, useGuest, type ContactDraft, type GuestStep } from '../store';
 import { needsDesign } from '../summary';
 import { guestDesignFromType } from '@sq/core/domain';
 import { AddressPanel } from './AddressPanel';
 import { SentRequests } from './SentRequests';
-import { SiteEstimate } from './SiteEstimate';
 import { TypeCard } from './TypeCard';
 import { IconChevronRight } from './icons';
 
@@ -63,6 +63,15 @@ export function StartPanel({
    */
   const droppedType = useGuest((s) => s.droppedType);
   const [touched, setTouched] = useState<Partial<Record<keyof ContactDraft, boolean>>>({});
+  /*
+   * A refused step (§ Phase A) points at one box. Focusing it cannot produce a blur, so the inline
+   * error would never appear on its own; this is what makes it appear.
+   */
+  const startProblem = useGuest((s) => s.startProblem);
+  const shown = {
+    ...touched,
+    ...(startProblem === null ? {} : { [startProblem]: true }),
+  } as Partial<Record<keyof ContactDraft, boolean>>;
 
   const ready = design !== null && design.site !== undefined && contactStarted(contact);
   const canContinue = ready && contactValid(contact);
@@ -90,10 +99,11 @@ export function StartPanel({
           <h3 id="g-start-address" className="g-section-title">
             2. Where will it be built?
           </h3>
-          <AddressPanel />
-          {design.site === undefined ? null : (
-            <SiteEstimate enclosure={type?.config.enclosure ?? 'enclosed'} mode={type?.config.mode ?? 'design'} />
-          )}
+          {/* The estimate now renders inside AddressPanel, beside the address it describes. */}
+          <AddressPanel
+            enclosure={type?.config.enclosure ?? 'enclosed'}
+            mode={type?.config.mode ?? 'design'}
+          />
         </section>
       )}
 
@@ -101,10 +111,13 @@ export function StartPanel({
         <h3 id="g-start-contact" className="g-section-title">
           3. How can we reach you?
         </h3>
+        <p className="g-required-note">
+          <span className="g-required" aria-hidden="true">*</span> required
+        </p>
         <div className="g-contact-grid">
           <div className="g-field">
             <label className="g-label" htmlFor="g-first-name">
-              First name
+              First name<span className="g-required" aria-hidden="true">*</span>
             </label>
             <input
               id="g-first-name"
@@ -113,18 +126,19 @@ export function StartPanel({
               autoComplete="given-name"
               maxLength={60}
               required
+              aria-required="true"
               value={contact.firstName}
               onChange={(e) => updateContact({ firstName: e.target.value }, type)}
               onBlur={() => setTouched((t) => ({ ...t, firstName: true }))}
-              aria-invalid={touched.firstName === true && contact.firstName.trim() === ''}
+              aria-invalid={shown.firstName === true && contact.firstName.trim() === ''}
             />
-            {touched.firstName === true && contact.firstName.trim() === '' ? (
+            {shown.firstName === true && contact.firstName.trim() === '' ? (
               <p className="g-field-error">Enter your first name.</p>
             ) : null}
           </div>
           <div className="g-field">
             <label className="g-label" htmlFor="g-last-name">
-              Last name
+              Last name<span className="g-required" aria-hidden="true">*</span>
             </label>
             <input
               id="g-last-name"
@@ -133,18 +147,19 @@ export function StartPanel({
               autoComplete="family-name"
               maxLength={60}
               required
+              aria-required="true"
               value={contact.lastName}
               onChange={(e) => updateContact({ lastName: e.target.value }, type)}
               onBlur={() => setTouched((t) => ({ ...t, lastName: true }))}
-              aria-invalid={touched.lastName === true && contact.lastName.trim() === ''}
+              aria-invalid={shown.lastName === true && contact.lastName.trim() === ''}
             />
-            {touched.lastName === true && contact.lastName.trim() === '' ? (
+            {shown.lastName === true && contact.lastName.trim() === '' ? (
               <p className="g-field-error">Enter your last name.</p>
             ) : null}
           </div>
           <div className="g-field">
             <label className="g-label" htmlFor="g-email">
-              Email address
+              Email address<span className="g-required" aria-hidden="true">*</span>
             </label>
             <input
               id="g-email"
@@ -153,20 +168,21 @@ export function StartPanel({
               autoComplete="email"
               maxLength={254}
               required
+              aria-required="true"
               value={contact.email}
               onChange={(e) => updateContact({ email: e.target.value }, type)}
               onBlur={() => setTouched((t) => ({ ...t, email: true }))}
               aria-invalid={
-                touched.email === true && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim())
+                shown.email === true && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim())
               }
             />
-            {touched.email === true && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim()) ? (
+            {shown.email === true && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim()) ? (
               <p className="g-field-error">Enter an email address we can reply to.</p>
             ) : null}
           </div>
           <div className="g-field">
             <label className="g-label" htmlFor="g-mobile">
-              Mobile
+              Mobile<span className="g-required" aria-hidden="true">*</span>
             </label>
             <div className="g-input-with-prefix">
               <span className="g-input-prefix" aria-hidden="true">
@@ -180,20 +196,25 @@ export function StartPanel({
                 autoComplete="tel-national"
                 maxLength={15}
                 required
+                aria-required="true"
                 placeholder={MOBILE_HINT}
                 value={contact.mobile}
                 onChange={(e) => updateContact({ mobile: e.target.value }, type)}
-                onBlur={() => setTouched((t) => ({ ...t, mobile: true }))}
-                aria-invalid={touched.mobile === true && !contactValid({ ...contact, firstName: 'x', lastName: 'x', email: 'a@b.co' })}
+                onBlur={() => {
+                  setTouched((t) => ({ ...t, mobile: true }));
+                  const pretty = nationalMobile(contact.mobile);
+                  if (pretty !== null && pretty !== contact.mobile) updateContact({ mobile: pretty }, type);
+                }}
+                aria-invalid={shown.mobile === true && !contactValid({ ...contact, firstName: 'x', lastName: 'x', email: 'a@b.co' })}
               />
             </div>
-            {touched.mobile === true && !contactValid({ ...contact, firstName: 'x', lastName: 'x', email: 'a@b.co' }) ? (
+            {shown.mobile === true && !contactValid({ ...contact, firstName: 'x', lastName: 'x', email: 'a@b.co' }) ? (
               <p className="g-field-error">Enter an Australian mobile, e.g. 0412 345 678.</p>
             ) : null}
           </div>
         </div>
         <p className="g-contact-note">
-          Your details stay on this page until you send. Reloading clears the form but keeps your design.
+          Reloading keeps your design and address, but clears your name, mobile and email.
         </p>
       </section>
 

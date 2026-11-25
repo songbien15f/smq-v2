@@ -44,11 +44,22 @@ describe('assessGuestDesign', () => {
     expect(pitch?.focus).toContain('g-pitch');
   });
 
-  it('flags a carport bay wider than the book, and names which bay', () => {
+  it('notes a carport bay wider than the book at its own starting size, without warning colours', () => {
+    // A carport is offered at 5.90 m bays on purpose (customer Q6). Telling every visitor their
+    // default building was out of the ordinary was the complaint; the flag stays, the tone does not.
     const items = assessGuestDesign(guestDesignFromType(carport), carport, estimate('A'));
-    const bay = items.find((i) => i.level === 'review' && /wider than/i.test(i.title));
-    expect(bay?.title).toContain('Bay 1');
+    const bay = items.find((i) => /bays over/i.test(i.title));
+    expect(bay?.level).toBe('note');
+    expect(bay?.detail).toMatch(/normal size/i);
     expect(bay?.focus).toBe('#g-bay-0');
+  });
+
+  it('still flags a bay the visitor widened themselves', () => {
+    const design = guestDesignFromType(carport);
+    const widened = { ...design, building: { ...design.building, bayWidths: [6000] } };
+    const bay = assessGuestDesign(widened, carport, estimate('A')).find((i) => /wider than the book prices/i.test(i.title));
+    expect(bay?.level).toBe('review');
+    expect(bay?.title).toContain('Bay 1');
   });
 
   it('records Footing Only as the estimator’s call rather than an error', () => {

@@ -116,6 +116,31 @@ describe('window', () => {
     }
   });
 
+  it('keeps the frame and flashing almost flush with the wall', () => {
+    /*
+     * The frame box was 126 mm deep and centred at z = −35, so 98 mm of it stood outside the wall face
+     * (z < 0 is outside) and the flashings reached 125 mm. On a thin cladding that reads as a crate
+     * bolted to the side of the shed (measured 2026-11-24). The frame is now 60 mm deep with its outer
+     * face 25 mm proud — enough to read as a frame, not as a box.
+     */
+    const frameKinds = new Set(['frame-left', 'frame-right', 'frame-head', 'frame-sill', 'mullion']);
+    for (const part of parts) {
+      const [w, h, depth] = part.size ?? [0, 0, 0];
+      const z = part.position[2];
+      const outer = z - depth / 2;
+      if (frameKinds.has(part.kind)) {
+        expect(outer, `${part.kind} outer face`).toBeGreaterThanOrEqual(-40);
+        // The frame must still reach into the cladding, or it would float in front of the wall.
+        expect(z + depth / 2).toBeGreaterThan(-1);
+      }
+      if (part.kind === 'head-flashing' || part.kind === 'sill-flashing') {
+        expect(outer, `${part.kind} outer face`).toBeGreaterThanOrEqual(-50);
+      }
+      void w;
+      void h;
+    }
+  });
+
   it('omits the mullion on a narrow window', () => {
     const narrow = openingParts(opening({ type: 'window', width: 900, height: 900, sill: 1200 }), 0, colors);
     expect(narrow.some((part) => part.kind === 'mullion')).toBe(false);

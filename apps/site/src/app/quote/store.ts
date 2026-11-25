@@ -34,7 +34,9 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { guestDesignSchema, guestSourceSchema, normaliseAuMobile } from '@sq/contracts';
+import { guestDesignSchema, guestSourceSchema } from '@sq/contracts';
+import { mobileE164 } from './mobile';
+import { openTools, type ToolsGroupId } from './panels';
 import type { GuestBuildingTypeSpec, GuestDesignInput } from '@sq/core/domain';
 import { guestDesignFromType, refitGuestOpenings, upgradeGuestDesign, type GuestSite, type GuestWindRegion } from '@sq/core/domain';
 
@@ -55,6 +57,14 @@ export interface GuestState {
   revisionOf: string | null;
   /** The contact fields and the free-text request. In memory only — never written to storage. */
   contact: ContactDraft;
+  /**
+   * Which contact box a refused step is pointing at, so its inline error shows.
+   *
+   * Focusing an input does not blur it, so `StartPanel`'s "touched" map would stay empty and the guest
+   * would land on ① with a focused box and no sentence saying what is wrong. Set by `explainStart`,
+   * cleared by the next keystroke in any of the boxes.
+   */
+  startProblem: 'firstName' | 'lastName' | 'mobile' | 'email' | null;
   /**
    * Whether this visit offered the assistant (`?assistant=1`), captured while the address still had
    * the query. Build-time `NEXT_PUBLIC_SQ_ASSISTANT` can turn it on for everyone.
@@ -124,11 +134,12 @@ export const EMPTY_CONTACT: ContactDraft = {
 };
 
 /**
- * What the contact form needs before the later steps open.
+ * "The guest has begun filling the form in" — every box has something in it, formats aside.
  *
- * Deliberately permissive about formats the server also checks (`normaliseAuMobile`, `z.email`): the
- * point here is only "has the guest told us who they are", so a mistyped digit does not lock the
- * designer. The server refuses a real mistake with a message on the field.
+ * Used only to decide whether to *show* the inline field errors yet: a visitor who has typed nothing is
+ * not told four times that four boxes are wrong. It is **not** the step lock any more — that is
+ * `contactValid`. Measured 2026-11-24: with this as the lock, a mobile of "123" opened ② and ③, while
+ * the Continue button on ① refused; the two gates disagreed.
  */
 export function contactStarted(contact: ContactDraft): boolean {
   return (
@@ -145,7 +156,7 @@ export function contactValid(contact: ContactDraft): boolean {
     contact.firstName.trim() !== '' &&
     contact.lastName.trim() !== '' &&
     /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim()) &&
-    normaliseAuMobile(contact.mobile) !== null
+    mobileE164(contact.mobile) !== null
   );
 }
 
@@ -163,6 +174,7 @@ const SERVER_STATE: GuestState = {
   ready: false,
   revisionOf: null,
   contact: EMPTY_CONTACT,
+  startProblem: null,
   assistantOffered: false,
   droppedType: null,
   estimate: null,
@@ -219,9 +231,59 @@ export function isStep(value: unknown): value is GuestStep {
 export function stepLocked(step: GuestStep, design: GuestDesignInput | null, type: GuestBuildingTypeSpec | undefined, contact: ContactDraft): boolean {
   if (step === 'start') return false;
   if (design === null || design.site === undefined) return true;
-  if (!contactStarted(contact)) return true;
+  /*
+   * `contactValid`, not `contactStarted`: the tab and the Continue button on ① have to answer the same
+   * question. A mobile the server will refuse ("123") must not open ②, or the visitor fills in a design
+   * and is then sent back here to fix it.
+   */
+  if (!contactValid(contact)) return true;
   if (step === 'design' && type?.config.mode === 'enquiry') return true;
   return false;
+}
+
+/**
+ * The first thing on ① that is keeping the later steps shut, as a selector for focus.
+ *
+ * Order is the order a person fills the page in: the building type and address first, then the contact
+ * boxes. Empty is not the only failure: an email without an `@` and a mobile that will not normalise are
+ * just as much of a lock, so the selector points at the box that has to change.
+ */
+function firstStartProblem(design: GuestDesignInput | null, contact: ContactDraft): string {
+  if (design === null || design.site === undefined) return '#g-first-name';
+  if (contact.firstName.trim() === '') return '#g-first-name';
+  if (contact.lastName.trim() === '') return '#g-last-name';
+  if (mobileE164(contact.mobile) === null) return '#g-mobile';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(contact.email.trim())) return '#g-email';
+  return '#g-first-name';
+}
+
+/**
+ * Say *why* a step will not open, instead of doing nothing.
+ *
+ * Called when a locked tab, the header's Send or the phone bar is pressed. It returns to ① with the
+ * offending field focused, which is the only answer a visitor can act on: a tab that silently ignores a
+ * press reads as broken.
+ */
+export function explainStart(type?: GuestBuildingTypeSpec): void {
+  const selector = firstStartProblem(state.design, state.contact);
+  const field =
+    selector === '#g-first-name'
+      ? 'firstName'
+      : selector === '#g-last-name'
+        ? 'lastName'
+        : selector === '#g-mobile'
+          ? 'mobile'
+          : selector === '#g-email'
+            ? 'email'
+            : null;
+  set({ startProblem: field });
+  if (state.step !== 'start') {
+    pendingFocus = selector;
+    window.history.pushState({ step: 'start' }, '', urlWithStep('start'));
+    set({ step: 'start' });
+    return;
+  }
+  focusSelector(selector);
 }
 
 /** The step that may actually open: a locked one falls back to ①. */
@@ -390,7 +452,14 @@ export function hydrate(types: readonly GuestBuildingTypeSpec[] | null): void {
 
 /** Open a step. A locked step does nothing. `push` adds a history entry so Back returns here. */
 export function goTo(step: GuestStep, type?: GuestBuildingTypeSpec, { push = true }: { push?: boolean } = {}): boolean {
-  if (stepLocked(step, state.design, type, state.contact)) return false;
+  if (stepLocked(step, state.design, type, state.contact)) {
+    /*
+     * A locked step used to return `false` and nothing else, so a tab press did nothing at all. Every
+     * caller of `goTo` is a person asking to go somewhere; the answer is to show them what to fix.
+     */
+    explainStart(type);
+    return false;
+  }
   if (step === state.step) return true;
   if (push) window.history.pushState({ step }, '', urlWithStep(step));
   set({ step });
@@ -432,6 +501,11 @@ export function setSite(site: GuestSite | undefined): void {
     delete next.site;
     return next;
   });
+  /*
+   * The estimate belongs to the address that produced it. Clearing the address used to leave the old
+   * region on screen — and on its way to the assistant as `region` — describing a shed somewhere else.
+   */
+  if (site === undefined) setEstimate(null);
 }
 
 /** Replace the design (later steps edit through this). */
@@ -495,7 +569,7 @@ export function updateContact(patch: Partial<ContactDraft>, type?: GuestBuilding
   const contact = { ...state.contact, ...patch };
   const step = stepLocked(state.step, state.design, type, contact) ? 'start' : state.step;
   if (step !== state.step) window.history.replaceState({ step }, '', urlWithStep(step));
-  set({ contact, step });
+  set({ contact, step, startProblem: null });
 }
 
 /** The request went: show the confirmation in place of the form. */
@@ -551,7 +625,12 @@ export function editAt(step: GuestStep, selector: string, type?: GuestBuildingTy
     focusSelector(takePendingFocus());
     return;
   }
-  if (!goTo(step, type)) pendingFocus = null;
+  /*
+   * Deliberately **not** `pendingFocus = null` on failure: `goTo` answers a refusal by returning to ①
+   * with the offending field focused (`explainStart`), and clearing the request here threw that focus
+   * away — the visitor landed on ① with nothing selected.
+   */
+  goTo(step, type);
 }
 
 export function takePendingFocus(): string | null {
@@ -561,20 +640,38 @@ export function takePendingFocus(): string | null {
 }
 
 /**
- * Focus the first match, opening the `<details>` group it sits in.
+ * Focus the first match, opening the tools card on the group that control belongs to.
+ *
+ * The card shows **one group at a time** (2026-11-25), so a target on another tab is present in the DOM
+ * but `hidden`: the group has to be selected first, and the focus has to wait one render for `hidden` to
+ * come off. This is the single path the design-check chip, the "View on plan" button, the assistant and
+ * the "Edit" links share.
  *
  * `setTimeout`, not `requestAnimationFrame`: rAF is never scheduled in the browser automation this
  * project's checks run under, so a focus queued on it never happened.
  */
 export function focusSelector(selector: string | null): boolean {
   if (selector === null) return false;
-  setTimeout(() => {
+  const reveal = (el: Element | null): ToolsGroupId | null => {
+    const group = el?.closest('[data-group]')?.getAttribute('data-group');
+    return group === 'g-group-size' || group === 'g-group-colours' || group === 'g-group-doors' ? group : null;
+  };
+  const focus = () => {
     const el = document.querySelector<HTMLElement>(selector);
-    if (el === null) return;
-    const group = el.closest('details');
-    if (group !== null && !group.open) group.open = true;
+    if (el === null) return false;
     el.focus({ preventScroll: true });
     el.scrollIntoView({ block: 'center' });
+    return true;
+  };
+  setTimeout(() => {
+    const group = reveal(document.querySelector(selector));
+    if (group === null) {
+      focus();
+      return;
+    }
+    openTools(group);
+    // The panel may need to animate in (a phone drawer) and React has to drop `hidden` first.
+    setTimeout(focus, 60);
   }, 0);
   return true;
 }

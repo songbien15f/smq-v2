@@ -244,6 +244,19 @@ export function gutterParts(shed: DimensionedShed, roof: RoofGeometry): Structur
   const y = shed.height - roof.eaveDrop - 20;
   const run = shed.length + EAVE * 2;
 
+  /*
+   * Where a downpipe stands.
+   *
+   * Its x used to be the **gutter's** x (−230 on the left), which left the pipe hanging 182 mm clear of
+   * the wall with nothing joining the two. A downpipe is fixed to the wall, so it now stands one radius
+   * plus 10 mm off the wall face — or off the **column** for a carport, which has no wall to fix to
+   * (its outer face is `WALL_DEPTH` in from the wall line).
+   */
+  const openStructure = shed.structureType === 'gable_carport' || shed.structureType === 'skillion_carport';
+  const faceLeft = openStructure ? WALL_DEPTH : 0;
+  const faceRight = openStructure ? shed.span - WALL_DEPTH : shed.span;
+  const standOff = DOWNPIPE_RADIUS + 10;
+
   // A skillion sheds water to its low side only, so it has one gutter.
   const gutterXs = hasRidge(shed) ? [-EAVE + 70, shed.span + EAVE - 70] : [-EAVE + 70];
   for (const x of gutterXs) {
@@ -257,14 +270,53 @@ export function gutterParts(shed: DimensionedShed, roof: RoofGeometry): Structur
       color: shed.colors.gutter,
       finish: 'metal',
     });
+
     const side = x < 0 ? 'left' : 'right';
-    for (const z of downpipeStations(shed).filter((s) => s.wall === side).map((s) => s.y)) {
+    const pipeX = x < 0 ? faceLeft - standOff : faceRight + standOff;
+    /*
+     * The body stops 200 mm under the gutter so the offset piece has room, and its foot is at y = 0:
+     * the wall base, where a shoe turns the water out. Ending at the ground plane (−50) would float a
+     * pipe 50 mm below the slab on a building with `in_slab`.
+     */
+    const top = shed.height - roof.eaveDrop - 200;
+    const bottom = 0;
+    const bodyHeight = Math.max(100, top - bottom);
+
+    for (const z of downpipeStations(shed)
+      .filter((s) => s.wall === side)
+      .map((s) => s.y)) {
       parts.push({
-        kind: `downpipe-${x < 0 ? 'left' : 'right'}-${z}`,
+        kind: `downpipe-${side}-${z}`,
         shape: 'cylinder',
-        position: [x, (shed.height - roof.eaveDrop) / 2 - 40, z],
+        position: [pipeX, bottom + bodyHeight / 2, z],
         radius: DOWNPIPE_RADIUS,
-        height: shed.height - roof.eaveDrop - 80,
+        height: bodyHeight,
+        color: shed.colors.downpipe,
+        finish: 'metal',
+      });
+      /*
+       * The offset: a short horizontal run from under the gutter to the top of the pipe. Without it the
+       * pipe's mouth is in mid-air; this is the piece that makes the two read as one assembly.
+       */
+      const offsetX = (x + pipeX) / 2;
+      parts.push({
+        kind: `downpipe-offset-${side}-${z}`,
+        shape: 'cylinder',
+        position: [offsetX, top + 40, z],
+        radius: DOWNPIPE_RADIUS * 0.9,
+        height: Math.max(60, Math.abs(x - pipeX) + DOWNPIPE_RADIUS),
+        rotation: [0, 0, Math.PI / 2],
+        color: shed.colors.downpipe,
+        finish: 'metal',
+      });
+      /* The shoe: 150 mm angling outwards, so the water leaves the wall instead of running down it. */
+      parts.push({
+        kind: `downpipe-shoe-${side}-${z}`,
+        shape: 'cylinder',
+        position: [pipeX + (x < 0 ? -35 : 35), 55, z],
+        radius: DOWNPIPE_RADIUS,
+        height: 150,
+        rotation: [0, 0, x < 0 ? Math.PI / 4 : -Math.PI / 4],
         color: shed.colors.downpipe,
         finish: 'metal',
       });
@@ -366,34 +418,61 @@ export function frameParts(shed: DimensionedShed, roof: RoofGeometry): Structure
         finish: 'metal',
       });
     }
+    /*
+     * The portal rafter spans **wall to ridge**, not eave to eaves.
+     *
+     * It used to be drawn with `roof.slope` and centred on `roof.leftX`, both of which belong to the
+     * *roof sheet* — and the sheet runs out over the eave (`EAVE`, 300 mm each side). The result was a
+     * rafter end 315 mm outside the wall face: the grey tab a visitor sees under the gutter, and, once
+     * the roof was hidden, the most obviously wrong piece of steel in the model (measured 2026-11-24).
+     *
+     * So each half is drawn from the outside face of its column at wall height to the ridge:
+     * the same two points the roof planes meet at, with no overhang. The roof sheet keeps its own
+     * eave, which is what `roofParts` draws.
+     */
     if (hasRidge(shed)) {
+      const apexX = shed.span / 2;
+      const apexY = roof.ridgeY;
+      const leftDx = apexX - WALL_DEPTH;
+      const rise = apexY - shed.height;
+      const half = Math.hypot(leftDx, rise);
+      const angle = Math.atan2(rise, leftDx);
       parts.push(
         {
           kind: 'rafter-left',
           shape: 'box',
-          position: [roof.leftX, roof.midY - 90, z],
-          size: [roof.slope, 180, 90],
-          rotation: [0, 0, roof.slopeAngle],
+          position: [(WALL_DEPTH + apexX) / 2, (shed.height + apexY) / 2 - 90, z],
+          size: [half, 180, 90],
+          rotation: [0, 0, angle],
           color: '#8d9499',
           finish: 'metal',
         },
         {
           kind: 'rafter-right',
           shape: 'box',
-          position: [roof.rightX, roof.midY - 90, z],
-          size: [roof.slope, 180, 90],
-          rotation: [0, 0, -roof.slopeAngle],
+          position: [(shed.span - WALL_DEPTH + apexX) / 2, (shed.height + apexY) / 2 - 90, z],
+          size: [half, 180, 90],
+          rotation: [0, 0, -angle],
           color: '#8d9499',
           finish: 'metal',
         },
       );
     } else {
+      /*
+       * A skillion has one rafter from the low wall to the high wall, again between the cladding
+       * faces. Its height follows the slope, so both ends land on the roof line rather than on the
+       * wall line.
+       */
+      const riseTotal = skillionRiseMm(shed);
+      const lowY = shed.height + (riseTotal * WALL_DEPTH) / shed.span;
+      const highY = shed.height + (riseTotal * (shed.span - WALL_DEPTH)) / shed.span;
+      const run = shed.span - WALL_DEPTH * 2;
       parts.push({
         kind: 'rafter-single',
         shape: 'box',
-        position: [shed.span / 2, shed.height + skillionRiseMm(shed) / 2 - 90, z],
-        size: [Math.hypot(shed.span, skillionRiseMm(shed)), 180, 90],
-        rotation: [0, 0, Math.atan2(skillionRiseMm(shed), shed.span)],
+        position: [shed.span / 2, (lowY + highY) / 2 - 90, z],
+        size: [Math.hypot(run, highY - lowY), 180, 90],
+        rotation: [0, 0, Math.atan2(highY - lowY, run)],
         color: '#8d9499',
         finish: 'metal',
       });

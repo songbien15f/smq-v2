@@ -79,7 +79,12 @@ export function SwatchGrid({ colours, allowed }: { colours: GuestColourChoice; a
     list.length === 0 ? null : (
       <fieldset className="g-swatch-set">
         <legend className="g-chip-legend">
-          {heading} <span className="g-sr-only">for the {PART_NAMES[shown].toLowerCase()}</span>
+          {/* Explicit spaces: JSX collapses a line break into nothing, which gave "for theroof". */}
+          {heading}{' '}
+          <span className="g-sr-only">
+            for the{' '}
+            {PART_NAMES[shown].toLowerCase()}
+          </span>
         </legend>
         <div className="g-swatches">
           {list.map((name) => {
