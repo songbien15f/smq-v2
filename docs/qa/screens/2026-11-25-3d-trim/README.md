@@ -94,3 +94,70 @@ evidence for the client's complaint:
 
 The "after" set is the same seven cameras against the new geometry, and the numbers above are what
 changed between them.
+
+## Round 3 — the roller door moved to the inside face (2026-11-25)
+
+Round 3 did one thing: a roller door belongs on the **inner** face of its opening, so the curtain, ribs,
+guides and a 130 mm head box that used to stand outside the sheeting were moved inside, and the opening
+gained the same 3-sided trim ring every other opening has (no sill — a car drives over it).
+
+Images:
+
+| File | What it is |
+|---|---|
+| `round3-before/1919-roller.png` | **before the fix** — the roller door square on from outside |
+| `round3-before/1919-roller-side.png` | **before the fix** — almost along the wall, so anything standing off its face reads in profile |
+| `after/1919-roller.png` | the same camera, after |
+| `after/1919-roller-side.png` | the same camera, after |
+| `after/1919-overview.png` | the whole building, after |
+
+Cameras are in `after/meta.json` → `cameras`:
+
+| Shot | Camera (m) → target |
+|---|---|
+| `roller` | (3.0, 1.2, −4.2) → (3.0, 1.05, 0) |
+| `roller-side` | (−1.6, 1.5, −1.0) → (3.2, 1.1, 0) |
+| `overview` | the viewer's own framing, taken before any camera moved |
+
+Measured, comparing the two pairs (same camera, same design):
+
+| Shot | Pixels changed | Manor Red, before | Manor Red, after |
+|---|---|---|---|
+| `roller` | 11.32 % | 10.209 % | 9.112 % |
+| `roller-side` | 4.74 % | 5.933 % | 4.510 % |
+
+The red share falls because the big red head box (3 m wide, 90 mm tall, standing 130 mm off the wall) and
+the red guides are gone; what replaces them is a 45 mm ring inside the opening. The 11 % change on the
+front view is the whole door: the curtain moved from 39 mm outside to 79 mm inside.
+
+**This session cannot display images**, so nothing above is a description of what the pictures look like.
+The geometry is asserted numerically in `packages/core/src/domain/__tests__/openings3d.test.ts` (rules
+1–8 of the round-3 brief), including a snapshot proving a window and a PA door did not change by a
+millimetre.
+
+## Round 3b — the roller door's jambs reach the floor (2026-11-26)
+
+Review after round 3 measured the two jambs stopping 46.5 mm above the floor of the reveal, leaving a
+notch of grey sheeting at the foot of each — right where the base trim ends. With no sill, the jambs had
+been drawn with the four-sided formula, which reserves a face for a bar that is not there.
+
+| File | What it is |
+|---|---|
+| `after/1919-roller.png` | **overwritten** — the same camera as round 3 |
+| `after/1919-roller-foot.png` | **new** — close-up of the left jamb's foot from outside, where the base trim stops |
+
+Cameras added to `after/meta.json` → `cameras` and `round3b`:
+
+| Shot | Camera (m) → target |
+|---|---|
+| `roller` | (3.0, 1.2, −4.2) → (3.0, 1.05, 0) |
+| `roller-foot` | (1.05, 0.45, −1.05) → (1.5, 0.1, 0) |
+
+Measured, round 3's `roller` image against this one (same camera, same design): **0.016 %** of pixels
+changed (217 of 1 346 557), and they fall in exactly **two narrow vertical runs** — x 474–487 and
+x 1224–1237, rows 560–660. That is the foot of each jamb, 14 px wide at this camera; nothing else in the
+frame moved, which is what "only the jamb height changed" should look like.
+
+**This session cannot display images.** No statement above describes what the pictures look like; the
+jamb geometry is asserted in `openings3d.test.ts` (`rule 2: the jambs reach the floor of the reveal and
+meet the head`), and a window and a PA door are still pinned by their snapshots.

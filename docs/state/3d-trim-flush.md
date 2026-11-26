@@ -51,7 +51,9 @@ dừng ở `x = −150` (trái) / `x = span + 150` (phải).
 
 - **Client xác nhận cách hiểu mục 2.** Plan ghi rõ: "viền quanh WID/PAD thiếu cạnh dưới" là **cách
   hiểu của chúng tôi**, chưa được client xác nhận. Đã dựng đúng theo cách hiểu đó.
-- **Roller/sliding door vẫn nhô** — ngoài phạm vi góp ý, số đo đã chốt trong test, xem báo cáo.
+- **Sliding door nhô ra theo thiết kế** — cửa lùa của shed ở Úc treo trên ray **bên ngoài** tường và
+  trượt dọc mặt tôn, nên số đo "nhô" là đúng chứ không phải nợ. Roller door đã được đưa vào trong ở
+  vòng 3; xem mục "Vòng 3".
 - **Base trim không có trong BOM** (desktop không có profile này). Nếu client muốn tính tiền thì phải
   thêm dòng BOM, và đó là quyết định giá.
 - **`colors.window` chỉ còn trên khung cửa sổ**, không còn trên viền. Nếu client muốn viền cửa theo
@@ -141,3 +143,137 @@ phạm vi vòng này.
 **Ảnh:** ghi đè `after/1919-pa-door.png` và `after/1919-wall-base.png` từ **đúng camera vòng 1**, thêm
 `after/1919-pa-door-foot.png`. Số đo trong README của thư mục ảnh. **Phiên này vẫn không xem được ảnh**;
 mọi khẳng định hình ảnh là phép đo pixel, không phải mô tả bằng mắt.
+
+---
+
+## Vòng 3 (2026-11-25) — roller door lắp ở mặt trong của lỗ
+
+Plan: `docs/plans/2026-11-25-3d-trim-flush-round3-prompt.md`. Một việc: đưa roller door về đúng vị trí
+lắp thật. Sliding door **không đụng** (cửa lùa treo ngoài tường theo thiết kế).
+
+### Trước và sau, theo `z` (mm; `z = 0` mặt ngoài tôn, `z = 50` mặt trong)
+
+| Part | Trước (`z` ngoài … trong) | Sau (`z` ngoài … trong) |
+|---|---|---|
+| `trim-head` / `trim-left` / `trim-right` | không có | **0 … 25** (viền 45 mm, màu `barge`) |
+| `trim-sill` | — | **không có** (xe chạy qua ngưỡng) |
+| `head` (khối riêng) | −130 … −10 | **đã bỏ** |
+| `guide-left` / `guide-right` | −80 … +10 | **40 … 130** (lún 10 mm vào tôn, đuôi vào nhà) |
+| `curtain` | −39 … −17 | **79 … 101** |
+| `slat-*` | −53 … −43 | **67 … 77** |
+| `bottom-bar` | −64 … −24 | **53 … 77** |
+| `drum` | 80 … 380 | **không đổi** |
+| `bracket-*` | 40 … 290 | **không đổi** |
+| `spring-*` | 152 … 308 | **không đổi** |
+
+Mặt trước tấm cuốn `79` cách tiếp tuyến trước của trục cuốn (`drumZ − ROLLER_DRUM_RADIUS = 80`) **1 mm**.
+
+### Cách làm
+
+- `trimRing` nhận thêm tham số `withSill = true`. Roller door gọi với `false` → chỉ head + 2 jamb,
+  cùng tiết diện `OPENING_TRIM_FACE` / `OPENING_TRIM_DEPTH` và cùng màu `barge` như viền cửa sổ và PA
+  door. Thanh sill vẫn được chèn ở **vị trí thứ hai** khi có, nên thứ tự part của cửa sổ/PA door không
+  đổi (snapshot test chứng minh).
+- `rollerDoorParts` viết lại: bỏ khối `head`; tấm cuốn, gờ slat, thanh đáy và ray đều dời vào trong.
+  Ray giữ mẹo "lún 10 mm": mặt bản ray ở `z = 40`, tức 10 mm trong tấm tôn, nên không mặt nào nằm đúng
+  `z = 50`; đuôi ray vào tới `z = 130`.
+- Gờ slat và thanh đáy nằm **trước** tấm cuốn, cách mặt cuốn 2 mm — không mặt nào trùng mặt nào.
+- Không đổi `ROLLER_DEPTH`, `ROLLER_INSET`, `ROLLER_TRACK_WIDTH` (2D dùng). Hằng số 3D mới:
+  `ROLLER_CURTAIN_THICK`, `ROLLER_CURTAIN_SETBACK`, `ROLLER_RIB_GAP`, `ROLLER_GUIDE_DEPTH`,
+  `ROLLER_GUIDE_SINK`.
+- `drum`, `bracket-*`, `spring-*` giữ nguyên từng số (snapshot test).
+
+### Test
+
+Viết trước, **8 test đỏ**: hai test "flush" của roller, hai test quy tắc 2, quy tắc 3, 4, 5, 6. Sau khi
+sửa: **54/54 xanh** trong `openings3d.test.ts`.
+
+- Test kiểm kê cũ "what is still proud — recorded, not fixed": **xoá phần roller**; phần sliding đổi
+  thành `describe('sliding door hangs outside the wall — by design')` với comment nói rõ nhô ra là thiết
+  kế, số đo giữ nguyên.
+- Snapshot cửa sổ và PA door (số đo chụp **trước** khi sửa) chứng minh hai loại cửa này không đổi một
+  milimét nào.
+- **Quy tắc 7 và quy tắc 2 mâu thuẫn ở đúng một mặt:** quy tắc 2 đặt viền ở `z ∈ [0, 25]` (mặt trước
+  đúng `z = 0`), còn quy tắc 7 đòi không part nào có mặt trên `z = 0`. Viền **nằm trong lỗ**, nơi không
+  có tôn, và đây là quy ước đã có từ vòng 1 cho cửa sổ/PA door, nên test rule 7 cho phép **duy nhất**
+  mặt trước của viền ở `z = 0`; mọi mặt khác của roller door đều khác `0` và `50` (sai số 1e-6).
+- Base trim ở lỗ roller: probe (đã xoá) trên garage 6 m, cửa 3 000 ở `offset` 1 500 → hai dải
+  `[0, 1500]` và `[4500, 6000]`, mỗi đầu đúng mép lỗ. Logic không đổi.
+
+### Kiểm tra vòng 3
+
+| Việc | Kết quả |
+|---|---|
+| `pnpm --filter @sq/core test` | **1227 passed**, 16 skipped (vòng 2: 1 215) |
+| `openings3d.test.ts` | **54** (vòng 2: 42) |
+| `pnpm --filter @sq/core typecheck` | sạch |
+| `pnpm --filter @sq/viewer3d typecheck` | sạch |
+| `pnpm build:inc` | chạy; đã kiểm `packages/core/dist` có `ROLLER_CURTAIN_SETBACK` và `packages/viewer3d/dist` có `#b9b6ae` |
+| `pnpm --filter @sq/site-app typecheck` | sạch |
+| `pnpm test:e2e --project=guest` | **5/5 passed**, GR-000057 tự xoá (lần đầu fail vì dev server biên dịch lại; chạy lại xanh) |
+
+**Ảnh:** `round3-before/1919-roller.png`, `round3-before/1919-roller-side.png` (chụp trước khi sửa);
+ghi đè `after/1919-roller.png`, `after/1919-roller-side.png`, `after/1919-overview.png`. Camera ghi
+trong `after/meta.json`. **Phiên này không xem được ảnh** — số đo ở README thư mục ảnh.
+
+---
+
+## Vòng 3b (2026-11-26) — jamb roller door không chạm sàn
+
+Review sau vòng 3 tìm ra một lỗi nhỏ: hai jamb của roller door dừng **46,5 mm** trên đáy lỗ, để lộ một
+khấc tôn xám ở chân mỗi jamb, ngay chỗ base trim dừng.
+
+### Nguyên nhân
+
+`trimRing` tính chiều cao jamb là `innerH − face·2` và đặt tâm ở `y + innerH / 2` — công thức của khung
+**4 cạnh**, chừa chỗ cho **cả** head lẫn sill. Khi `withSill = false` (roller door), sill không còn
+nhưng phần chừa cho nó vẫn còn, nên jamb ngắn đi đúng một `face`.
+
+### Cách sửa
+
+Trong `trimRing`:
+
+```
+jambHeight  = innerH − face·(withSill ? 2 : 1)
+jambCentreY = withSill ? y + innerH/2 : y + (innerH − face)/2
+```
+
+`withSill = true` giữ nguyên từng số (cửa sổ và PA door không đổi — snapshot test chứng minh, không sửa
+test). Với `withSill = false`, jamb chạy từ đáy lỗ trong ring (`y = sill + OPENING_CLEARANCE`) lên đúng
+mặt dưới của `trim-head`.
+
+### Số đo (roller 3 000 × 2 100)
+
+| Part | `y` trước | `y` sau |
+|---|---|---|
+| `trim-left` / `trim-right` | 46,5 … 2053,5 (cao 2 007) | **1,5 … 2053,5** (cao 2 052) |
+| `trim-head` | 2053,5 … 2098,5 | **không đổi** |
+
+Đáy jamb ở `y = 1,5` = `sill + OPENING_CLEARANCE`, không nằm trên `y = 0`, nên quy tắc 7 vẫn xanh.
+
+### Test
+
+Viết trước, **1 test đỏ**: `rule 2: the jambs reach the floor of the reveal and meet the head`
+(`trim-left bottom: expected 46.5 to be close to 1.5`). Sau khi sửa: **55/55 xanh** trong
+`openings3d.test.ts`.
+
+Một test của vòng 3 phải nới đúng một chỗ: `rule 2: the ring is the same section as the PA door’s, bar
+the sill` trước so **toàn bộ** `size` của jamb, nay so **tiết diện** (bề rộng mặt + chiều sâu + `z` +
+màu + vật liệu) vì chiều cao jamb roller door **đúng là** khác PA door (không sill). Head vẫn so toàn bộ.
+
+### Kiểm tra vòng 3b
+
+| Việc | Kết quả |
+|---|---|
+| `pnpm --filter @sq/core test` | **1 228 passed**, 16 skipped (vòng 3: 1 227) |
+| `openings3d.test.ts` | **55** (vòng 3: 54) |
+| `pnpm --filter @sq/core typecheck` | sạch |
+| `pnpm --filter @sq/viewer3d typecheck` | sạch |
+| `pnpm build:inc` | chạy; đã kiểm `packages/core/dist` có chuỗi mới, `packages/viewer3d/dist` có `#b9b6ae` |
+| `pnpm --filter @sq/site-app typecheck` | sạch |
+| `pnpm test:e2e --project=guest` | **5/5 passed**, GR-000059 tự xoá (lần đầu fail vì dev server biên dịch lại; chạy lại xanh) |
+
+**Ảnh:** ghi đè `after/1919-roller.png`; thêm `after/1919-roller-foot.png` (cận chân jamb trái, camera
+`(1.05, 0.45, −1.05) → (1.5, 0.1, 0)`, ghi trong `meta.json` mục `round3b`). Ảnh `roller` chỉ đổi
+**0,016 %** pixel, và đổi đúng **hai dải hẹp** ở x 474–487 và x 1224–1237 (y 560–660) — chân hai jamb,
+không phải một dải ngang. **Phiên này không xem được ảnh.**

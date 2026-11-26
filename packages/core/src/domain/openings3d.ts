@@ -137,6 +137,24 @@ export const WINDOW_FRAME = WINDOW_INSET * 2;
 export const PA_OPEN_ANGLE = (22 * Math.PI) / 180;
 /** Thickness of a PA door's leaf, mm. */
 export const PA_LEAF_THICK = 45;
+/**
+ * Thickness of a roller door's curtain, mm. 3D only — the 2D symbol's `ROLLER_DEPTH` is a plan depth
+ * and is not this number.
+ */
+export const ROLLER_CURTAIN_THICK = 22;
+/**
+ * How far a roller door's curtain sits **behind** the front tangent of its drum, mm.
+ *
+ * The curtain unrolls off the front of the drum, so its front face belongs 1 mm behind that tangent —
+ * close enough to read as hanging from it, far enough that the two never share a plane.
+ */
+export const ROLLER_CURTAIN_SETBACK = 1;
+/** Gap between a curtain's front face and its slat ribs / bottom bar, mm. Sits in front, never on it. */
+export const ROLLER_RIB_GAP = 2;
+/** Depth of a roller door's guide rails into the shed, mm. */
+export const ROLLER_GUIDE_DEPTH = 90;
+/** How far a guide rail is sunk into the cladding, mm — keeps its back face off the inner plane. */
+export const ROLLER_GUIDE_SINK = 10;
 /** Glass tint. Not a paint colour: the book's `window` role is the *frame*. */
 export const GLASS_COLOR = '#9fc3d0';
 
@@ -158,12 +176,35 @@ function box(
 /* ------------------------------------------------------------------ roller door */
 
 /**
- * Roller door: curtain with slat ribs, two guides, head, drum, brackets, springs, bottom bar.
+ * Roller door: a three-sided trim ring, curtain with slat ribs, two guides, drum, brackets, springs
+ * and a bottom bar.
+ *
+ * ## Mounted on the **inside** face of the opening
+ *
+ * An Australian shed's roller door is fixed to the inner face of the reveal: the guides bolt on
+ * inside, the curtain hangs from the front of the drum. So from the street a visitor sees a framed
+ * opening, a curtain **set back** in it, and nothing at all standing off the sheeting.
+ *
+ * That is what this draws. An earlier version had the curtain at `z = −28`, the ribs at −48, the
+ * guides reaching −80 and a 130 mm head box — a shutter bolted to the outside of the wall, measured
+ * and recorded as a defect. Every part of the door is now at `z ≥ 0`, and the only piece on the
+ * sheeting plane is the trim ring's front face, exactly like a window's and a PA door's.
+ *
+ * The head is no longer a separate box: the ring's own head closes the top of the reveal.
+ *
+ * ## Where each piece sits (mm, `z` into the shed; `WALL_DEPTH` is 50)
+ *
+ *   ring        0 … 25            head + two jambs, no sill — a car drives over it
+ *   guides      40 … 130          sunk 10 mm into the cladding, hugging the curtain's edges
+ *   curtain     79 … 101          front face 1 mm behind the drum's front tangent (80)
+ *   ribs        67 … 77           2 mm in front of the curtain, never on it
+ *   bottom bar  53 … 77
+ *   drum        80 … 380          unchanged: inside the shed, above the head of the opening
+ *   brackets    40 … 290          unchanged
  *
  * The desktop's `RDoor3D` draws the same set (`RDOOR_FRAME_THICK`, `ROLLER_RADIUS`,
- * `BRACKET_HEIGHT`) against a textured sheet. Here the sheet is sliced into real ribs, which stays
- * legible from every camera angle. Curtain, guides and head sit outside the wall (`z < 0`); the
- * drum, its brackets and springs are inside (`z > WALL_DEPTH`), hidden from outside.
+ * `BRACKET_HEIGHT`). It also mounts the door outside; the rule that governs here is the one a person
+ * can see in the model, so the door is inside.
  */
 export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors): OpeningPart[] {
   const w = opening.width;
@@ -171,66 +212,77 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
   const cx = u + w / 2;
   const parts: OpeningPart[] = [];
 
-  // Curtain, hanging just outside the guides.
+  // The reveal: head and two jambs in the trim colour, the same section as every other opening.
+  parts.push(...trimRing(u, 0, w, h, colors.barge, OPENING_TRIM_FACE, OPENING_TRIM_DEPTH, false));
+
+  /*
+   * The curtain hangs inside, its front face 1 mm behind the drum's front tangent. The drum sits at
+   * `drumZ = WALL_DEPTH + 30 + ROLLER_DRUM_RADIUS`, so that tangent is `WALL_DEPTH + 30`.
+   */
+  const drumY = h + 250;
+  const drumZ = WALL_DEPTH + 30 + ROLLER_DRUM_RADIUS;
+  const curtainFront = drumZ - ROLLER_DRUM_RADIUS - ROLLER_CURTAIN_SETBACK;
+  const curtainBack = curtainFront + ROLLER_CURTAIN_THICK;
+  const curtainWidth = w - ROLLER_TRACK_WIDTH * 2;
   parts.push(
-    box('curtain', [cx, h / 2, -28], [w - ROLLER_TRACK_WIDTH * 2, h, 22], colors.rollerDoor, 'door'),
+    box('curtain', [cx, h / 2, (curtainFront + curtainBack) / 2], [curtainWidth, h, ROLLER_CURTAIN_THICK], colors.rollerDoor, 'door'),
   );
 
-  // Slat ribs; the bottom bar closes the curtain at the floor.
+  /*
+   * Slat ribs and the bottom bar sit **in front of** the curtain, against it but 2 mm clear, so no
+   * face of either coincides with a face of the curtain. Their own front faces stay inside the
+   * shed (`z > WALL_DEPTH`).
+   */
+  const ribBack = curtainFront - ROLLER_RIB_GAP;
   const slats = Math.max(2, Math.round(h / ROLLER_SLAT_PITCH));
   const slatHeight = h / slats;
   for (let i = 1; i < slats; i += 1) {
     parts.push(
       box(
         `slat-${i}`,
-        [cx, i * slatHeight, -48],
-        [w - ROLLER_TRACK_WIDTH * 2, 22, 10],
+        [cx, i * slatHeight, ribBack - 5],
+        [curtainWidth, 22, 10],
         colors.barge,
         'metal',
       ),
     );
   }
+  // Bottom bar: 24 mm deep, so it clears the inner face by 3 mm with its back on the same line.
+  parts.push(
+    box('bottom-bar', [cx, 35, ribBack - 12], [curtainWidth, 60, 24], colors.barge, 'metal'),
+  );
 
   /*
-   * Guide rails either side, full height, standing proud of the wall.
+   * Guide rails, inside the reveal, hugging the curtain's edges.
    *
-   * Their **back face lands exactly on z = 0** — the wall's outside plane — which is coplanar with the
-   * cladding and flickers. Each guide is therefore sunk 10 mm into the wall so its back face is at
-   * z = +10 (inside the cladding volume, never on its surface) while its front still stands clear.
+   * Their back face is sunk `ROLLER_GUIDE_SINK` into the cladding so it never lands on `z =
+   * WALL_DEPTH` (a coplanar pair flickers), and the whole rail sits well clear of the trim ring.
    */
-  const guideSink = 10;
+  const guideBack = WALL_DEPTH - ROLLER_GUIDE_SINK;
+  const guideZ = guideBack + ROLLER_GUIDE_DEPTH / 2;
   parts.push(
     box(
       'guide-left',
-      [u + ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH + guideSink],
-      [ROLLER_TRACK_WIDTH, h, ROLLER_TRACK_WIDTH * 2],
+      [u + ROLLER_TRACK_WIDTH / 2, h / 2, guideZ],
+      [ROLLER_TRACK_WIDTH, h, ROLLER_GUIDE_DEPTH],
       colors.barge,
       'trim',
     ),
     box(
       'guide-right',
-      [u + w - ROLLER_TRACK_WIDTH / 2, h / 2, -ROLLER_TRACK_WIDTH + guideSink],
-      [ROLLER_TRACK_WIDTH, h, ROLLER_TRACK_WIDTH * 2],
+      [u + w - ROLLER_TRACK_WIDTH / 2, h / 2, guideZ],
+      [ROLLER_TRACK_WIDTH, h, ROLLER_GUIDE_DEPTH],
       colors.barge,
       'trim',
     ),
   );
 
-  // Head frame above the opening, covering the guides.
-  parts.push(
-    box('head', [cx, h + 45, -70], [w + ROLLER_TRACK_WIDTH * 3, 90, 120], colors.barge, 'trim'),
-  );
-
   /*
    * Drum, brackets and springs — **inside** the shed, on the inner face of the wall above the
-   * opening, as a roller door is actually hung: from outside only the curtain, guides and head
-   * show. The drum's lowest point sits above the head's top edge, or the rolled curtain appears to
-   * pass through its own frame. It clears the inner face (`z = WALL_DEPTH`) by 30 mm; each bracket
-   * reaches from the wall to past the drum's axis, its back face sunk 10 mm into the wall so it is
-   * never coplanar with the inner cladding surface.
+   * opening, as a roller door is actually hung. Unchanged by the round-3 fix; the drum clears the
+   * inner face by 30 mm and each bracket reaches from the wall to past the drum's axis, its back face
+   * sunk 10 mm into the wall so it is never coplanar with the inner cladding surface.
    */
-  const drumY = h + 250;
-  const drumZ = WALL_DEPTH + 30 + ROLLER_DRUM_RADIUS;
   const bracketBack = WALL_DEPTH - 10;
   const bracketFront = drumZ + 60;
   const bracketZ = (bracketBack + bracketFront) / 2;
@@ -261,11 +313,6 @@ export function rollerDoorParts(opening: Opening, u: number, colors: ShedColors)
       finish: 'metal',
     });
   }
-
-  // Bottom bar, so the curtain reads as a door rather than a printed panel.
-  parts.push(
-    box('bottom-bar', [cx, 35, -44], [w - ROLLER_TRACK_WIDTH * 2, 60, 40], colors.barge, 'metal'),
-  );
 
   return parts;
 }
@@ -302,22 +349,50 @@ function trimRing(
   color: string,
   face: number,
   depth: number,
+  /**
+   * Whether the ring closes its bottom edge.
+   *
+   * `false` for a roller door: a car drives over that threshold, and the building's base trim is cut
+   * at this opening anyway, so a sill bar would be a painted line across the doorway. Every other
+   * opening keeps the sill — one section on all four sides is the whole point of the ring.
+   */
+  withSill = true,
 ): OpeningPart[] {
   const z = depth / 2;
   // Inside the hole by a clearance all round, so no face lies on the hole's cut edge.
   const inset = OPENING_CLEARANCE;
   const innerW = width - inset * 2;
   const innerH = height - inset * 2;
-  // A narrow opening would otherwise ask for a negative jamb height.
-  const jambHeight = Math.max(0, innerH - face * 2);
   const x = u + inset;
   const y = sill + inset;
-  return [
+  /*
+   * The jambs fill the height **between** the head and the sill — or, when there is no sill, everything
+   * below the head down to the floor of the reveal.
+   *
+   * A four-sided ring's jambs stop one face short at each end. That is right for a window or a PA door,
+   * where the sill is a bar the jamb butts against; it is wrong for a roller door, whose reveal runs to
+   * the ground because a car drives over it. Using the four-sided arithmetic there left each jamb
+   * 46.5 mm off the floor and exposed a notch of grey sheeting under it, exactly where the base trim
+   * stops (round 3b review).
+   */
+  const jambHeight = Math.max(0, innerH - face * (withSill ? 2 : 1));
+  const jambCentreY = withSill ? y + innerH / 2 : y + (innerH - face) / 2;
+  const bars = [
     box('trim-head', [x + innerW / 2, y + innerH - face / 2, z], [innerW, face, depth], color, 'trim'),
-    box('trim-sill', [x + innerW / 2, y + face / 2, z], [innerW, face, depth], color, 'trim'),
-    box('trim-left', [x + face / 2, y + innerH / 2, z], [face, jambHeight, depth], color, 'trim'),
-    box('trim-right', [x + innerW - face / 2, y + innerH / 2, z], [face, jambHeight, depth], color, 'trim'),
   ];
+  /*
+   * The sill goes **second** when present, which is the order rounds 1–2 shipped. Part order is not
+   * cosmetic: a renderer draws in list order, and keeping it means a window and a PA door come out of
+   * this function byte-for-byte as they were (their snapshot test asserts it).
+   */
+  if (withSill) {
+    bars.push(box('trim-sill', [x + innerW / 2, y + face / 2, z], [innerW, face, depth], color, 'trim'));
+  }
+  bars.push(
+    box('trim-left', [x + face / 2, jambCentreY, z], [face, jambHeight, depth], color, 'trim'),
+    box('trim-right', [x + innerW - face / 2, jambCentreY, z], [face, jambHeight, depth], color, 'trim'),
+  );
+  return bars;
 }
 
 /* ------------------------------------------------------------------ PA door */

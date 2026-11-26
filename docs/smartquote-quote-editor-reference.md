@@ -1318,15 +1318,23 @@ Base trim và corner trim là **tường**, nên vẫn còn khi tắt mái (`sho
 `ROLLTOP_RIDGE_CAPPING`, `CORNER_FLASHING`, `GABLE_BARGE`, `CORO_CAPPING` (`EFlashingType.cs`), nên
 đây là "3D only, không có trong BOM".
 
-**Còn nhô khỏi `z = 0` và cố ý chưa sửa** (ngoài phạm vi góp ý): roller door — curtain −39, gờ slat
-−53, ray −45, khung đầu −130, thanh đáy −64; sliding door — `track-top` −125 (double −245),
-`track-bottom` −72, cánh −99 / −159. Số này được **chốt trong test** để lần sau ai đổi cũng thấy.
+**Roller door lắp ở mặt trong của lỗ (2026-11-25, vòng 3).** Cửa cuốn của shed Úc bắt vào **mặt trong**
+của ô cửa, nên từ ngoài nhìn vào chỉ thấy viền lỗ, tấm cuốn lùi vào trong, không gì nhô ra. Trước đó nó
+bị vẽ như một tấm chắn bắt ngoài tường (curtain −39, gờ slat −53, ray −80, khối đầu −130, thanh đáy
+−64). Hiện tại: viền 3 cạnh `0…25` (không có ngưỡng — xe chạy qua), ray `40…130` (bản ray lún 10 mm vào
+tôn nên không mặt nào đúng `z = 50`), tấm cuốn `79…101` (cách tiếp tuyến trước trục cuốn 1 mm), gờ slat
+`67…77`, thanh đáy `53…77`; `drum` / `bracket-*` / `spring-*` không đổi. Mọi part của cửa có `z ≥ 0`,
+không có ngoại lệ.
+
+**Sliding door nhô ra theo thiết kế:** cửa lùa treo trên ray **bên ngoài** tường và trượt dọc mặt tôn,
+nên `track-top` −125 (double −245), `track-bottom` −72, cánh −99 / −159. Số này **chốt trong test** để
+lần sau ai đổi cũng thấy.
 
 ### Cửa — mỗi loại một bộ phần cứng
 
 | Loại | Mảnh |
 |---|---|
-| `roller_door` | curtain + gờ slat 150 mm + 2 ray (45 mm) + khung đầu + tang cuốn Ø300 + 2 bracket + 2 lò xo + thanh đáy |
+| `roller_door` | viền 3 cạnh 45 mm (`barge`, không ngưỡng) + curtain + gờ slat 150 mm + 2 ray (45 mm) + thanh đáy + tang cuốn Ø300 + 2 bracket + 2 lò xo — tất cả ở mặt trong của lỗ |
 | `pa_door` | viền 4 cạnh 45 mm (`barge`) + ngưỡng cao bằng 3 cạnh kia + cánh mở 22° (`paDoor`) + tay nắm + 3 bản lề; cánh lật theo `hinge` |
 | `sliding_door` | 1–2 cánh (theo `leaves`), mỗi cánh 4 thanh + panel; ray 1 hoặc 2 lớp (60/120 mm), dài đúng khoảng cánh chiếm |
 | `window` | viền 4 thanh 45 mm (`barge`) + khung 4 thanh (`window`, lùi sau viền) + đố giữa khi rộng > 900 + kính lùi |

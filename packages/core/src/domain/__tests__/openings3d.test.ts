@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Opening, ShedColors } from '../types';
 import { TEST_SHED } from '../defaults';
 import {
+  OPENING_CLEARANCE,
   OPENING_TRIM_DEPTH,
   OPENING_TRIM_FACE,
   openingParts,
   PA_LEAF_THICK,
+  ROLLER_GUIDE_SINK,
   ROLLER_TRACK_WIDTH,
   TRACK_INSET,
 } from '../openings3d';
@@ -60,31 +62,42 @@ describe('flush with the sheeting — the client rule', () => {
   /*
    * "WID, PAD vẽ trồi ra ngoài mặt sheeting cũng sai nha, phải bằng mặt ngoài."
    *
-   * Every fitted part of a window or a PA door must have its outer face at `z ≥ 0`. The one
-   * exception is the PA door's **leaf assembly** (`leaf` and `leaf-handle`), which is drawn swung
-   * open and therefore sweeps outside the wall plane — that is the leaf moving, not the frame
-   * standing off.
+   * Every fitted part of an opening must have its outer face at `z ≥ 0`. The **only** exception in the
+   * whole set is the PA door's leaf assembly (`leaf`, `leaf-handle`), which is drawn swung open and
+   * therefore sweeps outside the wall plane — that is the leaf moving, not the frame standing off.
+   *
+   * A roller door has **no** exception (round 3): it is mounted on the inside face of the opening, so
+   * nothing of it belongs in front of the sheeting at all.
    */
-  const flushCases: { name: string; o: Opening }[] = [
-    { name: 'window', o: opening({ type: 'window', width: 1800, height: 900, sill: 1800 }) },
-    { name: 'narrow window', o: opening({ type: 'window', width: 900, height: 900, sill: 900 }) },
-    { name: 'PA door', o: opening({ type: 'pa_door', width: 820, height: 2040 }) },
-    { name: 'right-hinged PA door', o: opening({ type: 'pa_door', width: 820, height: 2040, hinge: 'right' }) },
+  const flushCases: { name: string; o: Opening; except: string[] }[] = [
+    { name: 'window', o: opening({ type: 'window', width: 1800, height: 900, sill: 1800 }), except: [] },
+    { name: 'narrow window', o: opening({ type: 'window', width: 900, height: 900, sill: 900 }), except: [] },
+    { name: 'PA door', o: opening({ type: 'pa_door', width: 820, height: 2040 }), except: ['leaf', 'leaf-handle'] },
+    {
+      name: 'right-hinged PA door',
+      o: opening({ type: 'pa_door', width: 820, height: 2040, hinge: 'right' }),
+      except: ['leaf', 'leaf-handle'],
+    },
+    {
+      name: 'roller door',
+      o: opening({ type: 'roller_door', width: 3600, height: 3600 }),
+      except: [],
+    },
   ];
 
-  for (const { name, o } of flushCases) {
-    it(`${name}: nothing except the swinging leaf stands proud of z = 0`, () => {
+  for (const { name, o, except } of flushCases) {
+    it(`${name}: nothing${except.length === 0 ? '' : ' except the swinging leaf'} stands proud of z = 0`, () => {
       const parts = openingParts(o, 500, colors);
       for (const part of parts) {
-        if (part.kind === 'leaf' || part.kind === 'leaf-handle') continue;
+        if (except.includes(part.kind)) continue;
         expect(outerZ(part), `${part.kind} outer face`).toBeGreaterThanOrEqual(-1e-6);
       }
     });
 
-    it(`${name}: the swinging leaf is the only part allowed outside`, () => {
+    it(`${name}: only the stated exception may be outside`, () => {
       const parts = openingParts(o, 500, colors);
       const proud = parts.filter((part) => outerZ(part) < -1e-6).map((part) => part.kind);
-      expect(proud.every((kind) => kind === 'leaf' || kind === 'leaf-handle'), `proud: ${proud.join(', ')}`).toBe(true);
+      expect(proud.every((kind) => except.includes(kind)), `proud: ${proud.join(', ')}`).toBe(true);
     });
   }
 
@@ -95,6 +108,167 @@ describe('flush with the sheeting — the client rule', () => {
     );
     expect(leaf).toBeDefined();
     expect(outerZ(leaf!)).toBeLessThan(0);
+  });
+});
+
+describe('roller door — mounted on the inside face', () => {
+  /*
+   * A roller door in an Australian shed is fixed to the **inside** of the opening: the guides bolt to
+   * the inner face of the reveal, the curtain hangs from the front of the drum. Drawn the old way —
+   * curtain, ribs, guides and a 130 mm head standing outside the sheeting — it read as a shutter bolted
+   * to the wall. These tests are the drawing's version of "installed properly".
+   */
+  const roller = opening({ type: 'roller_door', width: 3600, height: 3600 });
+  const parts = openingParts(roller, 1000, colors);
+  const at = (kind: string) => parts.find((part) => part.kind === kind);
+  /** A box's near and far face on z. */
+  const faces = (kind: string): [number, number] => {
+    const part = at(kind)!;
+    const [sx = 0, , sz = 0] = part.size ?? [];
+    const t = part.rotation?.[1] ?? 0;
+    const half = (sz / 2) * Math.abs(Math.cos(t)) + (sx / 2) * Math.abs(Math.sin(t));
+    return [part.position[2] - half, part.position[2] + half];
+  };
+
+  it('rule 2: the jambs reach the floor of the reveal and meet the head', () => {
+    /*
+     * With no sill, the jambs must run all the way down: the head takes one face off the top, and
+     * nothing takes one off the bottom. Drawn with the four-sided formula (`innerH − 2·face`) they
+     * stopped 46.5 mm short of the floor, leaving a notch of grey sheeting at the foot of each jamb,
+     * exactly where the base trim ends (round 3b review).
+     *
+     * The expected numbers are read off the parts, not written by hand: `head` gives the top, and the
+     * ring's own clearance gives the bottom.
+     */
+    const head = at('trim-head')!;
+    const headBottom = head.position[1] - (head.size?.[1] ?? 0) / 2;
+    const revealFloor = 0 + OPENING_CLEARANCE; // the door's sill is 0; the ring clears the cut edge
+    for (const kind of ['trim-left', 'trim-right']) {
+      const jamb = at(kind)!;
+      const bottom = jamb.position[1] - (jamb.size?.[1] ?? 0) / 2;
+      const top = jamb.position[1] + (jamb.size?.[1] ?? 0) / 2;
+      expect(bottom, `${kind} bottom`).toBeCloseTo(revealFloor, 6);
+      expect(top, `${kind} top meets the head`).toBeCloseTo(headBottom, 6);
+      // And it is still one solid bar, not two pieces.
+      expect(jamb.size?.[1], `${kind} height`).toBeGreaterThan(0);
+    }
+  });
+
+  it('rule 2: a three-sided trim ring, no sill, the same section as the other openings', () => {
+    const ring = parts.filter((part) => part.kind.startsWith('trim-'));
+    expect(ring.map((part) => part.kind).sort()).toEqual(['trim-head', 'trim-left', 'trim-right']);
+    for (const part of ring) {
+      expect(part.color, `${part.kind} colour`).toBe(colors.barge);
+      expect(part.finish, `${part.kind} finish`).toBe('trim');
+      expect(part.size?.[2], `${part.kind} depth`).toBe(OPENING_TRIM_DEPTH);
+      expect(part.position[2] - (part.size?.[2] ?? 0) / 2, `${part.kind} front face`).toBeCloseTo(0, 6);
+    }
+    // The head and both jambs are one face wide, exactly like the window's and the PA door's ring.
+    expect(at('trim-head')?.size?.[1]).toBe(OPENING_TRIM_FACE);
+    expect(at('trim-left')?.size?.[0]).toBe(OPENING_TRIM_FACE);
+    expect(at('trim-right')?.size?.[0]).toBe(OPENING_TRIM_FACE);
+    // A car drives over the threshold, so there is no sill bar.
+    expect(at('trim-sill')).toBeUndefined();
+  });
+
+  it('rule 2: the ring is the same section as the PA door’s, bar the sill', () => {
+    const pa = openingParts(opening({ type: 'pa_door', width: 3600, height: 3600 }), 1000, colors);
+    for (const kind of ['trim-head', 'trim-left', 'trim-right']) {
+      const mine = at(kind)!;
+      const theirs = pa.find((part) => part.kind === kind)!;
+      /*
+       * **Section**, not length: face width along the wall and depth through it, at the same `z`, in the
+       * same colour and finish. The jambs' vertical extent legitimately differs — a roller door's jambs
+       * run to the floor because it has no sill (round 3b), a PA door's butt against one. The head has no
+       * such difference, so it is compared whole.
+       */
+      expect(mine.size?.[0], `${kind} face width`).toBe(theirs.size?.[0]);
+      expect(mine.size?.[2], `${kind} depth`).toBe(theirs.size?.[2]);
+      expect(mine.position[2], `${kind} z`).toBe(theirs.position[2]);
+      expect(mine.color, `${kind} colour`).toBe(theirs.color);
+      expect(mine.finish, `${kind} finish`).toBe(theirs.finish);
+      if (kind === 'trim-head') expect(mine.size, 'trim-head size').toEqual(theirs.size);
+    }
+  });
+
+  it('rule 6: there is no separate head box — the ring head is the head', () => {
+    expect(at('head')).toBeUndefined();
+  });
+
+  it('rule 3: the curtain hangs inside, from the front of the drum', () => {
+    const drum = at('drum')!;
+    const drumFrontTangent = drum.position[2] - (drum.radius ?? 0);
+    const [curtainFront] = faces('curtain');
+    expect(curtainFront, 'curtain front face is inside the shed').toBeGreaterThan(WALL_DEPTH);
+    expect(Math.abs(curtainFront - drumFrontTangent), 'curtain vs drum tangent').toBeLessThanOrEqual(15);
+  });
+
+  it('rule 4: the ribs and the bottom bar sit against the curtain, inside', () => {
+    const [curtainFront] = faces('curtain');
+    const ribs = parts.filter((part) => part.kind.startsWith('slat-'));
+    expect(ribs.length).toBeGreaterThan(8);
+    expect(at('bottom-bar')).toBeDefined();
+    for (const part of [...ribs, at('bottom-bar')!]) {
+      const [front, back] = faces(part.kind);
+      // Wholly inside the shed, never coplanar with the inner face.
+      expect(front, `${part.kind} front`).toBeGreaterThan(WALL_DEPTH);
+      // Against the curtain's front face, but not on it: a shared plane would flicker.
+      expect(back, `${part.kind} back vs curtain`).toBeLessThan(curtainFront);
+      expect(curtainFront - back, `${part.kind} gap to the curtain`).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('rule 5: the guides are inside, sunk 10 mm into the wall, clear of the ring', () => {
+    const ringBack = Math.max(...parts.filter((p) => p.kind.startsWith('trim-')).map((p) => faces(p.kind)[1]));
+    for (const kind of ['guide-left', 'guide-right']) {
+      const [front, back] = faces(kind);
+      /*
+       * "Sunk 10 mm into the cladding" is what keeps any face off `z = WALL_DEPTH`: the rail's plate
+       * sits 10 mm inside the inner skin (`front = 40`), so the bulk of the rail is in the shed and
+       * the 10 mm that is buried is hidden by the wall. Same treatment as the drum's brackets.
+       */
+      expect(front, `${kind} plate is sunk into the cladding`).toBeCloseTo(WALL_DEPTH - ROLLER_GUIDE_SINK, 6);
+      expect(back, `${kind} reaches into the shed`).toBeGreaterThan(WALL_DEPTH + 50);
+      expect(front, `${kind} plate is not on the inner face`).not.toBeCloseTo(WALL_DEPTH, 6);
+      expect(back, `${kind} back is not on the inner face`).not.toBeCloseTo(WALL_DEPTH, 6);
+      expect(front, `${kind} clears the ring`).toBeGreaterThan(ringBack);
+    }
+  });
+
+  it('rule 5: the guides hug the curtain’s edges', () => {
+    const curtain = at('curtain')!;
+    const [cw] = curtain.size ?? [0, 0, 0];
+    const left = at('guide-left')!;
+    const right = at('guide-right')!;
+    expect(left.position[0] + (left.size?.[0] ?? 0) / 2).toBeCloseTo(curtain.position[0] - cw / 2, 6);
+    expect(right.position[0] - (right.size?.[0] ?? 0) / 2).toBeCloseTo(curtain.position[0] + cw / 2, 6);
+  });
+
+  it('rule 7: no roller part has a face on the inner plane, and only the ring is on z = 0', () => {
+    /*
+     * Rule 7 asks that nothing sits exactly on `z = 0` or `z = WALL_DEPTH`, because a coplanar pair
+     * flickers. The ring's **front** face at `z = 0` is the one deliberate exception in the whole
+     * opening system: rule 2 (and rounds 1–2) put every trim ring flush with the sheeting, and the ring
+     * lies inside the hole where there is no sheeting to fight with. Everything else must stay off both
+     * planes.
+     */
+    for (const part of parts) {
+      const [sx = 0, sy = 0, sz = 0] = part.size ?? [0, 0, 0];
+      const t = part.rotation?.[1] ?? 0;
+      const half = (sz / 2) * Math.abs(Math.cos(t)) + (sx / 2) * Math.abs(Math.sin(t));
+      const front = part.position[2] - half;
+      const back = part.position[2] + half;
+      const isRingFront = part.kind.startsWith('trim-') && Math.abs(front) < 1e-6;
+      for (const [label, plane] of [
+        ['front', front],
+        ['back', back],
+      ] as const) {
+        if (isRingFront && label === 'front') continue;
+        expect(Math.abs(plane), `${part.kind} ${label} on z = 0`).toBeGreaterThan(1e-6);
+        expect(Math.abs(plane - WALL_DEPTH), `${part.kind} ${label} on the inner face`).toBeGreaterThan(1e-6);
+      }
+      void sy;
+    }
   });
 });
 
@@ -164,31 +338,49 @@ describe('roller door', () => {
   const door = opening({ type: 'roller_door', width: 3600, height: 3600 });
   const parts = openingParts(door, 1000, colors);
 
-  it('has a guide each side, a curtain, a head and a drum', () => {
+  it('has a guide each side, a curtain, a trim head and a drum', () => {
     const kinds = parts.map((part) => part.kind);
     expect(kinds).toContain('guide-left');
     expect(kinds).toContain('guide-right');
     expect(kinds).toContain('curtain');
-    expect(kinds).toContain('head');
+    // Round 3: the head of the opening is the trim ring's own head, not a separate 130 mm box.
+    expect(kinds).toContain('trim-head');
+    expect(kinds).not.toContain('head');
     expect(kinds).toContain('drum');
   });
 
-  it('puts the drum and the springs above the head', () => {
+  it('puts the drum and the springs above the head of the opening', () => {
     const drum = parts.find((part) => part.kind === 'drum');
-    const head = parts.find((part) => part.kind === 'head');
-    expect(drum?.position[1] ?? 0).toBeGreaterThan(head?.position[1] ?? 0);
+    const head = parts.find((part) => part.kind === 'trim-head');
+    const headTop = (head?.position[1] ?? 0) + (head?.size?.[1] ?? 0) / 2;
+    expect(drum?.position[1] ?? 0).toBeGreaterThan(headTop);
     expect(drum?.position[1] ?? 0).toBeGreaterThan(door.height);
   });
 
-  it('hangs the drum, brackets and springs inside the shed, everything else outside', () => {
-    const inside = (kind: string) => kind === 'drum' || kind.startsWith('bracket-') || kind.startsWith('spring-');
+  it('hangs everything of the door inside the shed, the drum wholly behind the inner face', () => {
+    /*
+     * Was "…inside the shed, everything else outside" — the outside half of that sentence is what round
+     * 3 removed. Now: the curtain, ribs, guides and their trim live in the shed; the drum, its brackets
+     * and the springs live *behind* the inner face, so nothing of them shows from outside either.
+     */
+    const hardware = (kind: string) => kind === 'drum' || kind.startsWith('bracket-') || kind.startsWith('spring-');
     for (const part of parts) {
-      if (inside(part.kind)) {
-        // Wholly behind the inner face, so nothing of the drum shows from outside.
-        const reach = part.shape === 'box' ? (part.size?.[2] ?? 0) / 2 : (part.radius ?? 0);
-        expect(part.position[2] - reach).toBeGreaterThan(part.shape === 'box' ? 0 : WALL_DEPTH);
+      const [sx = 0, , sz = 0] = part.size ?? [0, 0, 0];
+      const t = part.rotation?.[1] ?? 0;
+      const half = (sz / 2) * Math.abs(Math.cos(t)) + (sx / 2) * Math.abs(Math.sin(t));
+      const front = part.position[2] - half;
+      if (hardware(part.kind)) {
+        /*
+         * The brackets' plate is sunk 10 mm into the wall — their unchanged anti-coplanarity treatment,
+         * measured before round 3. The drum is wholly behind the inner face.
+         */
+        if (part.kind === 'drum') {
+          expect(front, `${part.kind} clears the inner face`).toBeGreaterThanOrEqual(WALL_DEPTH);
+        } else {
+          expect(front, `${part.kind} plate reach`).toBeGreaterThanOrEqual(WALL_DEPTH - 10);
+        }
       } else {
-        expect(part.position[2]).toBeLessThan(0);
+        expect(front, `${part.kind} is not in the cladding`).toBeGreaterThanOrEqual(0);
       }
     }
   });
@@ -398,29 +590,17 @@ describe('a plain opening', () => {
   });
 });
 
-describe('what is still proud of the sheeting — recorded, not fixed', () => {
+describe('sliding door hangs outside the wall — by design', () => {
   /*
-   * The client's remark was about the window and the PA door. Roller and sliding doors are outside
-   * that brief and are **not** changed here, so this test is a written inventory rather than a rule:
-   * it fails the moment a part is added or moved, which is what makes the list in the hand-over
-   * report verifiable instead of remembered.
+   * An Australian shed's sliding door is **top-hung on a track outside the sheeting** and slides
+   * across the face of the wall, so standing proud of `z = 0` is the design, not a defect. This is an
+   * inventory to keep the numbers visible, and it is deliberately **not** the roller door's rule: a
+   * roller door is fixed to the inside face and must not appear here.
    *
    * Measured on the current geometry (mm in front of `z = 0`):
    *
-   *   roller  curtain −39 … slat ribs −53 … guides −45 … head −130 … bottom bar −64
    *   sliding track-top −125 (double −245), track-bottom −72, leaves −110 (double −230)
    */
-  it('roller door: the curtain, ribs, guides, head and bottom bar are proud', () => {
-    const parts = openingParts(opening({ type: 'roller_door', width: 3600, height: 3600 }), 1000, colors);
-    const proud = parts.filter((part) => outerZ(part) < -1e-6).map((part) => part.kind);
-    for (const kind of ['curtain', 'slat-1', 'guide-left', 'guide-right', 'head', 'bottom-bar']) {
-      expect(proud, kind).toContain(kind);
-    }
-    // And the record itself: the deepest face is the head's, at 130 mm.
-    const deepest = Math.min(...parts.map(outerZ));
-    expect(deepest).toBeCloseTo(-130, 0);
-  });
-
   it('sliding door: both tracks and every leaf are proud', () => {
     const parts = openingParts(
       opening({ type: 'sliding_door', width: 3600, height: 2400, track: 'double', leaves: 2 }),
@@ -438,5 +618,66 @@ describe('what is still proud of the sheeting — recorded, not fixed', () => {
     // Both faces are measured, so the numbers in the report are the ones this test saw.
     expect(outerZ(first)).toBeCloseTo(-99, 0);
     expect(outerZ(second)).toBeCloseTo(-159, 0);
+  });
+});
+
+describe('round 3 left every other opening alone', () => {
+  /*
+   * Round 3 changed `trimRing` (the sill became optional) and `rollerDoorParts`. A window and a PA door
+   * must come out of it **identical to the millimetre**, so their whole part lists are snapshotted as
+   * numbers captured **before** the edit. If these fail, the new parameter leaked into a ring that was
+   * not meant to change.
+   */
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  const compact = (o: Opening) =>
+    openingParts(o, 500, colors).map((part) => [
+      part.kind,
+      part.position.map(r3),
+      part.size ?? null,
+      part.rotation ? part.rotation.map(r3) : null,
+      part.color,
+      part.finish,
+    ]);
+
+  const WINDOW_BEFORE = JSON.parse(
+    '[["glass",[1400,2250,75],[1524,624,10],null,"#9fc3d0","glass"],["frame-left",[593,2250,57],[90,804,60],null,"#323232","trim"],["frame-right",[2207,2250,57],[90,804,60],null,"#323232","trim"],["frame-head",[1400,2607,57],[1704,90,60],null,"#323232","trim"],["frame-sill",[1400,1893,57],[1704,90,60],null,"#323232","trim"],["mullion",[1400,2250,57],[46,624,60],null,"#323232","trim"],["trim-head",[1400,2676,12.5],[1797,45,25],null,"#e4e2d5","trim"],["trim-sill",[1400,1824,12.5],[1797,45,25],null,"#e4e2d5","trim"],["trim-left",[524,2250,12.5],[45,807,25],null,"#e4e2d5","trim"],["trim-right",[2276,2250,12.5],[45,807,25],null,"#e4e2d5","trim"]]',
+  );
+  const PA_BEFORE = JSON.parse(
+    '[["trim-head",[910,2016,12.5],[817,45,25],null,"#e4e2d5","trim"],["trim-sill",[910,24,12.5],[817,45,25],null,"#e4e2d5","trim"],["trim-left",[524,1020,12.5],[45,1947,25],null,"#e4e2d5","trim"],["trim-right",[1296,1020,12.5],[45,1947,25],null,"#e4e2d5","trim"],["leaf",[883.531,1020,-113.669],[727,1947,45],[0,0.384,0],"#323232","door"],["leaf-handle",[1139.675,981.06,-253.658],[150,28,28],[0,0.384,0],"#e4e2d5","metal"],["hinge-0.18",[556.5,396.96,22],[36,90,40],null,"#e4e2d5","metal"],["hinge-0.5",[556.5,1020,22],[36,90,40],null,"#e4e2d5","metal"],["hinge-0.82",[556.5,1643.04,22],[36,90,40],null,"#e4e2d5","metal"]]',
+  );
+
+  it('a window is unchanged', () => {
+    expect(compact(opening({ type: 'window', width: 1800, height: 900, sill: 1800 }))).toEqual(WINDOW_BEFORE);
+  });
+
+  it('a PA door is unchanged', () => {
+    expect(compact(opening({ type: 'pa_door', width: 820, height: 2040 }))).toEqual(PA_BEFORE);
+  });
+});
+
+describe('o2: rule 8 — the drum, brackets and springs are untouched', () => {
+  /*
+   * A roller door's drum and its brackets were already inside the shed and correct; round 3 moved the
+   * curtain and the guides, not the hardware. These are the exact values measured before the edit.
+   */
+  it('keeps the drum, brackets and springs exactly where they were', () => {
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    const parts = openingParts(opening({ type: 'roller_door', width: 3600, height: 3600 }), 1000, colors)
+      .filter((part) => ['drum', 'bracket-left', 'bracket-right'].includes(part.kind) || part.kind.startsWith('spring-'))
+      .map((part) => [
+        part.kind,
+        part.position.map(r3),
+        part.size ?? null,
+        part.radius ?? null,
+        part.height ?? null,
+        part.tube ?? null,
+        part.rotation ? part.rotation.map(r3) : null,
+        part.color,
+      ]);
+    expect(parts).toEqual(
+      JSON.parse(
+        '[["drum",[2800,3850,230],null,150,3740,null,[0,0,1.571],"#323232"],["bracket-left",[1035,3770,165],[70,220,250],null,null,null,null,"#e4e2d5"],["bracket-right",[4565,3770,165],[70,220,250],null,null,null,null,"#e4e2d5"],["spring-0",[2080,3850,230],null,78,null,11,[0,1.571,0],"#e4e2d5"],["spring-1",[3520,3850,230],null,78,null,11,[0,1.571,0],"#e4e2d5"]]',
+      ),
+    );
   });
 });
