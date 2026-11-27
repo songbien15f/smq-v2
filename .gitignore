@@ -53,3 +53,6 @@ ga_windspec.pdf
 # Cloudflare quick-tunnel addresses from start/tunnel.bat. They are not secrets, but they are
 # disposable public links and change on every restart - never commit them.
 start/tunnel-urls.txt
+
+# Private notes with live keys — never commit
+note_private_ignore/
