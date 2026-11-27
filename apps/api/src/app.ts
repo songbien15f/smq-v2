@@ -43,6 +43,7 @@ import { registerAdmin } from './routes/admin.js';
 import { registerGuestTypesAdmin } from './routes/guestTypesAdmin.js';
 import { registerGuestRequestsAdmin } from './routes/guestRequestsAdmin.js';
 import { registerVendor } from './routes/vendor.js';
+import { registerAiSettingsAdmin } from './routes/aiSettingsAdmin.js';
 
 export interface AppDeps {
   db: Db;
@@ -214,6 +215,8 @@ export async function buildApp({
        * may not be a member of any company. See `routes/vendor.ts` for why it is not `/admin/usage`.
        */
       registerVendor(scope, db);
+      // Which model answers the Guest assistant: platform-wide, vendor-only (`platform:ai`).
+      registerAiSettingsAdmin(scope, db);
     },
     { prefix: '/api/v1' },
   );

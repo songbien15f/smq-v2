@@ -183,7 +183,7 @@ PDF_CACHE=./data/pdf-cache
 
 Carry over from the developer's local `.env` **only if the human asks** (they are real credentials):
 `SMTP_*`, `MAIL_FROM`, `ENQUIRY_TO`, `GUEST_NOTIFY_TO`, `GOOGLE_PLACES_API_KEY` + `GUEST_PLACES_ENABLED`,
-`SHEDSAFE_*`, `AI_*`. If Places is enabled, `GUEST_PLACES_SESSION_SECRET` (≥ 32 random chars) is
+`SHEDSAFE_*`, `GEMINI_*` + `VILAO_*` + `AI_PRIMARY`/`AI_FALLBACK` (the old `AI_BASE_URL`/`AI_API_KEY`/`AI_MODEL` are no longer read). If Places is enabled, `GUEST_PLACES_SESSION_SECRET` (≥ 32 random chars) is
 **required in production**, and the Google key's HTTP-referrer restriction must include
 `https://quote-smartquote.martechsky.com/*`. See the app's `docs/OPERATIONS.md` §8.
 

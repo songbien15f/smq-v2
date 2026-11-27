@@ -18,3 +18,4 @@ export * from './admin.js';
 export * from './guest.js';
 export * from './guestAccount.js';
 export * from './assistant.js';
+export * from './aiSettings.js';

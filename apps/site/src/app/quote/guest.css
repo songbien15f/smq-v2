@@ -3739,13 +3739,14 @@
   height: 22px;
 }
 
-/* Recording: red dot, clock, wave, Cancel and Done — the same height as the field row. */
+/* Recording, inside the dialog (VoiceDialog.tsx): red dot, clock and wave on one line. */
 .g-voice-rec {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 54px;
-  padding: 6px 6px 6px 12px;
+  margin: 0 0 20px;
+  padding: 6px 12px;
   border: 1.5px solid var(--g-red-dark);
   border-radius: 14px;
   background: var(--g-surface-2);
@@ -3796,58 +3797,13 @@
   transform-origin: center;
   transition: transform 90ms linear;
 }
-.g-voice-cancel,
-.g-voice-done {
-  flex: none;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.g-voice-cancel {
-  border: 1.5px solid var(--g-line);
-  background: var(--g-surface);
-  color: var(--g-ink);
-}
-.g-voice-cancel:hover,
-.g-voice-cancel:focus-visible {
-  background: var(--g-surface-2);
-}
-.g-voice-done {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1.5px solid var(--g-heading);
-  background: var(--g-heading);
-  color: var(--g-surface);
-}
-.g-voice-done:hover:not(:disabled),
-.g-voice-done:focus-visible {
-  filter: brightness(1.12);
-}
-.g-voice-done:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.g-voice-done .g-icon {
-  width: 16px;
-  height: 16px;
-}
-.g-voice-cancel:focus-visible,
-.g-voice-done:focus-visible {
-  outline: 3px solid var(--g-focus);
-  outline-offset: 2px;
-}
-
 /* "Listening back…": the same row height, a small spinner, announced politely. */
 .g-voice-busy {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 54px;
+  margin: 0 0 20px;
   padding: 6px 12px;
   border: 1.5px solid var(--g-line);
   border-radius: 14px;
@@ -3871,9 +3827,32 @@
 }
 
 /* The hint that replaces the standing disclaimer while there is something to say about a transcript. */
-.g-voice-hint {
+.g-voice-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+.g-voice-dialog p {
+  margin: 0 0 16px;
+}
+.g-voice-textarea {
+  min-height: 96px;
+  margin: 0 0 10px;
+  resize: vertical;
+  line-height: 1.5;
+}
+/* An error or a note inside the dialog: navy, not red - only a real failure is red. */
+.g-voice-problem {
+  margin: 0 0 12px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--g-heading);
+}
+.g-voice-dialog .g-hint {
+  margin: 0 0 20px;
+}
+.g-voice-dialog .g-voice-alts,
+.g-voice-dialog .g-voice-chips,
+.g-voice-dialog .g-voice-warn {
+  margin-bottom: 12px;
 }
 /* After a transcript: "Did you mean" readings and off-topic examples, as compact chips that fill the field. */
 .g-voice-alts {
@@ -3933,22 +3912,20 @@
 @media (max-width: 479px) {
   .g-voice-rec {
     gap: 6px;
-    padding-left: 10px;
   }
   .g-voice-clock {
     min-width: 66px;
     font-size: 12.5px;
-  }
-  .g-voice-cancel,
-  .g-voice-done {
-    padding: 0 10px;
-    font-size: 13px;
   }
   .g-voice-wave {
     gap: 2px;
   }
   .g-voice-wave > span {
     width: 2px;
+  }
+  .g-voice-dialog .g-dialog-actions .g-btn {
+    flex: 1 1 auto;
+    padding: 0 10px;
   }
 }
 

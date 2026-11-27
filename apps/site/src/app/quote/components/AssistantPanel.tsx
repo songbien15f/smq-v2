@@ -187,8 +187,9 @@ function AssistantPanelBody({
     if (window.matchMedia('(min-width: 1280px)').matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const send = () => {
-    const message = text.trim();
+  /** `override` is the voice dialog's text, which state set in the same tick has not reached yet. */
+  const send = (override?: string) => {
+    const message = (override ?? text).trim();
     if (message === '' || busy) return;
     setText('');
     void sendToAssistant(message, design, type.id);
@@ -287,8 +288,9 @@ function AssistantPanelBody({
             }}
           >
             {/*
-              The field, the microphone and the recording bar. Speech only ever fills the field: a
-              transcript is read and sent by the visitor, never by the recogniser (plan 2026-11-22).
+              The field, the microphone and Send. The microphone opens a dialog where speech becomes
+              words the guest reads and presses Done on — nothing reaches this thread before that press
+              (2026-11-27, VoiceDialog).
             */}
             <VoiceComposer
               typeId={type.id}

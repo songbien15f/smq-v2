@@ -38,7 +38,7 @@ import {
   type GuestWindRegion,
 } from '@sq/core/domain';
 import { guestOpSchema, type GuestAssistantTurnRequest, type GuestOpWire } from '@sq/contracts';
-import { assistantConfigFromEnv, completeReply, type AssistantConfig } from './ai/gateway.js';
+import { anyProviderConfigured, completeReply, type AiConfig } from './ai/index.js';
 import { consume } from './rateLimit.js';
 
 /** Anonymous visitor cookie. HttpOnly: the page never needs to read it. */
@@ -424,7 +424,15 @@ export function honestMessage(message: string, dropped: number, applied: number,
 export function parseOps(raw: unknown[]): { ops: GuestOp[]; dropped: number } {
   const ops: GuestOp[] = [];
   let dropped = 0;
-  for (const candidate of raw) {
+  /*
+   * At most ten operations, whatever the model sent.
+   *
+   * The schema asks for `maxItems: 10`, and vilao enforces it. Gemini's structured output does too
+   * - except when the schema has to be sent without `maxItems` because it is too large to compile
+   * (research section 5, and `gemini.ts` says so). The cap therefore lives here as well, so the
+   * product rule does not depend on which provider answered.
+   */
+  for (const candidate of raw.slice(0, 10)) {
     const parsed = guestOpSchema.safeParse(dropNulls(candidate));
     if (parsed.success) ops.push(parsed.data as GuestOp);
     else dropped += 1;
@@ -452,7 +460,7 @@ export async function runAssistantTurn(
      * server (Places policy, `docs/research/places-location-sku.md`).
      */
     region: GuestWindRegion | null;
-    config: AssistantConfig | null;
+    config: AiConfig | null;
     fetchImpl?: typeof fetch;
   },
 ): Promise<TurnOutcome> {
@@ -556,5 +564,5 @@ export async function runAssistantTurn(
 /** Whether the assistant is switched on at all: an env switch **and** a key. */
 export function assistantEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const flag = (env.GUEST_ASSISTANT_ENABLED ?? '').trim().toLowerCase();
-  return flag === '1' || flag === 'true' || flag === 'on' ? assistantConfigFromEnv(env) !== null : false;
+  return flag === '1' || flag === 'true' || flag === 'on' ? anyProviderConfigured(env) : false;
 }

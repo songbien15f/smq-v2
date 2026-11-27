@@ -9,6 +9,12 @@
  * and arrays, and drops the `$schema` key the gateway does not need. A plain
  * union of two real types (no `null`) is left untouched.
  *
+ * **This file is not on the Guest assistant's turn path.** Since 2026-11-27 that turn is answered by
+ * Gemini first (`apps/api/src/lib/ai/schemas.ts` builds its own schema and strips `$schema` there),
+ * with vilao as the fallback; neither imports this module. It is kept, with its tests, because the
+ * `anyOf` form is a correct portable JSON Schema and `packages/core` is the only place that may build
+ * one from a domain schema — do not delete it as dead code.
+ *
  * `toGatewaySchema` builds the request schema from `extractionSchema`, not
  * `shedConfigSchema`: the request must not require `colors` / `displayUnit`, or
  * `strict: true` would make the model fabricate colour hexes it was never asked

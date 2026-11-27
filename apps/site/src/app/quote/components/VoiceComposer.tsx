@@ -1,70 +1,33 @@
 'use client';
 
 /**
- * The assistant's composer: the text field, the microphone, and the recording bar that replaces them.
+ * The assistant's composer: a text field, a microphone and Send.
  *
  * ## The rule this component exists to keep
  *
- * **Speech never sends itself.** A transcript lands in the text field with the cursor at the end, and
- * the visitor reads it and presses Send. A recogniser that hears "nine" as "five" would otherwise change
- * a design behind their back, and a design change can be the difference between one door and two.
- *
- * ## The four shapes of the row
+ * **Speech never sends itself.** The microphone opens `VoiceDialog`, where the guest records, then reads
+ * and edits the words, then presses Done in the dialog. Only that Done hands the text here, and here it
+ * is sent as their message. A recogniser that hears "nine" as "five" would otherwise change a design
+ * behind their back, and a design change can be the difference between one door and two.
  *
  * ```
- * idle / error   [ e.g. make it 9 metres wide ]  (mic)  [Send]
- * recording      [ ● 0:07 / 1:00  ▂▅▇▅▂  ]  [Cancel] [Done]
- * transcribing   [ ◌ Listening back… ]
- * done           [ add a 3 metre roller door on the f ]  (mic)  [Send]
+ * [ e.g. make it 9 metres wide ]  (mic)  [Send]
  * ```
  *
- * ## After a transcript: three kinds of help, none of which sends
+ * ## Why the recorder is not in here
  *
- * - **Did you mean…?** — when the server's repair pass was unsure, its other readings are chips; a tap
- *   swaps them into the field (and puts the replaced reading among the chips, so it can be swapped back).
- * - **Off topic** — the hint says what the assistant is for and `examples` (the panel's dynamic
- *   suggestions) become chips that fill the field.
- * - **Number check** — a size this building cannot take gets an amber line, so "fifty" heard for
- *   "fifteen" is noticed before Send, not after the change card.
+ * The recorder lives inside `VoiceDialog`, which unmounts when the dialog closes and therefore stops the
+ * microphone stream. This panel stays mounted, sometimes hidden; a stream left open by a closed dialog
+ * would be a live microphone nobody can see. Keeping the two apart is what makes closing mean "stopped".
  *
- * ## Why it is not in `AssistantPanel`
- *
- * The panel owns the thread; this owns the microphone, its permission errors and the words it produced.
- * Keeping the recorder out of the panel is what lets the panel stay mounted and hidden without holding a
- * live stream.
+ * The dialog also owns the review step — "Did you mean…?" chips, off-topic examples and spoken-size
+ * warnings — because those only make sense next to the words they describe.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { isVoiceUnavailable, transcribeVoice, useAssistant } from '../assistantStore';
-import { useVoiceRecorder, type VoiceError } from '../useVoiceRecorder';
-import { IconMic, IconStop } from './icons';
-
-/** What the hint under the row is saying. `null` is the standing AI disclaimer. */
-type Hint = 'ready' | 'offtopic' | 'empty' | 'voice_off' | 'denied' | 'no_device' | 'too_short' | 'failed' | null;
-
-const HINTS: Record<Exclude<Hint, null>, string> = {
-  ready: 'Check the words, then press Send.',
-  offtopic: 'I can only help design your shed \u2014 try one of these:',
-  empty: 'Didn\u2019t catch that \u2014 try again or type it.',
-  voice_off: 'Voice input isn\u2019t available right now \u2014 type your request instead.',
-  denied: 'Microphone blocked \u2014 allow it in the browser\u2019s address bar, or type instead.',
-  no_device: 'No microphone found \u2014 type instead.',
-  too_short: 'That was too short \u2014 hold on for a moment and speak.',
-  failed: 'Couldn\u2019t make that out \u2014 try again or type it.',
-};
-
-const ERROR_HINT: Record<VoiceError, Exclude<Hint, null>> = {
-  denied: 'denied',
-  no_device: 'no_device',
-  too_short: 'too_short',
-  failed: 'failed',
-};
-
-/** `0:07` — minutes and two-digit seconds. */
-function clock(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
+import { useEffect, useRef, useState } from 'react';
+import { useAssistant } from '../assistantStore';
+import { VoiceDialog } from './VoiceDialog';
+import { IconMic } from './icons';
 
 export function VoiceComposer({
   typeId,
@@ -79,145 +42,47 @@ export function VoiceComposer({
   busy: boolean;
   value: string;
   onChange: (next: string) => void;
-  onSend: () => void;
+  /** `override` is the dialog's text: state set a moment earlier is not visible to this callback yet. */
+  onSend: (override?: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  /** Next steps that make sense for this design, offered when the visitor's words were off topic. */
+  /** Next steps that make sense for this design, offered when the guest's words were off topic. */
   examples: string[];
 }) {
-  const recorder = useVoiceRecorder();
   const voiceUnavailable = useAssistant((s) => s.voiceUnavailable);
-  const [hint, setHint] = useState<Hint>(null);
-  /** Other readings of the last transcript ("Did you mean…?") and size warnings for it. */
-  const [alternatives, setAlternatives] = useState<string[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  /** The reading now in the field, so a picked alternative replaces exactly those words. */
-  const lastTranscript = useRef('');
-  /** What a screen reader is told, in words rather than every tick of the clock. */
-  const [announce, setAnnounce] = useState('');
-  const showMic = recorder.supported && !voiceUnavailable;
+  const [open, setOpen] = useState(false);
+  /** Whether the browser can record at all; read once, so a browser without `MediaRecorder` shows no mic. */
+  const [supported, setSupported] = useState(false);
+  const micRef = useRef<HTMLButtonElement>(null);
+  /** Whether the guest came out of the dialog, so focus is owed to the mic once the send finishes. */
+  const restoreFocus = useRef(false);
+
+  useEffect(() => {
+    setSupported(
+      typeof navigator !== 'undefined' &&
+        navigator.mediaDevices !== undefined &&
+        typeof MediaRecorder !== 'undefined',
+    );
+  }, []);
+
   /*
-   * The draft and its setter, read by the transcript callback. The callback is registered once and must
-   * see the field as it is *then*, not as it was when the effect ran.
+   * Focus moves back to the mic after the dialog closes — but not immediately: the send starts in the
+   * same tick, which disables the composer, and a `focus()` on a disabled button does nothing. So the
+   * request is remembered and honoured when the panel is enabled again.
    */
-  const latestRef = useRef({ value, onChange });
-  latestRef.current = { value, onChange };
-
-  // The recorder's own errors are what the hint shows; reaching into it once, here, keeps the row free
-  // of conditionals spread through its markup.
   useEffect(() => {
-    if (recorder.error === null) return;
-    setHint(ERROR_HINT[recorder.error]);
-    setAnnounce(recorder.error === 'too_short' ? 'Too short' : 'Microphone unavailable');
-  }, [recorder.error]);
+    if (busy || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    micRef.current?.focus({ preventScroll: true });
+  }, [busy]);
 
-  const focusEnd = useCallback(() => {
-    const input = inputRef.current;
-    if (input === null) return;
-    input.focus({ preventScroll: true });
-    const end = input.value.length;
-    try {
-      input.setSelectionRange(end, end);
-    } catch {
-      /* some browsers refuse selection on a focused field; the cursor is at the end anyway */
-    }
-  }, [inputRef]);
+  const showMic = supported && !voiceUnavailable;
 
-  useEffect(() => {
-    recorder.onDone((blob, mimeType, durationMs) => {
-      void (async () => {
-        const result = await transcribeVoice(blob, mimeType, durationMs, typeId);
-        if (result === null) {
-          /*
-           * Two different truths. If the server answered `unavailable`, the recording was never heard at
-           * all — saying "didn't catch that" would blame the visitor's speech for a switched-off service.
-           * `isVoiceUnavailable()` reads the store after the call, because the sticky flag is set there.
-           */
-          const off = isVoiceUnavailable();
-          setHint(off ? 'voice_off' : 'empty');
-          setAnnounce(off ? 'Voice input is unavailable' : 'No transcript');
-        } else if (result.text.trim() === '') {
-          setHint('empty');
-          setAnnounce('No transcript');
-        } else {
-          /*
-           * `latestRef` rather than the closed-over `value`: the effect that registers this callback
-           * runs rarely, and a draft typed between two recordings must not be overwritten by a stale
-           * copy of the field.
-           */
-          const current = latestRef.current.value;
-          const next = current.trim() === '' ? result.text : `${current.trimEnd()} ${result.text}`;
-          latestRef.current.onChange(next);
-          lastTranscript.current = result.text;
-          setAlternatives(result.onTopic ? result.alternatives : []);
-          setWarnings(result.numberWarnings);
-          setHint(result.onTopic ? 'ready' : 'offtopic');
-          setAnnounce('Transcript ready — check it, then send');
-          focusEnd();
-        }
-        recorder.reset();
-      })();
-    });
-    // `recorder` is a fresh object each render by design; the callback is only stored, never run here.
-  });
-
-  // Esc cancels a recording wherever focus is inside the panel; the plan asks for it on the row too.
-  useEffect(() => {
-    if (recorder.state !== 'recording') return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        recorder.cancel();
-        setAnnounce('Recording cancelled');
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [recorder]);
-
-  /* Sent or cleared: the help was about words that are gone. */
-  useEffect(() => {
-    if (value.trim() !== '') return;
-    setAlternatives([]);
-    setWarnings([]);
-    setHint((h) => (h === 'ready' || h === 'offtopic' ? null : h));
-  }, [value]);
-
-  /** Swap the transcript in the field for another reading; the old one becomes a chip. */
-  const pickAlternative = (alt: string) => {
-    const current = latestRef.current.value;
-    const old = lastTranscript.current;
-    const next = old !== '' && current.includes(old) ? current.replace(old, alt) : alt;
-    onChange(next);
-    lastTranscript.current = alt;
-    setAlternatives((list) => [...list.filter((a) => a !== alt), ...(old === '' ? [] : [old])]);
-    setWarnings([]);
-    setAnnounce(`Changed to: ${alt}`);
-    focusEnd();
+  /** Closing returns the cursor to the mic, so a keyboard user is not dropped at the top of the page. */
+  const close = () => {
+    restoreFocus.current = true;
+    setOpen(false);
+    if (!busy) micRef.current?.focus({ preventScroll: true });
   };
-
-  /** Off topic: an example replaces the field outright — the words there were not a shed request. */
-  const pickExample = (example: string) => {
-    onChange(example);
-    lastTranscript.current = '';
-    setHint('ready');
-    setAnnounce(`Filled in: ${example}`);
-    focusEnd();
-  };
-
-  const startRecording = () => {
-    setHint(null);
-    setAlternatives([]);
-    setWarnings([]);
-    setAnnounce('Recording');
-    void recorder.start();
-  };
-
-  const recording = recorder.state === 'recording' || recorder.state === 'requesting';
-  const transcribing = recorder.state === 'transcribing';
-  /** Ten seconds left is when the clock turns amber: enough time to finish a sentence. */
-  const nearLimit = recorder.elapsedMs >= recorder.maxMs - 10_000;
-
-  const hintText = hint === null ? 'AI can make mistakes — check the plan. It never sends your request.' : HINTS[hint];
 
   return (
     <>
@@ -225,119 +90,72 @@ export function VoiceComposer({
         Message the assistant
       </label>
 
-      {recording ? (
-        <div className="g-voice-rec" role="group" aria-label="Recording your request">
-          <span className="g-voice-dot" aria-hidden="true" />
-          <span className={`g-voice-clock${nearLimit ? ' g-voice-clock-warn' : ''}`} aria-hidden="true">
-            {clock(recorder.elapsedMs)} / {clock(recorder.maxMs)}
-          </span>
-          <span className="g-voice-wave" aria-hidden="true">
-            {Array.from({ length: 8 }, (_, i) => (
-              <span
-                key={i}
-                // Eight bars, each with a different share of the level, so it reads as a wave.
-                style={{ transform: `scaleY(${0.15 + Math.min(1, recorder.level) * (0.35 + ((i * 7) % 10) / 12)})` }}
-              />
-            ))}
-          </span>
-          <button type="button" className="g-voice-cancel" onClick={() => recorder.cancel()}>
-            Cancel
-          </button>
+      <div className="g-assistant-row">
+        <input
+          ref={inputRef}
+          id="g-assistant-input"
+          className="g-input"
+          type="text"
+          maxLength={1000}
+          placeholder="e.g. make it 9 metres wide"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={busy}
+        />
+        {showMic ? (
           <button
+            ref={micRef}
             type="button"
-            className="g-voice-done"
-            disabled={recorder.state === 'requesting'}
-            onClick={() => recorder.stop()}
-          >
-            <IconStop />
-            Done
-          </button>
-        </div>
-      ) : null}
-
-      {transcribing ? (
-        <div className="g-voice-busy" role="status">
-          <span className="g-voice-spinner" aria-hidden="true" />
-          Listening back…
-        </div>
-      ) : null}
-
-      {recording || transcribing ? null : (
-        <div className="g-assistant-row">
-          <input
-            ref={inputRef}
-            id="g-assistant-input"
-            className="g-input"
-            type="text"
-            maxLength={1000}
-            placeholder="e.g. make it 9 metres wide"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
+            className="g-mic-btn"
+            aria-label="Speak your request"
+            aria-haspopup="dialog"
             disabled={busy}
-          />
-          {showMic ? (
-            <button
-              type="button"
-              className="g-mic-btn"
-              aria-label="Speak your request"
-              aria-pressed={false}
-              disabled={busy}
-              onClick={startRecording}
-            >
-              <IconMic />
-            </button>
-          ) : null}
-          {/*
-            A plain button, not a submit: the form's onSubmit and this onClick would otherwise both run
-            send() for one click.
-          */}
-          <button type="button" className="g-btn g-btn-primary" disabled={busy || value.trim() === ''} onClick={onSend}>
-            {busy ? '…' : 'Send'}
+            onClick={() => setOpen(true)}
+          >
+            <IconMic />
           </button>
-        </div>
-      )}
+        ) : null}
+        {/*
+          A plain button, not a submit: the form's onSubmit and this onClick would otherwise both run
+          send() for one click.
+        */}
+        <button
+          type="button"
+          className="g-btn g-btn-primary"
+          disabled={busy || value.trim() === ''}
+          onClick={() => onSend()}
+        >
+          {busy ? '…' : 'Send'}
+        </button>
+      </div>
 
-      <p className={`g-hint${hint === null ? '' : ' g-voice-hint'}`}>{hintText}</p>
-      {hint === 'offtopic' && examples.length > 0 ? (
-        <ul className="g-voice-chips" aria-label="Things you can ask">
-          {examples.map((example) => (
-            <li key={example}>
-              <button type="button" className="g-chip-ask" onClick={() => pickExample(example)}>
-                {example}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {alternatives.length > 0 && hint === 'ready' ? (
-        <div className="g-voice-alts">
-          <span className="g-voice-alts-label">Did you mean</span>
-          <ul className="g-voice-chips" aria-label="Did you mean">
-            {alternatives.map((alt) => (
-              <li key={alt}>
-                <button type="button" className="g-chip-ask" onClick={() => pickAlternative(alt)}>
-                  {alt}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {warnings.length > 0 ? (
-        <ul className="g-voice-warn" role="status">
-          {warnings.map((w) => (
-            <li key={w}>{w}</li>
-          ))}
-        </ul>
-      ) : null}
-      {showMic && value.trim() === '' && hint === null ? (
+      <p className="g-hint">AI can make mistakes — check the plan. It never sends your request.</p>
+      {showMic && value.trim() === '' ? (
         <p className="g-voice-invite">
           Tap the mic and say what you want — e.g. <em>add a roller door on the front</em>.
         </p>
       ) : null}
-      <p className="g-sr-only" aria-live="polite">
-        {announce}
-      </p>
+
+      {/*
+        Mounted only while open, so closing the dialog tears the recorder down and the microphone light
+        goes out. The field is set before the send so a send that is refused (the assistant is busy)
+        keeps the words rather than dropping them.
+      */}
+      {open ? (
+        <VoiceDialog
+          typeId={typeId}
+          examples={examples}
+          onDone={(text) => {
+            onChange(text);
+            onSend(text);
+          }}
+          onClose={close}
+          onTypeInstead={() => {
+            setOpen(false);
+            inputRef.current?.focus({ preventScroll: true });
+          }}
+        />
+      ) : null}
     </>
   );
 }

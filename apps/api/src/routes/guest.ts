@@ -97,7 +97,7 @@ import {
   resolveAssistantSession,
   runAssistantTurn,
 } from '../lib/guestAssistant.js';
-import { assistantConfigFromEnv, repairTranscript, transcribe } from '../lib/ai/gateway.js';
+import { repairTranscript, resolveAiConfig, transcribe } from '../lib/ai/index.js';
 import { isShedTopic, normaliseShedTranscript, numberWarnings, shedRepairPrompt, shedSttPrompt } from '../lib/guestVoice.js';
 import { upgradeGuestDesign } from '@sq/core/domain';
 
@@ -460,7 +460,7 @@ export function registerGuest(
    * redacted before a model sees it (see `lib/guestAssistant.ts`).
    */
   app.post('/public/guest/assistant/turn', async (request, reply) => {
-    const config = assistantEnabled() ? assistantConfigFromEnv() : null;
+    const config = assistantEnabled() ? await resolveAiConfig(db) : null;
     if (config === null) {
       return sendFail(reply, 'not_configured', 'The assistant is unavailable right now. The designer works as normal.');
     }
@@ -562,7 +562,7 @@ export function registerGuest(
     async (request, reply) => {
       const voiceFlag = (process.env.GUEST_ASSISTANT_VOICE ?? '').trim().toLowerCase();
       const voiceOn = voiceFlag === '1' || voiceFlag === 'true' || voiceFlag === 'on';
-      const config = assistantEnabled() && voiceOn ? assistantConfigFromEnv() : null;
+      const config = assistantEnabled() && voiceOn ? await resolveAiConfig(db) : null;
       if (config === null) {
         const data: GuestAssistantTranscribeResponse = { text: '', onTopic: false, alternatives: [], numberWarnings: [], unavailable: true };
         return sendOk(reply, data);
@@ -632,6 +632,8 @@ export function registerGuest(
       const raw = await transcribe(config, new Uint8Array(bytes), body.mimeType, {
         prompt: shedSttPrompt(type),
         language: 'en',
+        // The router needs the clip's length to tell "no speech" from "the provider failed silently".
+        durationMs: body.durationMs,
       });
       if (raw === '') {
         // The failure side of `transcribe` is a silent `''`. Length and type say whether the clip was

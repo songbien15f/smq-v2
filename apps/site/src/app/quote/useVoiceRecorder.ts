@@ -112,11 +112,19 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
       tickRef.current = null;
     }
     const recorder = recorderRef.current;
-    if (recorder !== null && recorder.state !== 'inactive') {
-      try {
-        recorder.stop();
-      } catch {
-        /* already stopped */
+    if (recorder !== null) {
+      /*
+       * Detach before stopping: `stop()` queues a `stop` event, and a handler that is still attached
+       * calls `finish` again — one recording, two transcripts, the second with no chunks. Detaching is
+       * what makes a teardown stop stay a teardown.
+       */
+      recorder.onstop = null;
+      if (recorder.state !== 'inactive') {
+        try {
+          recorder.stop();
+        } catch {
+          /* already stopped */
+        }
       }
     }
     recorderRef.current = null;

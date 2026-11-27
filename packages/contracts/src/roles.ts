@@ -53,6 +53,7 @@ export const CAPABILITIES = [
   'platform:pricebooks',
   'platform:enquiries',
   'platform:audit',
+  'platform:ai',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -92,6 +93,8 @@ const PLATFORM_POLICY: Record<PlatformRole, readonly Capability[]> = {
     'platform:pricebooks',
     'platform:enquiries',
     'platform:audit',
+    // Which model answers the Guest assistant, and with which model ids. Platform-wide, vendor-only.
+    'platform:ai',
   ],
   platform_support: ['platform:companies', 'platform:enquiries', 'platform:audit'],
 };

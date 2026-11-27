@@ -72,6 +72,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     label: 'System',
     items: [
       { href: '/usage', label: 'Usage', capability: 'platform:audit', icon: 'usage' },
+      { href: '/ai', label: 'AI assistant', capability: 'platform:ai', icon: 'ai' },
       { href: '/releases', label: 'Releases', capability: 'platform:versions', icon: 'releases' },
       { href: '/audit', label: 'Audit', capability: 'platform:audit', icon: 'audit' },
     ],

@@ -291,44 +291,89 @@ DELETE FROM guest_accounts WHERE id = '<account id>';
 
 The Guest page can offer a "Shed Assistant": a chat box that turns a sentence ("6 by 9 garage with two
 roller doors") into design operations. It costs money per message, so it is **off unless two things
-are true**: `GUEST_ASSISTANT_ENABLED=1` **and** `VILAO_API_KEY` is set. With either missing, the route
-answers 503 `not_configured` and the page shows "the assistant is unavailable — the designer still
-works".
+are true**: `GUEST_ASSISTANT_ENABLED=1` **and** at least one provider key is set (`GEMINI_API_KEY` or
+`VILAO_API_KEY`). With either missing, the route answers 503 `not_configured` and the page shows "the
+assistant is unavailable — the designer still works".
+
+**Two providers, one primary and one fallback.** Since 2026-11-27 the assistant can be answered by
+Google Gemini directly or by the vilao gateway. The **router** (`apps/api/src/lib/ai/index.ts`) sends
+each job to the primary; if that fails in a way worth retrying and the fallback is enabled with enough
+of the job's deadline left, the fallback answers the same job. A safety block is never retried, and a
+400 does not fall back late in a short deadline. Three jobs use it: the design turn (25 s total), the
+transcript repair (8 s) and speech to text (25 s). The provider that answered appears in one log line
+per call:
+
+```
+[ai] job=turn provider=gemini status=ok fallbackFired=false latencyMs=1180 inputTokens=3120 outputTokens=240
+```
+
+**Where the settings live.** *Which* provider and *which* models is data, in the `ai_settings` table
+(migration 025), edited on the vendor's **AI assistant** screen (`apps/admin`, `/ai`, capability
+`platform:ai`; each change is audited as `ai_settings.update`). **The keys are not data.** They live in
+`.env` only and never reach the database or the screen, which shows "key set: yes/no" as two booleans.
+Migration 008 dropped `platform_settings` for exactly this reason: a key in a table is a key in every
+backup.
+
+**Rotating a key means editing `.env` and restarting the API.** There is no reload path on purpose; a
+half-applied key is worse than a slow rotation. A key revoked in Google Cloud but left in `.env` turns
+every Gemini call into a 403, and the log line above is where that shows.
 
 | Setting | Meaning |
 |---|---|
 | `GUEST_ASSISTANT_ENABLED` | `1` to offer the assistant. Anything else is off. |
+| `AI_PRIMARY` | `gemini` (default) or `vilao`. The admin screen overrides it. |
+| `AI_FALLBACK` | `vilao` (default), `gemini` or `none`. The admin screen overrides it. |
+| `GEMINI_API_KEY` | Google AI Studio key. **A server secret**: `.env` only. It must be an authorization key or a restricted standard key — an unrestricted standard key is refused with 403. |
+| `GEMINI_MODEL` | Defaults to `gemini-3.5-flash-lite`. The admin screen overrides it. |
+| `GEMINI_STT_MODEL` | Speech-to-text model. Empty means "use `GEMINI_MODEL`". |
+| `GEMINI_BASE_URL` | Defaults to `https://generativelanguage.googleapis.com/v1beta`. |
+| `GEMINI_THINKING_LEVEL` | `minimal` (default), `low`, `medium`, `high`. Thinking tokens are billed as output. |
 | `VILAO_BASE_URL` | OpenAI-compatible gateway. Defaults to `https://api.vilao.ai/v1`. |
 | `VILAO_API_KEY` | The key. **A server secret**: it stays in `.env`, never `NEXT_PUBLIC_*`, never in a commit. |
 | `VILAO_MODEL` | Chat model. Defaults to `wiki`. |
 | `VILAO_STT_MODEL` | Speech-to-text model, used by the composer's microphone. Defaults to `mgr/grok-stt`. |
-| `GUEST_ASSISTANT_DAILY_TURNS` | Platform-wide ceiling per UTC day. Defaults to 200. |
 | `GUEST_ASSISTANT_VOICE` | `1` to offer the microphone in the composer. **Separate from the chat switch**, because each recording is its own paid call. Defaults to off. |
+| `GUEST_ASSISTANT_DAILY_TURNS` | Platform-wide ceiling per UTC day. Defaults to 200. |
 | `GUEST_ASSISTANT_DAILY_VOICE` | Platform-wide ceiling on transcriptions per UTC day. Defaults to 100. |
 | `NEXT_PUBLIC_SQ_ASSISTANT` | `1` renders the panel for everyone. `?assistant=1` turns it on for one visit. |
 
-**What a turn costs and who stops it.** One model call, or two when the first reply wrote an
-operation with key names that do not exist (the gateway does not enforce the JSON schema): the
-server asks once more with the exact shape and keeps the reply that lost fewer operations. Three
-counters are consumed *before* the call: 60 a day per IP, 40 per conversation, and the daily ceiling
-above — they count turns, not calls. A refusal answers "unavailable" and the designer keeps working.
+**Rate limits and spend (Gemini).** Limits are per **project**, not per key: RPM, TPM and RPD, with RPD
+resetting at midnight Pacific. The model's own numbers are not in the public docs — read them on the
+AI Studio rate-limit page (`https://aistudio.google.com/rate-limit`) with the project's sign-in. Spend is
+capped on a rolling 10 minutes: **Tier 1 allows $10 per 10 minutes with a $250 billing cap** (Tier 2:
+$200 / $2,000). Breaking any limit answers 429 `RESOURCE_EXHAUSTED`, which the router retries once and
+then hands to the fallback. At the published price of $0.30 per million input tokens and $2.50 per
+million output, a typical turn (3–6k in, 300–800 out) is about $0.001–0.004 and a 60 s voice note is
+about $0.0006, so the spend cap is not the limit that bites first — the daily turn ceiling is.
+
+**What a turn costs and who stops it.** One model call per provider tried, and occasionally two: when
+the reply is valid JSON whose operation names do not exist, the server re-asks once with the exact shape
+and keeps the reply that lost fewer operations. Gemini is asked for a schema-constrained reply, so on the
+primary that second call is rare; on vilao it is the normal repair path. Three counters are consumed
+*before* the call: 60 a day per IP, 40 per conversation, and the daily ceiling above — they count
+turns, not calls, so a fallback is not billed to the guest twice. A refusal answers "unavailable" and
+the designer keeps working.
 
 **The microphone (speech to text).** Switched on separately with `GUEST_ASSISTANT_VOICE=1`; without it
-the composer simply has no mic. A recording is capped at 60 s and 1 MB, and the audio is **never stored
-or logged** — only its length and mime type appear in a failure line. The transcript is normalised and
-redacted, then put **in the composer for the guest to read and edit**: it is never sent by itself, so a
-misheard "nine" cannot become a design change. Its counters are its own — 30 a day per IP, 20 per
-conversation, and `GUEST_ASSISTANT_DAILY_VOICE` for the platform — consumed before the gateway call.
+the composer simply has no mic. The mic opens a **dialog** (`VoiceDialog.tsx`): record, then the server
+runs speech to text and the repair pass, then the guest reads and edits the words and presses **Done**.
+Nothing reaches the chat before that press — a misheard "nine" cannot become a design change behind
+their back, and Cancel sends nothing. A recording is capped at 60 s and 1 MB, and the audio is **never
+stored or logged** — only its length and mime type appear in a failure line. The dialog unmounts on
+close, which stops the microphone stream. Its counters are its own — 30 a day per IP, 20 per
+conversation, and `GUEST_ASSISTANT_DAILY_VOICE` for the platform — consumed before the model call.
 Over the IP or conversation limit answers 429; over the daily budget answers `unavailable` and the page
 retires the mic for that visit.
 
-**The STT gateway does not take a vocabulary prompt (measured 2026-11-22).** `mgr/grok-stt` answers
+**The vilao STT model does not take a vocabulary prompt (measured 2026-11-22).** `mgr/grok-stt` answers
 `400 BAD_REQUEST` to the OpenAI `prompt` field at any length, while `language` and `response_format` are
 accepted. The API therefore sends the shed-vocabulary prompt once and, on a 400, retries without it —
 remembering the refusal per model for the life of the process, so repeat visitors do not pay for the
-same rejection. Accuracy is then the recogniser's own; the word-level fixes in `lib/guestVoice.ts`
-("role a door" → "roller door") and the topic check still apply. Re-check with
-`node scripts/probe-stt.mjs <clip.webm>` if the STT model changes.
+same rejection. Gemini takes an instruction and a hint, so the vocabulary goes in the prompt there and
+no refusal is expected. Accuracy is otherwise the recogniser's own; the word-level fixes in
+`lib/guestVoice.ts` ("role a door" → "roller door") and the topic check still apply. Re-check with
+`node scripts/probe-stt.mjs <clip.webm>` (vilao) or `node scripts/probe-gemini.mjs --file <clip.webm>`
+(Gemini) if the STT model changes.
 
 **What the model never sees.** The contact details (name, email, mobile, street address) are not in
 the request — the route's schema has no field for them. The sentence itself is redacted first: email

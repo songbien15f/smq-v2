@@ -466,11 +466,22 @@ Theo spec editor, bỏ những gì liên quan tới giá:
 - nút "Đi tới bước…";
 - lỗi, và ghi chú hệ thống ("Bạn đã sửa cửa này trên plan").
 
-#### Giọng nói
+#### Giọng nói (đổi 2026-11-27: hộp thoại xác nhận)
 
 - Nhận dạng giọng nói **phía server** (như D-AI3 của spec editor); bản ghi âm **không lưu**.
-- Lời nhận dạng được **điền vào ô nhập, không tự gửi**: khách đọc lại, sửa, rồi bấm gửi.
-- Tiếng Anh Úc (`en-AU`) mặc định; tối đa 60 giây mỗi lần; mic chỉ mở khi khách bấm hoặc giữ, không bao giờ nghe nền.
+- Bấm mic mở **hộp thoại "Speak your request"**, không ghi ngay trong khung chat. Trong hộp thoại:
+  đồng hồ và thanh âm lượng khi ghi, **Cancel** và **Done**; Done thì server chạy nhận dạng rồi **sửa
+  lại câu** (hai lời gọi, khách chỉ thấy "Listening back…"); sau đó hộp thoại đổi tiêu đề thành **"Is
+  this what you said?"** và hiện câu đó trong **ô sửa được**.
+- **Không gì vào khung chat trước khi khách bấm Done ở bước xem lại.** Cancel, Esc hay đóng hộp thoại
+  đều không gửi gì. Đây là lý do hộp thoại tồn tại: nghe nhầm "nine" thành "five" không được tự đổi thiết kế.
+- Trong bước xem lại: chip **"Did you mean"** khi câu có nhiều cách hiểu (bấm để đổi, câu cũ thành chip
+  để đổi lại); câu **lạc chủ đề** thì hiện gợi ý và các chip ví dụ của bảng điều khiển; kích thước mà
+  công trình không nhận được thì hiện **cảnh báo màu hổ phách** ngay dưới câu. Ctrl/⌘+Enter = Done.
+- Lỗi (bị chặn quyền, không có mic, quá ngắn, không nghe ra, dịch vụ tắt) hiện **trong hộp thoại**, kèm
+  **Try again** và **Type instead** (đóng hộp thoại, đưa con trỏ về ô chat).
+- Ghi âm nằm **trong** hộp thoại: đóng là stream micro tắt; khung chat đang mở không bao giờ giữ micro.
+- Tiếng Anh Úc (`en-AU`) mặc định; tối đa 60 giây mỗi lần; mic chỉ mở khi khách bấm, không bao giờ nghe nền.
 - Trình duyệt từ chối quyền mic → báo cách bật lại, và chat chữ vẫn chạy.
 - Không có đọc to (TTS) ở bản đầu.
 
@@ -505,7 +516,9 @@ Theo yêu cầu của người dùng, dùng **cùng cấu hình AI với dự á
 - Thêm 4 tên biến vào `.env.example` (giá trị rỗng) và vào `turbo.json` `globalPassThroughEnv`, cùng `GUEST_ASSISTANT_ENABLED` và các trần quota.
   - Giá trị thật chép từ `.env` của RFQ sang `.env` local lúc làm lát (G-g).
   - Không commit, không in ra log.
-- Thiếu `VILAO_API_KEY` thì trợ lý coi như tắt: dải "unavailable", trang vẫn chạy.
+- Thiếu **cả hai** khóa (`GEMINI_API_KEY` và `VILAO_API_KEY`) thì trợ lý coi như tắt: dải "unavailable", trang vẫn chạy.
+
+> **Cập nhật 2026-11-27 — Gemini là chính, vilao là dự phòng.** Bảng trên vẫn đúng cho vilao, nhưng vilao không còn là nhà cung cấp duy nhất: router (`apps/api/src/lib/ai/index.ts`) gọi **Gemini** (`generateContent`, `x-goog-api-key`) trước và chỉ chuyển sang vilao khi lỗi đáng thử lại (429/5xx/mạng/reply hỏng; **không** khi bị chặn an toàn) và còn đủ hạn. Chọn nhà cung cấp và model là **dữ liệu** trong bảng `ai_settings` sửa ở `apps/admin` `/ai` (quyền `platform:ai`, có audit); **khóa vẫn chỉ ở `.env`** và màn hình chỉ hiện "key set: yes/no". Biến mới: `AI_PRIMARY`, `AI_FALLBACK`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_STT_MODEL`, `GEMINI_BASE_URL`, `GEMINI_THINKING_LEVEL`. Chi tiết vận hành ở `docs/OPERATIONS.md`, quyết định ở `docs/DECISIONS.md` D5.
 - Model mặc định của RFQ là `wiki` (`extract.ts:31`). Model đó có hợp cho hội thoại nhiều lượt và trả lời theo ngôn ngữ khách không: *chưa kiểm tra*. Đo thử ở đầu lát (G-g) bằng bộ câu ở phụ lục E của hướng dẫn.
 
 #### Chống lạm dụng và chi phí

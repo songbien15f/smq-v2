@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REPLY_JSON_SCHEMA } from '../lib/ai/gateway';
+import { REPLY_JSON_SCHEMA } from '../lib/ai/schemas';
 import { designContext, dropNulls, guardMessage, mentionsMoney, parseOps, redact } from '../lib/guestAssistant';
 import { GUEST_DEFAULT_TYPES, guestDesignFromType, type GuestDesignInput } from '@sq/core/domain';
 
@@ -92,6 +92,18 @@ describe('parseOps', () => {
   it('drops an operation with an unknown field or an out-of-range index', () => {
     expect(parseOps([{ op: 'setSpan', mm: 9000, surprise: 1 }]).dropped).toBe(1);
     expect(parseOps([{ op: 'removeBay', index: 99 }]).dropped).toBe(1);
+  });
+
+  it('caps the change set at ten operations, whoever answered', () => {
+    /*
+     * The schema says `maxItems: 10`. Gemini has to be able to receive that schema without `maxItems`
+     * (a schema that large is refused), so the product's own limit is enforced here as well: ten ops
+     * applied, nothing dropped, and the extra two are simply not there.
+     */
+    const twelve = Array.from({ length: 12 }, (_unused, i) => ({ op: 'setSpan', mm: 6000 + i * 100 }));
+    const { ops, dropped } = parseOps(twelve);
+    expect(ops).toHaveLength(10);
+    expect(dropped).toBe(0);
   });
 });
 

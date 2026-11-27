@@ -20,7 +20,8 @@ export type NavIconName =
   | 'guestTypes'
   | 'usage'
   | 'releases'
-  | 'audit';
+  | 'audit'
+  | 'ai';
 
 const PATHS: Record<NavIconName | 'menu', ReactNode> = {
   overview: (
@@ -87,6 +88,13 @@ const PATHS: Record<NavIconName | 'menu', ReactNode> = {
     </>
   ),
   usage: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  /* Which model answers the assistant: a spark, the same mark the Guest page uses for it. */
+  ai: (
+    <>
+      <path d="M12 3v5M12 16v5M3 12h5M16 12h5" />
+      <path d="M6.5 6.5 9 9M15 15l2.5 2.5M17.5 6.5 15 9M9 15l-2.5 2.5" />
+    </>
+  ),
   releases: (
     <>
       <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z" />
