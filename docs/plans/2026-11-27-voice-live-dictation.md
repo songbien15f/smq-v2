@@ -2,6 +2,8 @@
 
 Status: implemented 2026-11-27, uncommitted. The user chose "Web Speech + Gemini". Checked in the browser with a stubbed microphone, recogniser and transcribe call (no real speech, no paid call). Departures from the design below: no separate `VoiceCapture` child — both hooks release the mic on unmount and the composer cancels on `active=false` / hidden tab; `setAutoStop()` instead of `start({ autoStop })`; the mic still hides when the server reports voice unavailable; `GUEST_ASSISTANT_DAILY_VOICE` default raised 100 → 300.
 
+**Follow-up (2026-11-27, same day):** the user asked to keep a modal — the one-line composer was too short to read dictation. The recording UI, live text and chips moved back into `VoiceDialog.tsx` (large auto-growing box, Speak / Speak more / Stop, Cancel, Send); `VoiceComposer` is now text box + mic (opens the dialog) + Send, and `AssistantPanel.send(spoken?)` sends the dialog's text. Checked in the browser with stubs, desktop and 375 px.
+
 ## Goal
 - Words appear **while the guest speaks**, from the browser's free Web Speech API (`SpeechRecognition`, interim results).
 - When they stop, the recording goes to the existing `POST public/guest/assistant/transcribe` endpoint (Gemini flash-lite, about $0.0005 a minute). The accurate text replaces the live draft.

@@ -145,14 +145,18 @@ Từ 2026-11-24, **một cổng duy nhất** cho bước ②③: `stepLocked` d�
 Khách bấm mic trong khung "Shed Assistant", nói một câu về shed; server chuyển thành chữ. Điểm cốt lõi:
 **chữ không bao giờ tự gửi** — nó điền vào ô chat, khách đọc (và sửa nếu nghe nhầm) rồi mới bấm Send.
 
-- **Đọc chính tả trực tiếp (2026-11-27, `VoiceComposer.tsx`):** một nút mic, hai cách bấm.
-  **Chạm** = bắt đầu; chạm ⏹ hoặc im 2 giây = kết thúc. **Đè** (≥ 300 ms) = push-to-talk, thả ra là
-  kết thúc, im lặng không cắt. Bàn phím: Enter bật/tắt, giữ Space = đè. Trong lúc nói, nhận dạng của
-  trình duyệt (Web Speech, `useLiveSpeech.ts`, miễn phí, `en-AU`, bỏ qua trên iOS) hiện chữ mờ dưới ô;
-  kết thúc thì bản ghi gửi server (đường đi bên dưới) và câu trả về được **nối thêm** vào ô (cách một
-  khoảng trắng). Nói tiếp thì nối tiếp. Server lỗi/hết quota thì nối chữ của trình duyệt kèm ghi chú.
-  Ô chat là textarea tự giãn: Enter = Send, Shift+Enter = xuống dòng. Ẩn panel, ẩn tab hoặc unmount thì
-  huỷ lượt ghi và tắt micro. Không còn hộp thoại `VoiceDialog`.
+- **Hộp thoại đọc chính tả (2026-11-27, `VoiceDialog.tsx`):** bấm mic cạnh ô chat mở một hộp thoại
+  (`<dialog>` modal) và ghi âm bắt đầu ngay. Hộp thoại có ô chữ lớn (tự giãn, tối đa 40vh) chứa sẵn chữ
+  đang có trong ô chat, nên khách đọc được cả câu dài — ô chat một dòng quá chật. Nút mic trong hộp
+  thoại: **chạm** = bắt đầu/dừng, im 2 giây tự dừng; **đè** (≥ 300 ms) = push-to-talk, thả ra là dừng,
+  im lặng không cắt. Bàn phím: Enter bật/tắt, giữ Space = đè. Trong lúc nói, nhận dạng của trình duyệt
+  (Web Speech, `useLiveSpeech.ts`, miễn phí, `en-AU`, bỏ qua trên iOS) hiện chữ trực tiếp kèm đồng hồ
+  `x / 1:00` và sóng âm; khi dừng, bản ghi gửi server (đường đi bên dưới) và câu trả về được **nối thêm**
+  vào ô (cách một khoảng trắng). **Speak more** nói tiếp và nối tiếp. Server lỗi/hết quota thì nối chữ
+  của trình duyệt kèm ghi chú. Nút **Send** của hộp thoại gửi cả ô rồi đóng; **Cancel**/Escape đóng mà
+  không gửi (chữ trong ô chat giữ nguyên). Hộp thoại chỉ mount khi mở, nên đóng là tắt micro; ẩn
+  panel hoặc ẩn tab cũng huỷ lượt ghi. Ô chat vẫn là textarea tự giãn: Enter = Send, Shift+Enter =
+  xuống dòng.
 
 - **Đường đi:** `MediaRecorder` trong trình duyệt → blob → base64 trong JSON (không multipart) →
   `POST /public/guest/assistant/transcribe` → `transcribe()` gọi gateway → `normaliseShedTranscript`
@@ -167,11 +171,11 @@ Khách bấm mic trong khung "Shed Assistant", nói một câu về shed; server
   `onTopic`, `confidence` và tối đa 2 cách đọc khác. Model được dặn giữ nguyên con số nghe được, kể cả
   khi vượt giới hạn. Nếu lượt sửa lỗi thì dùng transcript thô và `isShedTopic` (từ khoá + mẫu
   số-kèm-đơn-vị).
-  - **Did you mean:** `alternatives` thành chip dưới ô; bấm chip thì thay **đoạn của lượt nói cuối** trong
+  - **Did you mean:** `alternatives` thành chip dưới ô của hộp thoại; bấm chip thì thay **đoạn của lượt nói cuối** trong
     ô, câu cũ thành chip.
   - **Lạc chủ đề:** gợi ý "I can only help design your shed — try one of these:" kèm 3 chip động
     (`suggestionsFor(design, type)`); bấm chip thì thay đoạn của lượt nói cuối.
-  - Các chip và cảnh báo mất đi khi khách gõ sửa ô hoặc bấm Send.
+  - Các chip và cảnh báo mất đi khi khách gõ sửa ô, nói lượt mới hoặc bấm Send.
   - **Kiểm tra số:** `numberWarnings(text, type)` là code thuần, không tin model: số kèm đơn vị được gán
     theo từ đứng sau rồi đứng trước (wide → span, high/walls → height, long → bayWidth×bays,
     bay → bayWidth); kích thước cửa/cửa sổ bỏ qua; số không có ngữ cảnh chỉ cảnh báo khi lớn hơn mọi

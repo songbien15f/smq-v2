@@ -6,6 +6,16 @@ reasoning, `docs/DECISIONS.md` holds the decisions that outlive the change.
 
 ## 2026-11-27
 
+### Voice input is back in a dialog, with a large box and live words
+
+The microphone next to the assistant's text box opens a **dialog** again, and recording starts at once.
+The dialog keeps live dictation: the browser's words appear as the guest speaks, with a clock and a
+level meter, and each take's server transcript is **added** to a large text box that already holds
+whatever was typed. **Speak more** adds another take; **Send** sends the box and closes the dialog;
+**Cancel** or Escape closes it without sending. Tap/hold and keyboard gestures work as before. Why:
+dictating straight into the one-line chat box was too cramped to read and check. Closing the dialog
+always releases the microphone.
+
 ### Live voice dictation: words appear while the guest speaks, and each take is added to the box
 
 The microphone on the public quote page no longer opens a dialog. **Tap** it to speak (tap ⏹ or pause

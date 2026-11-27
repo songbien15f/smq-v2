@@ -192,8 +192,9 @@ function AssistantPanelBody({
     if (window.matchMedia('(min-width: 1280px)').matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const send = () => {
-    const message = text.trim();
+  /** Send the box's words, or the voice dialog's when it passes them. */
+  const send = (spoken?: string) => {
+    const message = (spoken ?? text).trim();
     if (message === '' || busy) return;
     setText('');
     void sendToAssistant(message, design, type.id);
@@ -292,9 +293,9 @@ function AssistantPanelBody({
             }}
           >
             {/*
-              The field, the microphone and Send. Speech is dictated into the field — live words while
-              speaking, the server's transcript when the take ends — and nothing reaches this thread
-              until the guest presses Send (2026-11-27, live dictation).
+              The field, the microphone and Send. The microphone opens the voice dialog (live words while
+              speaking, the server's transcript when the take ends); nothing reaches this thread until
+              the guest presses Send there or here (2026-11-27).
             */}
             <VoiceComposer
               typeId={type.id}
@@ -302,7 +303,8 @@ function AssistantPanelBody({
               active={active}
               value={text}
               onChange={setText}
-              onSend={send}
+              onSend={() => send()}
+              onSendText={send}
               inputRef={inputRef}
               examples={examples}
             />
