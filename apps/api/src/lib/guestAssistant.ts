@@ -57,9 +57,12 @@ export const ASSISTANT_LIMITS = {
    * Voice has its own, smaller counters. A transcription is a second paid call on top of the turn it
    * pre-fills, so a visitor who spoke 40 times and sent 40 times would spend twice the budget; these
    * numbers keep the speech bill inside the chat bill's shape.
+   *
+   * Raised 2026-11-27 for live dictation: a guest now speaks in several short takes before one Send,
+   * and each take is one transcription (about $0.0005 a minute on Gemini flash-lite).
    */
-  voicePerIpDay: 30,
-  voicePerSession: 20,
+  voicePerIpDay: 60,
+  voicePerSession: 40,
 } as const;
 
 /* A session token is base64url and long enough not to be guessed; anything else is a stale cookie. */

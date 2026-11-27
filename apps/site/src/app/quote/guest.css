@@ -3705,9 +3705,21 @@
 
 /* ------------------------------------------------------------------ assistant voice (plan 2026-11-22)
 
-   Four shapes of one row: the field and the mic, the recording bar, "Listening back…", and the field
-   again once a transcript is in it. The recording bar keeps the row's height so the composer does not
-   jump when it appears. */
+   Live dictation (2026-11-27, VoiceComposer.tsx): the box grows with its text; under it a strip shows
+   the take while it records (dot, clock, wave, the browser's live words) and while the server checks
+   the words; then the review helpers for the last take. */
+
+/* The box is a textarea that grows with each take, up to a few lines, then scrolls. */
+.g-assistant-row {
+  align-items: flex-end;
+}
+.g-assistant-row .g-assistant-text {
+  resize: none;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.45;
+  font-family: inherit;
+}
 
 /* The mic: 44 × 44, icon only, inside the field's frame. Gold focus ring, like every control here. */
 .g-mic-btn {
@@ -3738,18 +3750,69 @@
   width: 22px;
   height: 22px;
 }
+/* Recording: a red button, so the guest sees at a glance the microphone is open. Pressing it never
+   selects text or opens the touch callout — a hold is a gesture, not a long-press. */
+.g-mic-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.g-mic-btn-live,
+.g-mic-btn-live:hover:not(:disabled) {
+  background: var(--g-red);
+  color: #fff;
+}
 
-/* Recording, inside the dialog (VoiceDialog.tsx): red dot, clock and wave on one line. */
-.g-voice-rec {
+/* The strip under the box while a take records or is being checked. */
+.g-voice-live {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 54px;
-  margin: 0 0 20px;
-  padding: 6px 12px;
+  min-height: 40px;
+  margin: 8px 0 0;
+  padding: 4px 6px 4px 12px;
   border: 1.5px solid var(--g-red-dark);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--g-surface-2);
+}
+.g-voice-live-busy {
+  border-color: var(--g-line);
+  padding-right: 12px;
+}
+/* The browser's words: greyed, because the server's transcript replaces them. */
+.g-voice-live-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--g-ink-soft);
+}
+.g-voice-cancel {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--g-ink-soft);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.g-voice-cancel:hover {
+  background: var(--g-surface);
+  color: var(--g-heading);
+}
+.g-voice-cancel:focus-visible {
+  outline: 3px solid var(--g-focus);
+  outline-offset: 1px;
 }
 .g-voice-dot {
   flex: none;
@@ -3770,7 +3833,7 @@
 }
 .g-voice-clock {
   flex: none;
-  min-width: 76px;
+  min-width: 34px;
   font-variant-numeric: tabular-nums;
   font-size: 13.5px;
   font-weight: 700;
@@ -3782,7 +3845,8 @@
 }
 .g-voice-wave {
   display: inline-flex;
-  flex: 1;
+  flex: none;
+  width: 36px;
   align-items: center;
   justify-content: center;
   gap: 3px;
@@ -3796,20 +3860,6 @@
   background: var(--g-heading);
   transform-origin: center;
   transition: transform 90ms linear;
-}
-/* "Listening back…": the same row height, a small spinner, announced politely. */
-.g-voice-busy {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  margin: 0 0 20px;
-  padding: 6px 12px;
-  border: 1.5px solid var(--g-line);
-  border-radius: 14px;
-  background: var(--g-surface-2);
-  color: var(--g-ink-soft);
-  font-size: 14px;
 }
 .g-voice-spinner {
   flex: none;
@@ -3826,33 +3876,21 @@
   }
 }
 
-/* The hint that replaces the standing disclaimer while there is something to say about a transcript. */
-.g-voice-dialog {
-  width: min(520px, calc(100vw - 32px));
-}
-.g-voice-dialog p {
-  margin: 0 0 16px;
-}
-.g-voice-textarea {
-  min-height: 96px;
-  margin: 0 0 10px;
-  resize: vertical;
-  line-height: 1.5;
-}
-/* An error or a note inside the dialog: navy, not red - only a real failure is red. */
+/* An error or a note under the box: navy, not red - only a real failure is red. */
 .g-voice-problem {
-  margin: 0 0 12px;
-  font-size: 15px;
+  margin: 8px 0 0;
+  font-size: 14px;
   font-weight: 600;
   color: var(--g-heading);
 }
-.g-voice-dialog .g-hint {
-  margin: 0 0 20px;
+/* Review helpers for the last take: "Did you mean", off-topic examples, size warnings. */
+.g-voice-review {
+  margin: 8px 0 0;
 }
-.g-voice-dialog .g-voice-alts,
-.g-voice-dialog .g-voice-chips,
-.g-voice-dialog .g-voice-warn {
-  margin-bottom: 12px;
+.g-voice-note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--g-ink-soft);
 }
 /* After a transcript: "Did you mean" readings and off-topic examples, as compact chips that fill the field. */
 .g-voice-alts {
@@ -3908,24 +3946,13 @@
   color: var(--g-ink-soft);
 }
 
-/* A phone: the recording bar takes the row, so the Send button is not squeezed next to two buttons. */
+/* A phone: a little tighter, so the live words keep their room. */
 @media (max-width: 479px) {
-  .g-voice-rec {
+  .g-voice-live {
     gap: 6px;
   }
   .g-voice-clock {
-    min-width: 66px;
     font-size: 12.5px;
-  }
-  .g-voice-wave {
-    gap: 2px;
-  }
-  .g-voice-wave > span {
-    width: 2px;
-  }
-  .g-voice-dialog .g-dialog-actions .g-btn {
-    flex: 1 1 auto;
-    padding: 0 10px;
   }
 }
 

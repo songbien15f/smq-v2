@@ -11,7 +11,7 @@
  * - **A clip that is too short is not sent.** Under 300 ms is a tap, not a sentence; `too_short` is
  *   reported instead, so a stray click cannot spend a transcription.
  * - **It stops on its own.** At `maxMs` (60 s, the server's ceiling) and after `silenceMs` of quiet
- *   *once somebody has spoken*. Silence detection is an `AnalyserNode` RMS, not a guess from the clock.
+ *   *once somebody has spoken* — unless `setAutoStop(false)` (a push-to-talk hold) says otherwise. Silence detection is an `AnalyserNode` RMS, not a guess from the clock.
  * - **Every browser's container is handled.** Chrome records `audio/webm`, Firefox `audio/ogg`, Safari
  *   `audio/mp4`; the first supported is chosen, and the server is told only the part before `;`, so a
  *   `codecs=opus` suffix never fails the allow-list.
@@ -47,6 +47,11 @@ export interface VoiceRecorderApi {
   cancel(): void;
   /** Back to `idle` after the caller has handled the transcript or decided to give up. */
   reset(): void;
+  /**
+   * Whether quiet ends the take. On by default; a push-to-talk hold turns it off, because the guest's
+   * finger, not the room, decides when they have finished — and a noisy site is never quiet.
+   */
+  setAutoStop(on: boolean): void;
   onDone(cb: (blob: Blob, mimeType: string, durationMs: number) => void): void;
 }
 
@@ -95,6 +100,7 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
   const doneRef = useRef<((blob: Blob, mimeType: string, durationMs: number) => void) | null>(null);
   /** `stop()` decides whether to emit; `cancel()` sets this so the discard is not reported. */
   const discardRef = useRef(false);
+  const autoStopRef = useRef(true);
 
   useEffect(() => {
     setSupported(
@@ -197,6 +203,7 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
     setLevel(0);
     setState('requesting');
     discardRef.current = false;
+    autoStopRef.current = true;
     spokeRef.current = false;
     quietSinceRef.current = null;
 
@@ -207,6 +214,13 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
       const name = (err as { name?: string }).name ?? '';
       setState('error');
       setError(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied' : name === 'NotFoundError' || name === 'OverconstrainedError' ? 'no_device' : 'failed');
+      return;
+    }
+    // Cancelled while the browser was still asking for the microphone (the panel slid away, the tab
+    // was hidden): give the stream straight back instead of recording into a take nobody wants.
+    if (discardRef.current) {
+      discardRef.current = false;
+      for (const track of stream.getTracks()) track.stop();
       return;
     }
 
@@ -276,7 +290,7 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
       if (rms > SILENCE_RMS) {
         spokeRef.current = true;
         quietSinceRef.current = null;
-      } else if (spokeRef.current) {
+      } else if (spokeRef.current && autoStopRef.current) {
         if (quietSinceRef.current === null) quietSinceRef.current = now;
         else if (now - quietSinceRef.current >= silenceMs) {
           // Somebody spoke and then stopped: finish rather than record the room.
@@ -306,5 +320,10 @@ export function useVoiceRecorder(opts?: { maxMs?: number; silenceMs?: number }):
     setState('idle');
   }, [release]);
 
-  return { supported, state, error, elapsedMs, level, maxMs, start, stop, cancel, reset, onDone };
+  const setAutoStop = useCallback((on: boolean) => {
+    autoStopRef.current = on;
+    if (!on) quietSinceRef.current = null;
+  }, []);
+
+  return { supported, state, error, elapsedMs, level, maxMs, start, stop, cancel, reset, onDone, setAutoStop };
 }

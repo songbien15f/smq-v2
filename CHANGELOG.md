@@ -6,6 +6,18 @@ reasoning, `docs/DECISIONS.md` holds the decisions that outlive the change.
 
 ## 2026-11-27
 
+### Live voice dictation: words appear while the guest speaks, and each take is added to the box
+
+The microphone on the public quote page no longer opens a dialog. **Tap** it to speak (tap ⏹ or pause
+two seconds to finish), or **hold** it to talk and release to finish — quiet does not end a hold, for a
+noisy site. While speaking, the browser's own recogniser shows the words greyed under the box (free; not
+on iPhone/iPad). When the take ends, the server's transcript (Gemini plus the shed-vocabulary repair) is
+**added** to the box; speaking again adds more. If the server cannot answer, the browser's words are
+used. "Did you mean", off-topic examples and size warnings now sit under the box. **Speech still never
+sends itself** — only Send sends. The box is now a growing textarea (Enter sends, Shift+Enter is a new
+line). Voice limits rise to 60 a day per IP and 40 per conversation, and `GUEST_ASSISTANT_DAILY_VOICE`
+defaults to 300 — check the value set on production.
+
 ### The Guest assistant can be answered by Google Gemini, with vilao as a fallback
 
 The assistant on the public quote page (design turns, transcript repair, speech to text) now goes

@@ -601,11 +601,11 @@ export function registerGuest(
       if (!perSession.allowed) {
         return sendFail(reply, 'rate_limited', 'This conversation has reached its recording limit. You can still type.');
       }
-      const daily = Number(process.env.GUEST_ASSISTANT_DAILY_VOICE ?? 100);
+      const daily = Number(process.env.GUEST_ASSISTANT_DAILY_VOICE ?? 300);
       const cap = await consume(
         db,
         `ga:voice:day:${new Date().toISOString().slice(0, 10)}`,
-        Number.isFinite(daily) && daily > 0 ? daily : 100,
+        Number.isFinite(daily) && daily > 0 ? daily : 300,
         DAY_MS,
       );
       if (!cap.allowed) {

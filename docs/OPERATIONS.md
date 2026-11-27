@@ -334,7 +334,7 @@ every Gemini call into a 403, and the log line above is where that shows.
 | `VILAO_STT_MODEL` | Speech-to-text model, used by the composer's microphone. Defaults to `mgr/grok-stt`. |
 | `GUEST_ASSISTANT_VOICE` | `1` to offer the microphone in the composer. **Separate from the chat switch**, because each recording is its own paid call. Defaults to off. |
 | `GUEST_ASSISTANT_DAILY_TURNS` | Platform-wide ceiling per UTC day. Defaults to 200. |
-| `GUEST_ASSISTANT_DAILY_VOICE` | Platform-wide ceiling on transcriptions per UTC day. Defaults to 100. |
+| `GUEST_ASSISTANT_DAILY_VOICE` | Platform-wide ceiling on transcriptions per UTC day. Defaults to 300. |
 | `NEXT_PUBLIC_SQ_ASSISTANT` | `1` renders the panel for everyone. `?assistant=1` turns it on for one visit. |
 
 **Rate limits and spend (Gemini).** Limits are per **project**, not per key: RPM, TPM and RPD, with RPD
@@ -355,12 +355,16 @@ turns, not calls, so a fallback is not billed to the guest twice. A refusal answ
 the designer keeps working.
 
 **The microphone (speech to text).** Switched on separately with `GUEST_ASSISTANT_VOICE=1`; without it
-the composer simply has no mic. The mic opens a **dialog** (`VoiceDialog.tsx`): record, then the server
-runs speech to text and the repair pass, then the guest reads and edits the words and presses **Done**.
-Nothing reaches the chat before that press — a misheard "nine" cannot become a design change behind
-their back, and Cancel sends nothing. A recording is capped at 60 s and 1 MB, and the audio is **never
-stored or logged** — only its length and mime type appear in a failure line. The dialog unmounts on
-close, which stops the microphone stream. Its counters are its own — 30 a day per IP, 20 per
+the composer simply has no mic. The mic **dictates into the composer** (`VoiceComposer.tsx`, 2026-11-27):
+tap to start and tap ⏹ or pause two seconds to finish, or hold it (≥ 300 ms) to talk and release to
+finish (quiet does not end a hold). While the guest speaks, the browser's own recogniser (Web Speech,
+`useLiveSpeech.ts`, free, skipped on iOS) shows the words greyed; when the take ends the recording goes
+to the server for speech to text and the repair pass, and that text is **added** to the box. Speaking
+again adds more. If the server cannot answer, the browser's words are added instead. Nothing reaches the
+chat until the guest presses **Send** — a misheard "nine" cannot become a design change behind their
+back. A recording is capped at 60 s and 1 MB, and the audio is **never stored or logged** — only its
+length and mime type appear in a failure line. Hiding the panel, hiding the tab or unmounting ends the
+take and stops the microphone stream. Its counters are its own — 60 a day per IP, 40 per
 conversation, and `GUEST_ASSISTANT_DAILY_VOICE` for the platform — consumed before the model call.
 Over the IP or conversation limit answers 429; over the daily budget answers `unavailable` and the page
 retires the mic for that visit.

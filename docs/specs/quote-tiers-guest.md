@@ -466,21 +466,22 @@ Theo spec editor, bỏ những gì liên quan tới giá:
 - nút "Đi tới bước…";
 - lỗi, và ghi chú hệ thống ("Bạn đã sửa cửa này trên plan").
 
-#### Giọng nói (đổi 2026-11-27: hộp thoại xác nhận)
+#### Giọng nói (đổi 2026-11-27: đọc chính tả trực tiếp vào ô chat)
 
-- Nhận dạng giọng nói **phía server** (như D-AI3 của spec editor); bản ghi âm **không lưu**.
-- Bấm mic mở **hộp thoại "Speak your request"**, không ghi ngay trong khung chat. Trong hộp thoại:
-  đồng hồ và thanh âm lượng khi ghi, **Cancel** và **Done**; Done thì server chạy nhận dạng rồi **sửa
-  lại câu** (hai lời gọi, khách chỉ thấy "Listening back…"); sau đó hộp thoại đổi tiêu đề thành **"Is
-  this what you said?"** và hiện câu đó trong **ô sửa được**.
-- **Không gì vào khung chat trước khi khách bấm Done ở bước xem lại.** Cancel, Esc hay đóng hộp thoại
-  đều không gửi gì. Đây là lý do hộp thoại tồn tại: nghe nhầm "nine" thành "five" không được tự đổi thiết kế.
-- Trong bước xem lại: chip **"Did you mean"** khi câu có nhiều cách hiểu (bấm để đổi, câu cũ thành chip
-  để đổi lại); câu **lạc chủ đề** thì hiện gợi ý và các chip ví dụ của bảng điều khiển; kích thước mà
-  công trình không nhận được thì hiện **cảnh báo màu hổ phách** ngay dưới câu. Ctrl/⌘+Enter = Done.
-- Lỗi (bị chặn quyền, không có mic, quá ngắn, không nghe ra, dịch vụ tắt) hiện **trong hộp thoại**, kèm
-  **Try again** và **Type instead** (đóng hộp thoại, đưa con trỏ về ô chat).
-- Ghi âm nằm **trong** hộp thoại: đóng là stream micro tắt; khung chat đang mở không bao giờ giữ micro.
+- Nhận dạng giọng nói **phía server** (như D-AI3 của spec editor); bản ghi âm **không lưu**. Trong lúc
+  nói, trình duyệt tự nhận dạng (Web Speech, miễn phí) để **hiện chữ trực tiếp** — chỉ để xem trước và
+  làm dự phòng, không phải nguồn chính.
+- Một nút mic, hai cách: **chạm** để bắt đầu, chạm ⏹ hoặc im 2 giây để kết thúc; **đè** (≥ 300 ms) để
+  nói, thả ra là xong, im lặng không cắt (công trường ồn). Enter bật/tắt; giữ Space = đè.
+- Kết thúc một lượt thì server nhận dạng và sửa câu, rồi câu được **nối thêm** vào ô chat. Nói tiếp thì
+  nối tiếp. Server không trả lời được thì nối chữ của trình duyệt, kèm ghi chú "check the numbers".
+- **Không gì vào khung chat trước khi khách bấm Send.** Nghe nhầm "nine" thành "five" không được tự đổi
+  thiết kế; khách luôn đọc lại ô trước khi gửi.
+- Dưới ô, cho lượt nói cuối: chip **"Did you mean"** (bấm để thay đúng đoạn đó, câu cũ thành chip);
+  câu **lạc chủ đề** thì hiện gợi ý và chip ví dụ; kích thước công trình không nhận được thì **cảnh báo
+  màu hổ phách**. Gõ sửa ô hoặc bấm Send thì các chip mất.
+- Lỗi (bị chặn quyền, không có mic, quá ngắn, không nghe ra, dịch vụ tắt) hiện thành một dòng dưới ô.
+- Ẩn panel, ẩn tab hoặc rời trang thì lượt ghi bị huỷ và micro tắt; không bao giờ nghe nền.
 - Tiếng Anh Úc (`en-AU`) mặc định; tối đa 60 giây mỗi lần; mic chỉ mở khi khách bấm, không bao giờ nghe nền.
 - Trình duyệt từ chối quyền mic → báo cách bật lại, và chat chữ vẫn chạy.
 - Không có đọc to (TTS) ở bản đầu.

@@ -182,7 +182,12 @@ export function DesignPanel({ type, loading }: { type: GuestBuildingTypeSpec | u
           aria-labelledby="g-assistant-title"
           inert={assistantOffCanvas && !rightOpen ? true : undefined}
         >
-          <AssistantPanel design={design} type={type} onHide={closeAssistant} />
+          <AssistantPanel
+            design={design}
+            type={type}
+            onHide={closeAssistant}
+            active={!(assistantOffCanvas && !rightOpen)}
+          />
         </aside>
       ) : null}
 

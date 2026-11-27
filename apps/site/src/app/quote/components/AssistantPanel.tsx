@@ -124,26 +124,31 @@ export function AssistantPanel({
   design,
   type,
   onHide,
+  active = true,
 }: {
   design: GuestDesignInput;
   type: GuestBuildingTypeSpec;
+  /** False while the panel is off screen (hidden, not unmounted): ends any voice take. */
+  active?: boolean;
   /**
    * Collapses the column. Omitted by a caller that renders the panel with no way to hide it; the
    * hide button is then not drawn, rather than drawn and inert.
    */
   onHide?: () => void;
 }) {
-  return <AssistantPanelBody design={design} type={type} onHide={onHide} />;
+  return <AssistantPanelBody design={design} type={type} onHide={onHide} active={active} />;
 }
 
 function AssistantPanelBody({
   design,
   type,
   onHide,
+  active,
 }: {
   design: GuestDesignInput;
   type: GuestBuildingTypeSpec;
   onHide?: () => void;
+  active: boolean;
 }) {
   const turns = useAssistant((s) => s.turns);
   /*
@@ -170,7 +175,7 @@ function AssistantPanelBody({
   /* Offered as chips when the visitor's spoken words were not about the shed. */
   const examples = useMemo(() => suggestionsFor(design, type).slice(0, 3), [design, type]);
   const listRef = useRef<HTMLOListElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const el = listRef.current;
@@ -187,9 +192,8 @@ function AssistantPanelBody({
     if (window.matchMedia('(min-width: 1280px)').matches) inputRef.current?.focus({ preventScroll: true });
   }, []);
 
-  /** `override` is the voice dialog's text, which state set in the same tick has not reached yet. */
-  const send = (override?: string) => {
-    const message = (override ?? text).trim();
+  const send = () => {
+    const message = text.trim();
     if (message === '' || busy) return;
     setText('');
     void sendToAssistant(message, design, type.id);
@@ -288,13 +292,14 @@ function AssistantPanelBody({
             }}
           >
             {/*
-              The field, the microphone and Send. The microphone opens a dialog where speech becomes
-              words the guest reads and presses Done on — nothing reaches this thread before that press
-              (2026-11-27, VoiceDialog).
+              The field, the microphone and Send. Speech is dictated into the field — live words while
+              speaking, the server's transcript when the take ends — and nothing reaches this thread
+              until the guest presses Send (2026-11-27, live dictation).
             */}
             <VoiceComposer
               typeId={type.id}
               busy={busy}
+              active={active}
               value={text}
               onChange={setText}
               onSend={send}
