@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   /*
    * The company's own icon, not a drawn approximation of it.
    *
-   * `favicon.ico` carries the same artwork as `public/logo.png` — eight sizes from 32×32 to 256×256,
+   * `favicon.ico` carries the same artwork as `public/logo.png` — seven sizes from 16×16 to 256×256,
    * so a browser can pick one that is sharp instead of rescaling a single image. `apple-touch-icon`
    * points at the 256×256 PNG because iOS ignores `.ico` and would otherwise show a blank tile when
    * somebody saves the app to their home screen.

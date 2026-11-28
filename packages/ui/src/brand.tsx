@@ -4,17 +4,18 @@
  * ## Why this is no longer an SVG shield
  *
  * It used to be inline SVG — a shield drawn from paths, sharp at any size and free of a request. That
- * was the right call while the product had no logo. It has one now (`public/logo.png`, the same
- * artwork as the Windows icon), and a drawn approximation of a real logo is worse than the logo:
- * two marks that almost match read as a mistake, and the one on the tab, the one in the app and the
- * one on a customer's PDF have to be the same thing.
+ * was the right call while the product had no logo. It has one now (`public/logo.png`), and a drawn
+ * approximation of a real logo is worse than the logo: two marks that almost match read as a
+ * mistake, and the one on the tab and the one in the app have to be the same thing.
  *
- * ## What the artwork is, measured rather than assumed
+ * ## What the artwork is
  *
- * Decoding `logo.png` (512×512 RGBA) gives: a white rounded plate covering 41.9% of the pixels, a red
- * mark at the centre (`rgb(241,37,41)`), a dark outline, and 4% transparency at the rounded corners.
- * So the mark carries its own white plate and reads on a **navy** bar without a second asset — the
- * plate becomes the tile, which is what an app icon looks like on a dark surface.
+ * Since 2026-11-28 it is the flat red "S" in a double navy rounded frame that the marketing site
+ * (smartquote.martechsky.com) uses as its icon, so every domain shows one mark. It replaced a
+ * bevelled 3D version of the same "S". The file is 512×512 RGBA: transparent outside the frame, a
+ * white plate inside it, a red mark (`rgb(236,50,55)`). The white plate reads on a **navy** bar
+ * without a second asset. Quote documents still embed `assets/logo.png` (`LOGO_FILE`) — see
+ * `.env.example` for why that file is replaced by pointing at a new one, never overwritten.
  *
  * ## Why `tone` still exists
  *
